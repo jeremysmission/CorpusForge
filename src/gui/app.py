@@ -1,0 +1,481 @@
+# ============================================================================
+# CorpusForge -- Main GUI Application (src/gui/app.py)
+# ============================================================================
+# Tkinter GUI for monitoring and controlling the CorpusForge pipeline.
+# Panels: Pipeline Control, Live Stats, Log Output, Status Bar.
+# Thread-safe: all widget updates routed through safe_after.
+# ============================================================================
+
+from __future__ import annotations
+
+import logging
+import time
+import tkinter as tk
+from tkinter import ttk, filedialog
+from pathlib import Path
+from typing import Optional
+
+from .theme import (
+    DARK, FONT, FONT_BOLD, FONT_TITLE, FONT_SECTION, FONT_SMALL,
+    FONT_MONO, apply_ttk_styles, current_theme,
+)
+from .safe_after import safe_after
+
+logger = logging.getLogger(__name__)
+
+# Maximum log lines retained in the text widget
+_MAX_LOG_LINES = 2000
+
+
+class CorpusForgeApp:
+    """Main CorpusForge GUI window."""
+
+    def __init__(
+        self,
+        root: tk.Tk,
+        config_path: str = "",
+        supported_formats: int = 0,
+        skip_list_count: int = 0,
+        enrichment_enabled: bool = False,
+        on_start=None,
+        on_stop=None,
+    ):
+        self.root = root
+        self.config_path = config_path
+        self.supported_formats = supported_formats
+        self.skip_list_count = skip_list_count
+        self.enrichment_enabled = enrichment_enabled
+        self._on_start = on_start
+        self._on_stop = on_stop
+        self._running = False
+        self._start_time: Optional[float] = None
+        self._timer_id: Optional[str] = None
+
+        self._setup_window()
+        apply_ttk_styles(DARK)
+        self._build_ui()
+        self._update_status_bar()
+
+    # ------------------------------------------------------------------
+    # Window setup
+    # ------------------------------------------------------------------
+
+    def _setup_window(self):
+        t = current_theme()
+        self.root.title("CorpusForge Pipeline Monitor")
+        self.root.geometry("920x760")
+        self.root.minsize(760, 600)
+        self.root.configure(bg=t["bg"])
+        # Set window icon if available
+        try:
+            self.root.iconbitmap(default="")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
+
+    def _build_ui(self):
+        t = current_theme()
+
+        # Main container
+        main = ttk.Frame(self.root, padding=10)
+        main.pack(fill=tk.BOTH, expand=True)
+
+        # Title
+        title_lbl = tk.Label(
+            main, text="CorpusForge Pipeline Monitor",
+            font=FONT_TITLE, bg=t["bg"], fg=t["accent"],
+        )
+        title_lbl.pack(anchor=tk.W, pady=(0, 8))
+
+        # -- Pipeline Control Panel --
+        ctrl_frame = ttk.LabelFrame(main, text="Pipeline Control", padding=8)
+        ctrl_frame.pack(fill=tk.X, pady=(0, 6))
+
+        self._build_control_panel(ctrl_frame, t)
+
+        # -- Live Stats Panel --
+        stats_frame = ttk.LabelFrame(main, text="Live Stats", padding=8)
+        stats_frame.pack(fill=tk.X, pady=(0, 6))
+
+        self._build_stats_panel(stats_frame, t)
+
+        # -- Log Panel --
+        log_frame = ttk.LabelFrame(main, text="Pipeline Log", padding=8)
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+
+        self._build_log_panel(log_frame, t)
+
+        # -- Status Bar --
+        self._build_status_bar(main, t)
+
+    def _build_control_panel(self, parent, t):
+        """Source/output paths, start/stop buttons, progress bar."""
+        # Row 0: Source folder
+        row0 = ttk.Frame(parent)
+        row0.pack(fill=tk.X, pady=2)
+
+        tk.Label(row0, text="Source:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], width=8, anchor=tk.W).pack(side=tk.LEFT)
+
+        self.source_var = tk.StringVar(value="data/source")
+        self.source_entry = tk.Entry(
+            row0, textvariable=self.source_var, font=FONT,
+            bg=t["input_bg"], fg=t["input_fg"], insertbackground=t["fg"],
+            relief=tk.FLAT, bd=2,
+        )
+        self.source_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4))
+
+        self.browse_src_btn = ttk.Button(
+            row0, text="Browse", command=self._browse_source,
+        )
+        self.browse_src_btn.pack(side=tk.RIGHT)
+
+        # Row 1: Output folder
+        row1 = ttk.Frame(parent)
+        row1.pack(fill=tk.X, pady=2)
+
+        tk.Label(row1, text="Output:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], width=8, anchor=tk.W).pack(side=tk.LEFT)
+
+        self.output_var = tk.StringVar(value="data/output")
+        self.output_entry = tk.Entry(
+            row1, textvariable=self.output_var, font=FONT,
+            bg=t["input_bg"], fg=t["input_fg"], insertbackground=t["fg"],
+            relief=tk.FLAT, bd=2,
+        )
+        self.output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4))
+
+        self.browse_out_btn = ttk.Button(
+            row1, text="Browse", command=self._browse_output,
+        )
+        self.browse_out_btn.pack(side=tk.RIGHT)
+
+        # Row 2: Buttons + progress bar
+        row2 = ttk.Frame(parent)
+        row2.pack(fill=tk.X, pady=(6, 2))
+
+        self.start_btn = ttk.Button(
+            row2, text="Start Pipeline", style="Accent.TButton",
+            command=self._on_start_click,
+        )
+        self.start_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.stop_btn = ttk.Button(
+            row2, text="Stop", style="Tertiary.TButton",
+            command=self._on_stop_click, state=tk.DISABLED,
+        )
+        self.stop_btn.pack(side=tk.LEFT, padx=(0, 12))
+
+        self.progress_var = tk.DoubleVar(value=0.0)
+        self.progress_bar = ttk.Progressbar(
+            row2, variable=self.progress_var, maximum=100,
+            mode="determinate", length=300,
+        )
+        self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+
+        self.progress_label = tk.Label(
+            row2, text="0 / 0", font=FONT_SMALL,
+            bg=t["panel_bg"], fg=t["label_fg"],
+        )
+        self.progress_label.pack(side=tk.RIGHT)
+
+    def _build_stats_panel(self, parent, t):
+        """Two-column grid of live statistics."""
+        # Left column
+        left = ttk.Frame(parent)
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Right column
+        right = ttk.Frame(parent)
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Stat labels -- left column
+        self._stat_labels = {}
+        left_stats = [
+            ("files_scanned", "Files scanned:"),
+            ("files_parsed", "Files parsed:"),
+            ("files_skipped", "Files skipped:"),
+            ("files_failed", "Files failed:"),
+            ("chunks_created", "Chunks created:"),
+            ("chunks_enriched", "Chunks enriched:"),
+        ]
+        for key, label_text in left_stats:
+            row = ttk.Frame(left)
+            row.pack(fill=tk.X, pady=1)
+            tk.Label(row, text=label_text, font=FONT, bg=t["panel_bg"],
+                     fg=t["label_fg"], width=18, anchor=tk.W).pack(side=tk.LEFT)
+            val = tk.Label(row, text="0", font=FONT_BOLD, bg=t["panel_bg"],
+                           fg=t["fg"], anchor=tk.W)
+            val.pack(side=tk.LEFT)
+            self._stat_labels[key] = val
+
+        # Right column stats
+        right_stats = [
+            ("current_file", "Current file:"),
+            ("elapsed", "Elapsed time:"),
+            ("throughput", "Throughput:"),
+            ("eta", "ETA:"),
+            ("skip_reasons", "Skip reasons:"),
+            ("vectors_created", "Vectors created:"),
+        ]
+        for key, label_text in right_stats:
+            row = ttk.Frame(right)
+            row.pack(fill=tk.X, pady=1)
+            tk.Label(row, text=label_text, font=FONT, bg=t["panel_bg"],
+                     fg=t["label_fg"], width=16, anchor=tk.W).pack(side=tk.LEFT)
+            val = tk.Label(row, text="--", font=FONT_BOLD, bg=t["panel_bg"],
+                           fg=t["fg"], anchor=tk.W, wraplength=320)
+            val.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self._stat_labels[key] = val
+
+    def _build_log_panel(self, parent, t):
+        """Scrolling text area for pipeline log output."""
+        log_container = ttk.Frame(parent)
+        log_container.pack(fill=tk.BOTH, expand=True)
+
+        self.log_text = tk.Text(
+            log_container, font=FONT_MONO, bg=t["bg"], fg=t["fg"],
+            insertbackground=t["fg"], relief=tk.FLAT, bd=2,
+            wrap=tk.WORD, state=tk.DISABLED, height=12,
+        )
+        scrollbar = ttk.Scrollbar(
+            log_container, orient=tk.VERTICAL, command=self.log_text.yview,
+        )
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Color tags for log levels
+        self.log_text.tag_configure("INFO", foreground=t["fg"])
+        self.log_text.tag_configure("WARNING", foreground=t["orange"])
+        self.log_text.tag_configure("ERROR", foreground=t["red"])
+        self.log_text.tag_configure("DEBUG", foreground=t["gray"])
+
+    def _build_status_bar(self, parent, t):
+        """Bottom status bar with config info."""
+        bar = tk.Frame(parent, bg=t["panel_bg"], height=28)
+        bar.pack(fill=tk.X, pady=(2, 0))
+
+        self._status_labels = {}
+        items = [
+            ("config", f"Config: {self.config_path}"),
+            ("formats", f"Formats: {self.supported_formats}"),
+            ("skip", f"Skip list: {self.skip_list_count} deferred"),
+            ("enrich", f"Enrichment: {'enabled' if self.enrichment_enabled else 'disabled'}"),
+        ]
+        for key, text in items:
+            lbl = tk.Label(
+                bar, text=text, font=FONT_SMALL, bg=t["panel_bg"],
+                fg=t["label_fg"], padx=12,
+            )
+            lbl.pack(side=tk.LEFT)
+            self._status_labels[key] = lbl
+
+    # ------------------------------------------------------------------
+    # Button handlers
+    # ------------------------------------------------------------------
+
+    def _browse_source(self):
+        path = filedialog.askdirectory(title="Select Source Folder")
+        if path:
+            self.source_var.set(path)
+
+    def _browse_output(self):
+        path = filedialog.askdirectory(title="Select Output Folder")
+        if path:
+            self.output_var.set(path)
+
+    def _on_start_click(self):
+        if self._running:
+            return
+        self._set_running(True)
+        if self._on_start:
+            self._on_start(
+                source=self.source_var.get(),
+                output=self.output_var.get(),
+            )
+
+    def _on_stop_click(self):
+        if self._on_stop:
+            self._on_stop()
+        self.append_log("Pipeline stop requested by user.", "WARNING")
+
+    # ------------------------------------------------------------------
+    # State management
+    # ------------------------------------------------------------------
+
+    def _set_running(self, running: bool):
+        self._running = running
+        if running:
+            self.start_btn.configure(state=tk.DISABLED)
+            self.stop_btn.configure(state=tk.NORMAL)
+            self.browse_src_btn.configure(state=tk.DISABLED)
+            self.browse_out_btn.configure(state=tk.DISABLED)
+            self.source_entry.configure(state=tk.DISABLED)
+            self.output_entry.configure(state=tk.DISABLED)
+            self._start_time = time.time()
+            self._start_elapsed_timer()
+        else:
+            self.start_btn.configure(state=tk.NORMAL)
+            self.stop_btn.configure(state=tk.DISABLED)
+            self.browse_src_btn.configure(state=tk.NORMAL)
+            self.browse_out_btn.configure(state=tk.NORMAL)
+            self.source_entry.configure(state=tk.NORMAL)
+            self.output_entry.configure(state=tk.NORMAL)
+            self._stop_elapsed_timer()
+
+    def _start_elapsed_timer(self):
+        """Update elapsed time label every second while running."""
+        if not self._running or self._start_time is None:
+            return
+        elapsed = time.time() - self._start_time
+        self._stat_labels["elapsed"].configure(text=_format_elapsed(elapsed))
+        self._timer_id = self.root.after(1000, self._start_elapsed_timer)
+
+    def _stop_elapsed_timer(self):
+        if self._timer_id is not None:
+            try:
+                self.root.after_cancel(self._timer_id)
+            except Exception:
+                pass
+            self._timer_id = None
+
+    # ------------------------------------------------------------------
+    # Public update methods (called via safe_after from bg thread)
+    # ------------------------------------------------------------------
+
+    def update_stats(self, stats: dict):
+        """Update the live stats panel from a stats dictionary."""
+        total = stats.get("files_found", 0)
+        parsed = stats.get("files_parsed", 0)
+        failed = stats.get("files_failed", 0)
+        skipped = stats.get("files_skipped", 0)
+        done = parsed + failed + skipped
+
+        self._stat_labels["files_scanned"].configure(text=str(total))
+        self._stat_labels["files_parsed"].configure(text=str(parsed))
+        self._stat_labels["files_skipped"].configure(text=str(skipped))
+        self._stat_labels["files_failed"].configure(
+            text=str(failed),
+            fg=DARK["red"] if failed > 0 else DARK["fg"],
+        )
+        self._stat_labels["chunks_created"].configure(
+            text=str(stats.get("chunks_created", 0)),
+        )
+        self._stat_labels["chunks_enriched"].configure(
+            text=str(stats.get("chunks_enriched", 0)),
+        )
+        self._stat_labels["vectors_created"].configure(
+            text=str(stats.get("vectors_created", 0)),
+        )
+
+        skip_reasons = stats.get("skip_reasons", "")
+        self._stat_labels["skip_reasons"].configure(
+            text=skip_reasons if skip_reasons else "--",
+        )
+
+        # Progress bar
+        if total > 0:
+            pct = min(100.0, (done / total) * 100.0)
+            self.progress_var.set(pct)
+            self.progress_label.configure(text=f"{done} / {total}")
+
+        # Throughput and ETA
+        if self._start_time:
+            elapsed = time.time() - self._start_time
+            if elapsed > 0 and done > 0:
+                rate = done / elapsed
+                self._stat_labels["throughput"].configure(
+                    text=f"{rate:.1f} files/sec",
+                )
+                remaining = total - done
+                if rate > 0 and remaining > 0:
+                    eta_sec = remaining / rate
+                    self._stat_labels["eta"].configure(
+                        text=_format_elapsed(eta_sec),
+                    )
+                else:
+                    self._stat_labels["eta"].configure(text="--")
+
+    def update_current_file(self, filename: str):
+        """Update the current file being processed."""
+        display = filename
+        if len(display) > 60:
+            display = "..." + display[-57:]
+        self._stat_labels["current_file"].configure(text=display)
+
+    def append_log(self, message: str, level: str = "INFO"):
+        """Append a line to the log panel with color coding."""
+        tag = level if level in ("INFO", "WARNING", "ERROR", "DEBUG") else "INFO"
+        self.log_text.configure(state=tk.NORMAL)
+        self.log_text.insert(tk.END, message + "\n", tag)
+
+        # Trim old lines
+        line_count = int(self.log_text.index("end-1c").split(".")[0])
+        if line_count > _MAX_LOG_LINES:
+            self.log_text.delete("1.0", f"{line_count - _MAX_LOG_LINES}.0")
+
+        self.log_text.see(tk.END)
+        self.log_text.configure(state=tk.DISABLED)
+
+    def pipeline_finished(self, stats: dict):
+        """Called when pipeline completes (success or error)."""
+        self.update_stats(stats)
+        self._set_running(False)
+        elapsed = stats.get("elapsed_seconds", 0)
+        self._stat_labels["elapsed"].configure(text=_format_elapsed(elapsed))
+        self._stat_labels["eta"].configure(text="Done")
+        self._stat_labels["current_file"].configure(text="--")
+
+        # Final progress
+        total = stats.get("files_found", 0)
+        parsed = stats.get("files_parsed", 0)
+        failed = stats.get("files_failed", 0)
+        skipped = stats.get("files_skipped", 0)
+        done = parsed + failed + skipped
+        if total > 0:
+            self.progress_var.set(100.0)
+            self.progress_label.configure(text=f"{done} / {total}")
+
+        self.append_log(
+            f"Pipeline complete: {parsed} parsed, {failed} failed, "
+            f"{skipped} skipped in {elapsed:.1f}s",
+            "INFO",
+        )
+
+    def _update_status_bar(self):
+        """Refresh status bar labels with current config info."""
+        t = current_theme()
+        enrich_text = "enabled" if self.enrichment_enabled else "disabled"
+        enrich_fg = t["green"] if self.enrichment_enabled else t["gray"]
+
+        self._status_labels["config"].configure(
+            text=f"Config: {self.config_path}",
+        )
+        self._status_labels["formats"].configure(
+            text=f"Formats: {self.supported_formats}",
+        )
+        self._status_labels["skip"].configure(
+            text=f"Skip list: {self.skip_list_count} deferred",
+        )
+        self._status_labels["enrich"].configure(
+            text=f"Enrichment: {enrich_text}", fg=enrich_fg,
+        )
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+def _format_elapsed(seconds: float) -> str:
+    """Format seconds into HH:MM:SS or MM:SS."""
+    seconds = max(0, int(seconds))
+    h, remainder = divmod(seconds, 3600)
+    m, s = divmod(remainder, 60)
+    if h > 0:
+        return f"{h:d}:{m:02d}:{s:02d}"
+    return f"{m:d}:{s:02d}"
