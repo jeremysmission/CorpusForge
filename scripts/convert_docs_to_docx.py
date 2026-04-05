@@ -16,7 +16,7 @@ def md_to_docx(md_path: Path, docx_path: Path):
     font.name = 'Calibri'
     font.size = Pt(11)
 
-    text = md_path.read_text(encoding='utf-8')
+    text = md_path.read_text(encoding='utf-8-sig')
     lines = text.split('\n')
     in_code_block = False
     code_buffer = []

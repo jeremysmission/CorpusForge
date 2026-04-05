@@ -30,6 +30,9 @@ data/output/
 *.npz
 *.lance/
 
+# Sanitization script — NEVER push to remote (contains replacement patterns)
+sanitize_before_push.py
+
 # Credentials / secrets
 .env
 *.key

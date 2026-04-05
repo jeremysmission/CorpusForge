@@ -15,6 +15,16 @@ Download → Hash/Dedup → Parse (32+ formats) → Chunk (1200/200) → Enrich 
 - **Set `PYTHONUTF8=1`** in all batch/script files
 - **pip install commands need `--trusted-host` flags** for corporate proxy
 
+## Push Workflow (MANDATORY)
+1. Commit locally (all work stays on local repo)
+2. Run `python sanitize_before_push.py --apply` before ANY push to remote
+3. Only the sanitized version goes to the remote/work repo
+4. The remote repo is what gets zipped for deployment — no surprises in the zip
+5. **NEVER push unsanitized code to remote**
+6. **NEVER push `sanitize_before_push.py` itself to remote** — it contains replacement patterns and is in `.gitignore`
+7. **Git commits: author is Jeremy only** — no Co-Authored-By, no AI attribution
+8. **No mention of anthropic, claude, agent, or AI in any committed code/docs** — use "CoPilot+" when referring to AI assistance
+
 ## Companion Repo
 HybridRAG V2 (C:\HybridRAG_V2) consumes the export packages this app produces.
 

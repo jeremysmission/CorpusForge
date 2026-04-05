@@ -1,0 +1,199 @@
+"""
+CorpusForge configuration schema.
+
+Single config, no modes. Validated once at boot, immutable after.
+Priority: config.yaml values -> Pydantic defaults.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Optional
+
+import yaml
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+# ---------------------------------------------------------------------------
+# Sub-models
+# ---------------------------------------------------------------------------
+
+class PathsConfig(BaseModel):
+    """File system paths used by the pipeline."""
+
+    source_dirs: list[str] = Field(
+        default=["data/source"],
+        description="Directories containing raw source files to process.",
+    )
+    output_dir: str = Field(
+        default="data/output",
+        description="Where export packages are written for V2 consumption.",
+    )
+    state_db: str = Field(
+        default="data/file_state.sqlite3",
+        description="SQLite database tracking file hashes and processing state.",
+    )
+    landing_zone: str = Field(
+        default="data/source",
+        description="Local directory where downloaded files are staged.",
+    )
+
+
+class ChunkConfig(BaseModel):
+    """Chunking parameters — ported from V1 (1200/200/sentence boundary)."""
+
+    size: int = Field(default=1200, ge=100, le=10000, description="Target chunk size in characters.")
+    overlap: int = Field(default=200, ge=0, description="Character overlap between consecutive chunks.")
+    max_heading_len: int = Field(default=160, ge=10, description="Max line length to consider as a heading.")
+
+    @model_validator(mode="after")
+    def overlap_less_than_size(self) -> "ChunkConfig":
+        if self.overlap >= self.size:
+            raise ValueError(f"overlap ({self.overlap}) must be less than size ({self.size})")
+        return self
+
+
+class ParseConfig(BaseModel):
+    """Parser settings."""
+
+    timeout_seconds: int = Field(default=60, ge=5, description="Per-file parse timeout.")
+    ocr_mode: str = Field(
+        default="auto",
+        description="OCR mode: 'skip' | 'auto' | 'force'. 'auto' detects scanned PDFs.",
+    )
+    max_chars_per_file: int = Field(default=5_000_000, ge=1000, description="Clamp file text to this length.")
+
+    @field_validator("ocr_mode")
+    @classmethod
+    def validate_ocr_mode(cls, v: str) -> str:
+        allowed = {"skip", "auto", "force"}
+        if v not in allowed:
+            raise ValueError(f"ocr_mode must be one of {allowed}, got '{v}'")
+        return v
+
+
+class EmbedConfig(BaseModel):
+    """Embedding model and batching settings."""
+
+    model_name: str = Field(
+        default="nomic-ai/nomic-embed-text-v1.5",
+        description="HuggingFace model ID for sentence-transformers.",
+    )
+    dim: int = Field(default=768, description="Embedding vector dimensions.")
+    device: str = Field(
+        default="cuda",
+        description="Compute device: 'cuda' or 'cpu'.",
+    )
+    max_batch_tokens: int = Field(
+        default=49152,
+        description="Token budget per embedding batch (6x nomic context window).",
+    )
+    dtype: str = Field(
+        default="float16",
+        description="Embedding precision: 'float16' | 'float32'.",
+    )
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, v: str) -> str:
+        allowed = {"cuda", "cpu"}
+        if v not in allowed:
+            raise ValueError(f"device must be one of {allowed}, got '{v}'")
+        return v
+
+
+class EnrichConfig(BaseModel):
+    """Contextual enrichment via phi4:14B on local Ollama."""
+
+    enabled: bool = Field(default=True, description="Enable contextual enrichment stage.")
+    ollama_url: str = Field(
+        default="http://127.0.0.1:11434",
+        description="Ollama API base URL (loopback only).",
+    )
+    model: str = Field(default="phi4:14b-q4_K_M", description="Ollama model tag for enrichment.")
+    max_chunk_chars: int = Field(
+        default=500,
+        description="Max chars of chunk text sent to enrichment model (for speed).",
+    )
+
+
+class ExtractConfig(BaseModel):
+    """First-pass entity extraction via GLiNER2."""
+
+    enabled: bool = Field(default=False, description="Enable GLiNER2 NER stage (requires waiver).")
+    model_name: str = Field(
+        default="urchade/gliner_multi-v2.1",
+        description="GLiNER model for zero-shot NER.",
+    )
+    entity_types: list[str] = Field(
+        default=[
+            "PART_NUMBER", "PERSON", "SITE", "DATE",
+            "ORGANIZATION", "FAILURE_MODE", "ACTION",
+        ],
+        description="Entity labels for GLiNER extraction.",
+    )
+    min_confidence: float = Field(
+        default=0.5,
+        ge=0.0, le=1.0,
+        description="Minimum GLiNER confidence to include in candidates.",
+    )
+
+
+class PipelineConfig(BaseModel):
+    """Pipeline orchestration settings."""
+
+    full_reindex: bool = Field(default=False, description="Process all files, not just new/changed.")
+    max_files: Optional[int] = Field(default=None, ge=1, description="Limit files processed per run (for testing).")
+    log_level: str = Field(default="INFO", description="Logging level.")
+
+
+class HardwarePreset(BaseModel):
+    """Hardware-specific overrides."""
+
+    gpu_index: int = Field(default=0, description="Primary GPU index for compute (0=compute, 1=display).")
+    embed_batch_size: int = Field(default=256, ge=1, description="Embedding batch size hint.")
+
+
+# ---------------------------------------------------------------------------
+# Top-level config
+# ---------------------------------------------------------------------------
+
+class ForgeConfig(BaseModel):
+    """
+    CorpusForge top-level configuration.
+
+    Single config, no modes. One hardware preset selected at boot.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    paths: PathsConfig = Field(default_factory=PathsConfig)
+    chunk: ChunkConfig = Field(default_factory=ChunkConfig)
+    parse: ParseConfig = Field(default_factory=ParseConfig)
+    embed: EmbedConfig = Field(default_factory=EmbedConfig)
+    enrich: EnrichConfig = Field(default_factory=EnrichConfig)
+    extract: ExtractConfig = Field(default_factory=ExtractConfig)
+    pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    hardware: HardwarePreset = Field(default_factory=HardwarePreset)
+
+
+# ---------------------------------------------------------------------------
+# Loader
+# ---------------------------------------------------------------------------
+
+def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
+    """
+    Load and validate CorpusForge configuration from YAML.
+
+    Falls back to Pydantic defaults for any missing fields.
+    """
+    path = Path(config_path)
+    if path.exists():
+        with open(path, encoding="utf-8-sig") as f:
+            raw = yaml.safe_load(f) or {}
+    else:
+        print(f"[WARN] Config file not found at {path}, using defaults.", file=sys.stderr)
+        raw = {}
+
+    return ForgeConfig(**raw)
