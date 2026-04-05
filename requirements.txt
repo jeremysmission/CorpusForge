@@ -6,14 +6,22 @@
 # SECTION 2: APPLYING (YELLOW) — Waiver in progress, installed
 # SECTION 3: NEW WAIVER REQUIRED — Development proceeds with fallbacks
 #
-# Install warning: DO NOT use pip install sentence-transformers[onnx]
-#   The [onnx] extra pulls CPU-only torch, overwriting CUDA wheel.
+# INSTALL ORDER (critical — wrong order silently loses CUDA):
+#   1. pip install torch --index-url https://download.pytorch.org/whl/cu128
+#   2. pip install -r requirements.txt
+#   3. Verify: python -c "import torch; assert torch.cuda.is_available()"
+#
+# KNOWN GOTCHAS (from forum research 2026-04-05):
+#   - DO NOT use pip install sentence-transformers[onnx] — pulls CPU torch
+#   - DO NOT manually upgrade pdfminer.six — pdfplumber pins it, upgrading breaks
+#   - numpy must stay <2.0 — numpy 2.0 breaks pyarrow C ABI
+#   - VC++ Redistributable required on Windows for pyarrow DLLs
 
 # ============================================================
 # SECTION 1: APPROVED (GREEN) — Already cleared
 # ============================================================
 
-numpy==1.26.4                    # BSD-3, USA — vector math
+numpy>=1.26.4,<2.0               # BSD-3, USA — pin <2.0 to prevent pyarrow C ABI break
 pdfplumber==0.11.9               # MIT, USA — PDF text extraction
 pdfminer.six==20251230           # MIT, USA — PDF parsing engine
 pypdf==6.6.2                     # BSD-3, USA — PDF metadata

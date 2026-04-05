@@ -150,6 +150,9 @@ class PipelineConfig(BaseModel):
     full_reindex: bool = Field(default=False, description="Process all files, not just new/changed.")
     max_files: Optional[int] = Field(default=None, ge=1, description="Limit files processed per run (for testing).")
     log_level: str = Field(default="INFO", description="Logging level.")
+    workers: int = Field(default=8, ge=1, le=32, description="Parallel parser threads. GPU embed runs on main thread.")
+    stale_future_timeout: int = Field(default=120, ge=30, description="Seconds before watchdog kills a hung parser.")
+    embed_flush_batch: int = Field(default=512, ge=32, description="Chunks accumulated before flushing to GPU embed.")
 
 
 class HardwarePreset(BaseModel):

@@ -69,7 +69,8 @@ set "PYTHONIOENCODING=utf-8"
 set "NO_PROXY=localhost,127.0.0.1"
 set "no_proxy=localhost,127.0.0.1"
 
-REM Single GPU — GPU 0 = compute, GPU 1 = display
+REM GPU isolation: CorpusForge owns GPU 0 (batch indexing).
+REM HybridRAG V2 uses GPU 1. No GPU sharing between repos.
 if not defined CUDA_VISIBLE_DEVICES set "CUDA_VISIBLE_DEVICES=0"
 
 REM Activate venv

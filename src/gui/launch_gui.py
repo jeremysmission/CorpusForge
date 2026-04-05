@@ -98,7 +98,17 @@ class PipelineRunner:
                    "Initializing pipeline (loading models)...", "INFO")
         pipeline = Pipeline(self.config)
         safe_after(self.app.root, 0, self.app.append_log, "Running...", "INFO")
-        stats = pipeline.run(files)
+
+        def on_file_start(file_path, file_index, total_files):
+            name = Path(file_path).name
+            safe_after(self.app.root, 0, self.app.update_current_file, name)
+            safe_after(self.app.root, 0, self.app.update_stats, {
+                **_EMPTY_STATS,
+                "files_found": total_files,
+                "files_parsed": file_index,
+            })
+
+        stats = pipeline.run(files, on_file_start=on_file_start)
         safe_after(self.app.root, 0, self.app.pipeline_finished, stats.to_dict())
 
     @property
