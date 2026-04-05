@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data (large files - do not commit)
+data/source/
+data/output/
+*.sqlite3
+*.faiss
+*.f16.dat
+*.npy
+*.npz
+*.lance/
+
+# Credentials / secrets
+.env
+*.key
+*.pem
+credentials.json
+
+# Logs
+logs/
+*.log
+
+# Test output
+.pytest_cache/
+htmlcov/
+.coverage

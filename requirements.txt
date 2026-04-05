@@ -1,0 +1,59 @@
+# CorpusForge — Requirements
+# Date: 2026-04-04
+# Author: Jeremy Randall (CoPilot+)
+#
+# SECTION 1: APPROVED (GREEN) — No waiver needed
+# SECTION 2: APPLYING (YELLOW) — Waiver in progress, installed
+# SECTION 3: NEW WAIVER REQUIRED — Development proceeds with fallbacks
+#
+# Install warning: DO NOT use pip install sentence-transformers[onnx]
+#   The [onnx] extra pulls CPU-only torch, overwriting CUDA wheel.
+
+# ============================================================
+# SECTION 1: APPROVED (GREEN) — Already cleared
+# ============================================================
+
+numpy==1.26.4                    # BSD-3, USA — vector math
+pdfplumber==0.11.9               # MIT, USA — PDF text extraction
+pdfminer.six==20251230           # MIT, USA — PDF parsing engine
+pypdf==6.6.2                     # BSD-3, USA — PDF metadata
+pypdfium2==5.3.0                 # Apache 2.0, Google/USA — PDF rendering
+pdf2image==1.17.0                # MIT, USA — PDF to image
+pytesseract==0.3.13              # Apache 2.0, USA — OCR bridge
+python-docx==1.2.0               # MIT, USA — Word reader
+python-pptx==1.0.2               # MIT, USA — PowerPoint reader
+openpyxl==3.1.5                  # MIT, USA — Excel reader
+lxml==6.0.2                      # BSD-3, USA — XML/HTML parsing
+pillow==12.1.0                   # HPND, USA — image processing
+pydantic==2.11.1                 # MIT, USA — config validation
+pyyaml==6.0.2                    # MIT, USA — config parsing
+structlog==24.4.0                # MIT, Germany — structured logging
+rich==13.9.4                     # MIT, UK — console formatting
+tqdm==4.67.3                     # MIT, USA — progress bars
+regex==2026.1.15                 # Apache 2.0, USA — text processing
+colorama==0.4.6                  # BSD-3, USA — console colors
+tiktoken==0.8.0                  # MIT, USA — token counting
+
+# ============================================================
+# SECTION 2: APPLYING (YELLOW) — Installed, waiver in progress
+# ============================================================
+
+sentence-transformers==5.3.0     # Apache 2.0, USA — embedding engine (nomic-embed-text)
+torch                            # BSD-3, USA — GPU embedding + enrichment (CUDA)
+onnxruntime==1.24.4              # MIT, Microsoft/USA — CPU embedding fallback
+optimum==2.1.0                   # Apache 2.0, HuggingFace/USA — ONNX bridge
+pytest==9.0.2                    # MIT, Germany — testing
+psutil==7.2.2                    # BSD-3, USA — GPU/memory monitoring
+
+# External binaries (not pip):
+# Ollama (MIT, USA) — hosts phi4:14B for contextual enrichment
+# Tesseract OCR 5.x (Apache 2.0, Google/USA) — scanned PDF OCR
+# Poppler 24.x (GPL-2.0, freedesktop.org) — PDF rendering
+
+# ============================================================
+# SECTION 3: NEW WAIVER REQUIRED — Awaiting approval
+# ============================================================
+
+# gliner                         # Apache 2.0, France (NATO) — zero-shot NER, 205M params
+                                 # Shared waiver with HybridRAG V2
+                                 # Fallback: skip first-pass, V2 uses GPT-4o for all extraction
