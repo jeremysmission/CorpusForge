@@ -51,6 +51,41 @@ psutil==7.2.2                    # BSD-3, USA — GPU/memory monitoring
 # Poppler 24.x (GPL-2.0, freedesktop.org) — PDF rendering
 
 # ============================================================
+# Parser dependencies (Sprint 5 — ported from V1)
+# ============================================================
+# Enables specialty parsers in src/parse/parsers/. Without these,
+# files with these extensions gracefully degrade (return empty text).
+# Version pins match V1 (HybridRAG3_Educational/requirements_approved.txt).
+# All licenses: MIT, BSD, or Apache 2.0. No GPL. No China-origin.
+
+xlrd==2.0.1                      # BSD-3, USA — Legacy Excel .xls reader (xls_parser.py)
+olefile==0.47                    # BSD, USA — OLE2 binary format reader (doc/xls/ppt parsers)
+cryptography==44.0.2             # Apache 2.0, USA — X.509 certificate parsing (certificate_parser.py)
+ezdxf==1.4.3                     # MIT, Germany (NATO) — AutoCAD DXF reader (dxf_parser.py)
+python-evtx==0.8.1               # Apache 2.0, USA — Windows Event Log parser (evtx_parser.py)
+dpkt==1.9.8                      # BSD, USA — Network packet capture parser (pcap_parser.py)
+numpy-stl==3.2.0                 # BSD, USA — STL 3D mesh parser (stl_parser.py)
+vsdx==0.6.1                      # BSD-3, UK (NATO) — Visio .vsdx diagram parser (visio_parser.py)
+
+# Transitive deps (pinned from V1 to avoid drift):
+pyparsing==3.3.2                 # MIT — ezdxf dep
+fonttools==4.61.1                # MIT — ezdxf dep
+hexdump==3.3                     # MIT — python-evtx dep
+python-utils==3.9.1              # BSD-3 — numpy-stl dep
+Jinja2==3.1.6                    # BSD-3 — vsdx dep
+MarkupSafe==3.0.3                # BSD-3 — Jinja2 dep
+deprecation==2.1.0               # Apache 2.0 — vsdx dep
+
+# Not needed (stdlib-only parsers):
+# epub_parser.py — uses zipfile + xml.etree (stdlib)
+# opendocument_parser.py — uses zipfile + xml.etree (stdlib)
+# image_parser.py — pillow + pytesseract already in Section 1
+
+# External binaries (not pip):
+# antiword — GPL-2, used as standalone tool for .doc (doc_parser.py fallback)
+#   Note: GPL-2 standalone tool only (no linking). Same pattern as Poppler.
+
+# ============================================================
 # SECTION 3: NEW WAIVER REQUIRED — Awaiting approval
 # ============================================================
 
