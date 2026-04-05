@@ -1,8 +1,8 @@
 """
 Pipeline orchestrator — runs all stages in sequence.
 
-Sprint 1: parse (32+ formats) → hash/dedup → chunk → embed → export.
-Stages 1 (download), 5 (enrich), 7 (extract) are stubs for Sprint 2.
+Sprint 1: parse (32+ formats) → hash/dedup → chunk → enrich → embed → export.
+Stages 1 (download) and 7 (extract) are stubs for Sprint 2.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from .config.schema import ForgeConfig
 from .chunk.chunker import Chunker
 from .chunk.chunk_ids import make_chunk_id
 from .embed.embedder import Embedder
+from .enrichment.contextual_enricher import ContextualEnricher, EnricherConfig
 from .export.packager import Packager
 from .download.hasher import Hasher
 from .download.deduplicator import Deduplicator
@@ -38,6 +39,7 @@ class RunStats:
     skipped_unchanged: int = 0
     skipped_duplicate: int = 0
     chunks_created: int = 0
+    chunks_enriched: int = 0
     vectors_created: int = 0
     elapsed_seconds: float = 0.0
     errors: list[dict] = field(default_factory=list)
@@ -51,6 +53,7 @@ class RunStats:
             "skipped_unchanged": self.skipped_unchanged,
             "skipped_duplicate": self.skipped_duplicate,
             "chunks_created": self.chunks_created,
+            "chunks_enriched": self.chunks_enriched,
             "vectors_created": self.vectors_created,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
             "error_count": len(self.errors),
@@ -76,6 +79,14 @@ class Pipeline:
             chunk_size=config.chunk.size,
             overlap=config.chunk.overlap,
             max_heading_len=config.chunk.max_heading_len,
+        )
+        self.enricher = ContextualEnricher(
+            config=EnricherConfig(
+                enabled=config.enrich.enabled,
+                ollama_url=config.enrich.ollama_url,
+                model=config.enrich.model,
+                max_chunk_chars=config.enrich.max_chunk_chars,
+            )
         )
         self.embedder = Embedder(
             model_name=config.embed.model_name,
@@ -121,6 +132,13 @@ class Pipeline:
             logger.warning("No chunks produced — nothing to embed or export.")
             stats.elapsed_seconds = time.time() - start_time
             return stats
+
+        # Stage 5: Contextual enrichment (phi4:14B via Ollama)
+        doc_texts = {doc.source_path: doc.text for doc in parsed_docs}
+        all_chunks = self.enricher.enrich_chunks(all_chunks, doc_texts)
+        stats.chunks_enriched = sum(
+            1 for c in all_chunks if c.get("enriched_text") is not None
+        )
 
         # Stage 6: Embed
         vectors = self._embed_chunks(all_chunks, stats)

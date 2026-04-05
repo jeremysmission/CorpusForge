@@ -68,6 +68,7 @@ def main() -> None:
     print(f"  Files parsed:   {stats.files_parsed}")
     print(f"  Files failed:   {stats.files_failed}")
     print(f"  Chunks created: {stats.chunks_created}")
+    print(f"  Chunks enriched:{stats.chunks_enriched}")
     print(f"  Vectors created:{stats.vectors_created}")
     print(f"  Elapsed:        {stats.elapsed_seconds:.1f}s")
     if stats.errors:
