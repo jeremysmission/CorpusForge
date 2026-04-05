@@ -23,7 +23,7 @@ Download → Hash/Dedup → Parse (32+ formats) → Chunk (1200/200) → Enrich 
 5. **NEVER push unsanitized code to remote**
 6. **NEVER push `sanitize_before_push.py` itself to remote** — it contains replacement patterns and is in `.gitignore`
 7. **Git commits: author is Jeremy only** — no Co-Authored-By, no AI attribution
-8. **No mention of anthropic, claude, agent, or AI in any committed code/docs** — use "CoPilot+" when referring to AI assistance
+8. **No mention of approved vendor, CoPilot+, agent, or AI in any committed code/docs** — use "CoPilot+" when referring to AI assistance
 
 ## Companion Repo
 HybridRAG V2 (C:\HybridRAG_V2) consumes the export packages this app produces.
