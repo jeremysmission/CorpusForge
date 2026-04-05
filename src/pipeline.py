@@ -22,6 +22,7 @@ from .enrichment.contextual_enricher import ContextualEnricher, EnricherConfig
 from .export.packager import Packager
 from .download.hasher import Hasher
 from .download.deduplicator import Deduplicator
+from .skip.skip_manager import SkipManager
 from .parse.dispatcher import ParseDispatcher, get_supported_extensions
 from .parse.parsers.txt_parser import ParsedDocument
 
@@ -34,6 +35,7 @@ class RunStats:
 
     files_found: int = 0
     files_after_dedup: int = 0
+    files_skipped: int = 0
     files_parsed: int = 0
     files_failed: int = 0
     skipped_unchanged: int = 0
@@ -42,12 +44,14 @@ class RunStats:
     chunks_enriched: int = 0
     vectors_created: int = 0
     elapsed_seconds: float = 0.0
+    skip_reasons: str = ""
     errors: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
             "files_found": self.files_found,
             "files_after_dedup": self.files_after_dedup,
+            "files_skipped": self.files_skipped,
             "files_parsed": self.files_parsed,
             "files_failed": self.files_failed,
             "skipped_unchanged": self.skipped_unchanged,
@@ -57,6 +61,7 @@ class RunStats:
             "vectors_created": self.vectors_created,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
             "error_count": len(self.errors),
+            "skip_reasons": self.skip_reasons,
         }
 
 
@@ -71,6 +76,7 @@ class Pipeline:
         self.config = config
         self.hasher = Hasher(config.paths.state_db)
         self.deduplicator = Deduplicator(self.hasher)
+        self.skip_manager = SkipManager(config.paths.skip_list, self.hasher)
         self.dispatcher = ParseDispatcher(
             timeout_seconds=config.parse.timeout_seconds,
             max_chars=config.parse.max_chars_per_file,
@@ -122,8 +128,28 @@ class Pipeline:
             stats.elapsed_seconds = time.time() - start_time
             return stats
 
+        # Stage 2b: Skip check (hash but don't parse)
+        parse_files = []
+        for fp in work_files:
+            try:
+                fsize = fp.stat().st_size
+            except OSError:
+                fsize = 0
+            skip, reason = self.skip_manager.should_skip(fp, fsize)
+            if skip:
+                self.skip_manager.record_skip(fp, reason)
+                stats.files_skipped += 1
+            else:
+                parse_files.append(fp)
+
+        if not parse_files:
+            logger.info("All files skipped — nothing to parse.")
+            stats.skip_reasons = self.skip_manager.get_reason_summary()
+            self._finalize_skip(stats, start_time)
+            return stats
+
         # Stage 3: Parse
-        parsed_docs = self._parse_files(work_files, stats)
+        parsed_docs = self._parse_files(parse_files, stats)
 
         # Stage 4: Chunk
         all_chunks = self._chunk_documents(parsed_docs, stats)
@@ -152,8 +178,34 @@ class Pipeline:
         )
         logger.info("Export written to: %s", export_dir)
 
+        # Write skip manifest alongside export
+        if self.skip_manager.skip_count > 0:
+            self.skip_manager.write_skip_manifest(export_dir)
+
+        stats.skip_reasons = self.skip_manager.get_reason_summary()
         stats.elapsed_seconds = time.time() - start_time
+
+        # Pipeline summary
+        hashed = stats.files_after_dedup
+        parsed = stats.files_parsed
+        skipped = stats.files_skipped
+        logger.info(
+            "Pipeline summary: %d files hashed, %d parsed, %d skipped (reasons: %s)",
+            hashed, parsed, skipped, stats.skip_reasons or "none",
+        )
+
         return stats
+
+    def _finalize_skip(self, stats: RunStats, start_time: float) -> None:
+        """Write skip manifest and summary when all files were skipped."""
+        if self.skip_manager.skip_count > 0:
+            self.skip_manager.write_skip_manifest(self.config.paths.output_dir)
+        stats.elapsed_seconds = time.time() - start_time
+        logger.info(
+            "Pipeline summary: %d files hashed, %d parsed, %d skipped (reasons: %s)",
+            stats.files_after_dedup, stats.files_parsed, stats.files_skipped,
+            stats.skip_reasons or "none",
+        )
 
     def _parse_files(
         self, files: list[Path], stats: RunStats

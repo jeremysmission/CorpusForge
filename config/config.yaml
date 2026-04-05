@@ -8,6 +8,7 @@ paths:
   output_dir: "data/output"
   state_db: "data/file_state.sqlite3"
   landing_zone: "data/source"
+  skip_list: "config/skip_list.yaml"
 
 chunk:
   size: 1200

@@ -1,0 +1,43 @@
+# CorpusForge Skip List — formats hashed but not parsed
+# Date: 2026-04-05
+# Rule: All skipped files are still SHA-256 hashed for the manifest.
+
+# Formats deferred for production (hashed but not parsed)
+deferred_formats:
+  - ext: ".dwg"
+    reason: "AutoCAD binary — parser not yet ported"
+  - ext: ".dwt"
+    reason: "AutoCAD template — deferred with .dwg"
+  - ext: ".sldprt"
+    reason: "SolidWorks part — no parser available"
+  - ext: ".sldasm"
+    reason: "SolidWorks assembly — no parser available"
+  - ext: ".asm"
+    reason: "CAD assembly — ambiguous format"
+  - ext: ".prt"
+    reason: "CAD part — ambiguous format"
+  - ext: ".mpp"
+    reason: "MS Project — no parser available"
+  - ext: ".vsd"
+    reason: "Legacy Visio binary — use .vsdx"
+  - ext: ".one"
+    reason: "OneNote — proprietary binary"
+  - ext: ".ost"
+    reason: "Outlook offline store — use .msg/.eml instead"
+  - ext: ".eps"
+    reason: "Encapsulated PostScript — deferred"
+  - ext: ".dwf"
+    reason: "Design Web Format — deferred"
+
+skip_conditions:
+  encrypted: true
+  zero_byte: true
+  over_size_mb: 500
+  temp_file_prefixes:
+    - "~$"
+    - "~"
+  temp_file_extensions:
+    - ".tmp"
+    - ".partial"
+    - ".bak"
+    - ".swp"

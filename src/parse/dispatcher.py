@@ -32,6 +32,21 @@ def _build_parser_map() -> dict:
     from src.parse.parsers.rtf_parser import RtfParser
     from src.parse.parsers.json_parser import JsonParser
     from src.parse.parsers.xml_parser import XmlParser
+    from src.parse.parsers.eml_parser import EmlParser
+    from src.parse.parsers.mbox_parser import MboxParser
+    from src.parse.parsers.xls_parser import XlsParser
+    from src.parse.parsers.doc_parser import DocParser
+    from src.parse.parsers.ppt_parser import PptParser
+    from src.parse.parsers.archive_parser import ArchiveParser
+    from src.parse.parsers.image_parser import ImageParser
+    from src.parse.parsers.epub_parser import EpubParser
+    from src.parse.parsers.opendocument_parser import OpenDocumentParser
+    from src.parse.parsers.visio_parser import VisioParser
+    from src.parse.parsers.certificate_parser import CertificateParser
+    from src.parse.parsers.dxf_parser import DxfParser
+    from src.parse.parsers.stl_parser import StlParser
+    from src.parse.parsers.evtx_parser import EvtxParser
+    from src.parse.parsers.pcap_parser import PcapParser
 
     txt = TxtParser()
     pdf = PdfParser()
@@ -44,6 +59,21 @@ def _build_parser_map() -> dict:
     rtf = RtfParser()
     json_ = JsonParser()
     xml_ = XmlParser()
+    eml = EmlParser()
+    mbox = MboxParser()
+    xls = XlsParser()
+    doc = DocParser()
+    ppt = PptParser()
+    archive = ArchiveParser()
+    image = ImageParser()
+    epub = EpubParser()
+    odt = OpenDocumentParser()
+    visio = VisioParser()
+    cert = CertificateParser()
+    dxf = DxfParser()
+    stl = StlParser()
+    evtx = EvtxParser()
+    pcap = PcapParser()
 
     return {
         # Plain text
@@ -57,13 +87,42 @@ def _build_parser_map() -> dict:
         # Documents
         ".pdf": pdf, ".ai": pdf,
         ".docx": docx,
+        ".doc": doc,
         ".xlsx": xlsx,
+        ".xls": xls,
         ".pptx": pptx,
+        ".ppt": ppt,
         ".rtf": rtf,
         # Email
         ".msg": msg,
+        ".eml": eml,
+        ".mbox": mbox,
         # Web
         ".html": html, ".htm": html,
+        # Archives
+        ".zip": archive,
+        ".tar": archive,
+        ".gz": archive,
+        ".7z": archive,
+        # Images (OCR)
+        ".jpg": image, ".jpeg": image,
+        ".png": image, ".gif": image,
+        ".bmp": image,
+        ".tiff": image, ".tif": image,
+        # eBooks
+        ".epub": epub,
+        # OpenDocument
+        ".odt": odt, ".ods": odt, ".odp": odt,
+        # Diagrams
+        ".vsdx": visio,
+        # Certificates
+        ".cer": cert, ".pem": cert, ".crt": cert,
+        # CAD / 3D
+        ".dxf": dxf,
+        ".stl": stl,
+        # Forensics / Security
+        ".evtx": evtx,
+        ".pcap": pcap, ".pcapng": pcap,
     }
 
 

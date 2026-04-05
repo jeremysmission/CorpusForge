@@ -38,6 +38,10 @@ class PathsConfig(BaseModel):
         default="data/source",
         description="Local directory where downloaded files are staged.",
     )
+    skip_list: str = Field(
+        default="config/skip_list.yaml",
+        description="YAML file defining formats and conditions to skip (hash only).",
+    )
 
 
 class ChunkConfig(BaseModel):
