@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config.schema import load_config
+from src.parse.dispatcher import get_supported_extensions
 from src.pipeline import Pipeline
 
 
@@ -44,10 +45,8 @@ def main() -> None:
         files = [input_path]
     elif input_path.is_dir():
         files = sorted(input_path.rglob("*"))
-        files = [f for f in files if f.is_file() and f.suffix.lower() in {
-            ".txt", ".md", ".log", ".csv", ".json", ".xml",
-            ".yaml", ".yml", ".ini", ".cfg", ".conf",
-        }]
+        supported = get_supported_extensions()
+        files = [f for f in files if f.is_file() and f.suffix.lower() in supported]
     else:
         print(f"Error: {input_path} not found.", file=sys.stderr)
         sys.exit(1)

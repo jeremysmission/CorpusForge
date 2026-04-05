@@ -1,9 +1,8 @@
 """
 Pipeline orchestrator — runs all stages in sequence.
 
-Minimal Slice 0.2 version: parse → chunk → embed → export.
-Stages 1 (download), 2 (hash/dedup), 5 (enrich), 7 (extract) are stubs
-that will be wired in during Sprint 1-2.
+Sprint 1: parse (32+ formats) → hash/dedup → chunk → embed → export.
+Stages 1 (download), 5 (enrich), 7 (extract) are stubs for Sprint 2.
 """
 
 from __future__ import annotations
@@ -20,7 +19,10 @@ from .chunk.chunker import Chunker
 from .chunk.chunk_ids import make_chunk_id
 from .embed.embedder import Embedder
 from .export.packager import Packager
-from .parse.parsers.txt_parser import TxtParser, ParsedDocument
+from .download.hasher import Hasher
+from .download.deduplicator import Deduplicator
+from .parse.dispatcher import ParseDispatcher, get_supported_extensions
+from .parse.parsers.txt_parser import ParsedDocument
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +32,11 @@ class RunStats:
     """Tracks pipeline run statistics."""
 
     files_found: int = 0
+    files_after_dedup: int = 0
     files_parsed: int = 0
     files_failed: int = 0
+    skipped_unchanged: int = 0
+    skipped_duplicate: int = 0
     chunks_created: int = 0
     vectors_created: int = 0
     elapsed_seconds: float = 0.0
@@ -40,8 +45,11 @@ class RunStats:
     def to_dict(self) -> dict:
         return {
             "files_found": self.files_found,
+            "files_after_dedup": self.files_after_dedup,
             "files_parsed": self.files_parsed,
             "files_failed": self.files_failed,
+            "skipped_unchanged": self.skipped_unchanged,
+            "skipped_duplicate": self.skipped_duplicate,
             "chunks_created": self.chunks_created,
             "vectors_created": self.vectors_created,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
@@ -58,7 +66,12 @@ class Pipeline:
 
     def __init__(self, config: ForgeConfig):
         self.config = config
-        self.parser = TxtParser()
+        self.hasher = Hasher(config.paths.state_db)
+        self.deduplicator = Deduplicator(self.hasher)
+        self.dispatcher = ParseDispatcher(
+            timeout_seconds=config.parse.timeout_seconds,
+            max_chars=config.parse.max_chars_per_file,
+        )
         self.chunker = Chunker(
             chunk_size=config.chunk.size,
             overlap=config.chunk.overlap,
@@ -84,8 +97,22 @@ class Pipeline:
 
         stats.files_found = len(input_files)
 
+        # Stage 2: Hash & dedup
+        if self.config.pipeline.full_reindex:
+            work_files = input_files
+        else:
+            work_files = self.deduplicator.filter_new_and_changed(input_files)
+            stats.skipped_unchanged = self.deduplicator.skipped_unchanged
+            stats.skipped_duplicate = self.deduplicator.skipped_duplicate
+        stats.files_after_dedup = len(work_files)
+
+        if not work_files:
+            logger.info("No new or changed files to process.")
+            stats.elapsed_seconds = time.time() - start_time
+            return stats
+
         # Stage 3: Parse
-        parsed_docs = self._parse_files(input_files, stats)
+        parsed_docs = self._parse_files(work_files, stats)
 
         # Stage 4: Chunk
         all_chunks = self._chunk_documents(parsed_docs, stats)
@@ -117,7 +144,7 @@ class Pipeline:
         parsed = []
         for file_path in files:
             try:
-                doc = self.parser.parse(file_path)
+                doc = self.dispatcher.parse(file_path)
                 if doc.text.strip():
                     parsed.append(doc)
                     stats.files_parsed += 1
