@@ -78,6 +78,67 @@ function Test-NvidiaGpuPresent {
     }
 }
 
+function Get-PythonRuntimeInfo {
+    param([string]$PythonExe)
+    $probe = @'
+import json
+import platform
+import struct
+import sys
+
+print(json.dumps({
+    "python_version": ".".join(map(str, sys.version_info[:3])),
+    "python_tag": f"cp{sys.version_info[0]}{sys.version_info[1]}",
+    "is_64bit": struct.calcsize("P") * 8 == 64,
+    "platform": platform.platform(),
+}))
+'@
+    try {
+        $raw = & $PythonExe -c $probe 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($raw)) { return $null }
+        return ($raw | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+function Write-TorchInstallGuidance {
+    param(
+        [string]$RepoName,
+        [object]$RuntimeInfo,
+        [switch]$CudaExpected
+    )
+
+    Write-Host ""
+    Write-Host "  Torch install guidance for $RepoName:" -ForegroundColor Yellow
+    if ($RuntimeInfo) {
+        Write-Host "    Python version: $($RuntimeInfo.python_version)" -ForegroundColor Gray
+        Write-Host "    Python tag:     $($RuntimeInfo.python_tag)" -ForegroundColor Gray
+        Write-Host "    64-bit:         $($RuntimeInfo.is_64bit)" -ForegroundColor Gray
+    }
+    Write-Host "    Official PyTorch 2.7.1 cu128 wheels exist for Windows cp310-cp313." -ForegroundColor Gray
+    Write-Host "    Official index: https://download.pytorch.org/whl/cu128/torch/" -ForegroundColor Gray
+    Write-Host "    Official versions page: https://pytorch.org/get-started/previous-versions/" -ForegroundColor Gray
+    if ($RuntimeInfo -and (-not $RuntimeInfo.is_64bit)) {
+        Write-Warn "This interpreter is not 64-bit. PyTorch Windows wheels require 64-bit Python."
+    }
+    if ($RuntimeInfo -and $RuntimeInfo.python_tag -notin @("cp310", "cp311", "cp312", "cp313")) {
+        Write-Warn "This interpreter tag is not in the official 2.7.1 cu128 Windows wheel set."
+        Write-Host "    Fix: use Python 3.12 64-bit in the repo .venv." -ForegroundColor Gray
+    } else {
+        Write-Warn "If pip says 'from versions: none' here, the usual cause is proxy/cert access to download.pytorch.org, not a missing torch release."
+    }
+    if ($CudaExpected) {
+        Write-Host "    Manual retry:" -ForegroundColor Gray
+        Write-Host "      .venv\Scripts\pip.exe install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128 --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host download.pytorch.org" -ForegroundColor Gray
+        Write-Host "    Direct wheel fallback example for Python 3.12 64-bit:" -ForegroundColor Gray
+        Write-Host "      torch-2.7.1+cu128-cp312-cp312-win_amd64.whl" -ForegroundColor Gray
+    } else {
+        Write-Host "    CPU fallback:" -ForegroundColor Gray
+        Write-Host "      .venv\Scripts\pip.exe install torch==2.7.1 --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org" -ForegroundColor Gray
+    }
+}
+
 function Resolve-NativeCommandPath {
     param(
         [string]$CommandName,
@@ -172,6 +233,7 @@ $PipIni = Join-Path $VenvDir "pip.ini"
 Initialize-PipConfig -PipIniPath $PipIni
 Write-Ok "Created proxy-safe pip config: $PipIni"
 $RequireCuda = Test-NvidiaGpuPresent
+$RuntimeInfo = Get-PythonRuntimeInfo -PythonExe $VenvPython
 
 # ============================================================
 # 5. Upgrade pip + pip-system-certs
@@ -195,6 +257,7 @@ if ($RequireCuda) {
         Write-Ok "torch CUDA installed (2.7.1 cu128)"
     } else {
         Write-Fail "torch CUDA install failed after 3 attempts"
+        Write-TorchInstallGuidance -RepoName "CorpusForge" -RuntimeInfo $RuntimeInfo -CudaExpected
         exit 1
     }
 } else {
@@ -206,6 +269,7 @@ if ($RequireCuda) {
         Write-Ok "torch CPU fallback installed"
     } else {
         Write-Fail "torch CPU fallback install failed after 3 attempts"
+        Write-TorchInstallGuidance -RepoName "CorpusForge" -RuntimeInfo $RuntimeInfo
         exit 1
     }
 }

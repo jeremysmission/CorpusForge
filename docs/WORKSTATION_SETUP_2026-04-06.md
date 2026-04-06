@@ -73,3 +73,12 @@ The HybridRAG3 workstation postmortem showed that work-machine setup fails when:
 - machine-specific paths leak through tracked config
 
 CorpusForge now avoids that specific class of failure on fresh installs.
+
+## Torch Failure Note
+
+If the installer fails at `torch==2.7.1` with proxy errors or says `from versions: none`, the usual cause on a Python 3.12 64-bit work venv is blocked access to `download.pytorch.org`, not a missing PyTorch release.
+
+Official sources:
+
+- https://pytorch.org/get-started/previous-versions/
+- https://download.pytorch.org/whl/cu128/torch/
