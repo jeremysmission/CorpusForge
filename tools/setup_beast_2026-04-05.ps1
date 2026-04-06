@@ -19,12 +19,23 @@
 [Console]::InputEncoding  = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $env:PYTHONUTF8 = "1"
+$env:NO_PROXY = "localhost,127.0.0.1"
+$env:no_proxy = "localhost,127.0.0.1"
 
 $global:PassCount = 0
 $global:FailCount = 0
 $global:WarnCount = 0
 $global:StepNum   = 0
 $Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+$TrustedHosts = @(
+    "--trusted-host", "pypi.org",
+    "--trusted-host", "pypi.python.org",
+    "--trusted-host", "files.pythonhosted.org",
+    "--trusted-host", "download.pytorch.org",
+    "--timeout", "120",
+    "--retries", "3"
+)
 
 function Write-Step  { param([string]$msg) $global:StepNum++; Write-Host "`n[$global:StepNum] $msg" -ForegroundColor Cyan }
 function Write-Ok    { param([string]$msg) $global:PassCount++; Write-Host "  [PASS] $msg" -ForegroundColor Green }
@@ -32,6 +43,65 @@ function Write-Fail  { param([string]$msg) $global:FailCount++; Write-Host "  [F
 function Write-Warn  { param([string]$msg) $global:WarnCount++; Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Write-Info  { param([string]$msg) Write-Host "  [INFO] $msg" -ForegroundColor Gray }
 function Format-Elapsed { $ts = $Stopwatch.Elapsed; return ("{0:D2}m {1:D2}s" -f [int]$ts.TotalMinutes, $ts.Seconds) }
+
+function Write-Utf8NoBomFile {
+    param([string]$Path, [string]$Text)
+    $parent = Split-Path -Parent $Path
+    if ($parent -and -not (Test-Path $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+    [System.IO.File]::WriteAllText($Path, $Text, $Utf8NoBom)
+}
+
+function Initialize-PipConfig {
+    param([string]$PipIniPath)
+    $content = @"
+[global]
+trusted-host =
+    pypi.org
+    pypi.python.org
+    files.pythonhosted.org
+    download.pytorch.org
+timeout = 120
+retries = 3
+disable-pip-version-check = true
+"@
+    Write-Utf8NoBomFile -Path $PipIniPath -Text $content
+}
+
+function Test-NvidiaGpuPresent {
+    try {
+        & nvidia-smi --query-gpu=name --format=csv,noheader 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
+function Resolve-NativeCommandPath {
+    param(
+        [string]$CommandName,
+        [string[]]$CandidatePaths = @()
+    )
+    try {
+        $cmd = Get-Command $CommandName -ErrorAction Stop | Select-Object -First 1
+        if ($cmd -and $cmd.Source -and (Test-Path $cmd.Source)) {
+            return (Resolve-Path $cmd.Source).Path
+        }
+        if ($cmd -and $cmd.Path -and (Test-Path $cmd.Path)) {
+            return (Resolve-Path $cmd.Path).Path
+        }
+    } catch {
+    }
+
+    foreach ($candidate in $CandidatePaths) {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        if (Test-Path $candidate) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+    return $null
+}
 
 function Invoke-WithRetry {
     param(
@@ -98,25 +168,47 @@ if (Test-Path $VenvPython) {
 # Activate (for this process only)
 $env:VIRTUAL_ENV = $VenvDir
 $env:PATH = (Join-Path $VenvDir "Scripts") + ";" + $env:PATH
+$PipIni = Join-Path $VenvDir "pip.ini"
+Initialize-PipConfig -PipIniPath $PipIni
+Write-Ok "Created proxy-safe pip config: $PipIni"
+$RequireCuda = Test-NvidiaGpuPresent
 
 # ============================================================
 # 5. Upgrade pip + pip-system-certs
 # ============================================================
 Write-Step "Upgrading pip and installing pip-system-certs"
-& $VenvPython -m pip install --upgrade pip --quiet 2>&1 | Out-Null
+& $VenvPython -m pip install --upgrade pip @TrustedHosts --quiet 2>&1 | Out-Null
 if ($LASTEXITCODE -eq 0) { Write-Ok "pip upgraded" } else { Write-Warn "pip upgrade returned non-zero" }
 
-& $VenvPip install pip-system-certs --quiet 2>&1 | Out-Null
+& $VenvPip install pip-system-certs @TrustedHosts --quiet 2>&1 | Out-Null
 if ($LASTEXITCODE -eq 0) { Write-Ok "pip-system-certs installed" } else { Write-Warn "pip-system-certs failed (non-blocking)" }
 
 # ============================================================
 # 6. Install torch CUDA (BEFORE requirements.txt)
 # ============================================================
-Write-Step "Installing torch with CUDA 12.8"
-$ok = Invoke-WithRetry -Label "pip install torch (cu128)" -Action {
-    & $VenvPip install torch --index-url https://download.pytorch.org/whl/cu128 --quiet 2>&1 | Out-Null
+Write-Step "Installing torch"
+if ($RequireCuda) {
+    $ok = Invoke-WithRetry -Label "pip install torch==2.7.1 (cu128)" -Action {
+        & $VenvPip install "torch==2.7.1" --index-url https://download.pytorch.org/whl/cu128 --force-reinstall --no-deps @TrustedHosts --quiet 2>&1 | Out-Null
+    }
+    if ($ok) {
+        Write-Ok "torch CUDA installed (2.7.1 cu128)"
+    } else {
+        Write-Fail "torch CUDA install failed after 3 attempts"
+        exit 1
+    }
+} else {
+    Write-Warn "No NVIDIA GPU detected -- installing CPU torch fallback"
+    $ok = Invoke-WithRetry -Label "pip install torch==2.7.1 (CPU)" -Action {
+        & $VenvPip install "torch==2.7.1" @TrustedHosts --quiet 2>&1 | Out-Null
+    }
+    if ($ok) {
+        Write-Ok "torch CPU fallback installed"
+    } else {
+        Write-Fail "torch CPU fallback install failed after 3 attempts"
+        exit 1
+    }
 }
-if ($ok) { Write-Ok "torch CUDA installed" } else { Write-Fail "torch CUDA install failed after 3 attempts"; exit 1 }
 
 # ============================================================
 # 7. Install requirements.txt (with retry + drill-down)
@@ -129,7 +221,7 @@ if (-not (Test-Path $reqFile)) {
 }
 
 $ok = Invoke-WithRetry -Label "pip install -r requirements.txt" -Action {
-    & $VenvPip install -r $reqFile --quiet 2>&1 | Out-Null
+    & $VenvPip install -r $reqFile @TrustedHosts --quiet 2>&1 | Out-Null
 }
 
 if ($ok) {
@@ -144,7 +236,7 @@ if ($ok) {
         # Skip torch (already installed from CUDA index)
         if ($pkg -match '^torch(\s|$|=|>|<)') { continue }
         Write-Info "  Installing: $pkg"
-        & $VenvPip install $pkg --quiet 2>&1 | Out-Null
+        & $VenvPip install $pkg @TrustedHosts --quiet 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
             Write-Fail "  Failed: $pkg"
             $drillFails += $pkg
@@ -175,6 +267,9 @@ if not cuda:
 $cudaCheck = & $VenvPython $verifyPy 2>&1
 if ($LASTEXITCODE -eq 0) {
     Write-Ok $cudaCheck
+} elseif (-not $RequireCuda) {
+    Write-Warn "torch CUDA not available: $cudaCheck"
+    Write-Info "CPU-only fallback is acceptable on machines without NVIDIA GPUs"
 } else {
     Write-Fail "torch CUDA not available: $cudaCheck"
     exit 1
@@ -236,7 +331,31 @@ try {
 }
 
 # ============================================================
-# 11. Check phi4 model
+# 11. Check OCR toolchain
+# ============================================================
+Write-Step "Checking OCR toolchain"
+$tesseractPath = Resolve-NativeCommandPath -CommandName "tesseract.exe" -CandidatePaths @(
+    "C:\Program Files\Tesseract-OCR\tesseract.exe",
+    "C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"
+)
+$popplerPath = Resolve-NativeCommandPath -CommandName "pdftoppm.exe" -CandidatePaths @(
+    "C:\tools\poppler\Library\bin\pdftoppm.exe",
+    "C:\Program Files\poppler\Library\bin\pdftoppm.exe",
+    "C:\Program Files\poppler\bin\pdftoppm.exe"
+)
+if ($tesseractPath) {
+    Write-Ok "Tesseract found: $tesseractPath"
+} else {
+    Write-Warn "Tesseract not found -- scanned PDF OCR will be degraded"
+}
+if ($popplerPath) {
+    Write-Ok "Poppler pdftoppm found: $popplerPath"
+} else {
+    Write-Warn "Poppler not found -- pdf2image OCR fallback will fail"
+}
+
+# ============================================================
+# 12. Check phi4 model
 # ============================================================
 Write-Step "Checking phi4 model"
 try {
@@ -251,13 +370,14 @@ try {
 }
 
 # ============================================================
-# 12. Environment summary
+# 13. Environment summary
 # ============================================================
 Write-Step "Setting environment variables"
 $env:CUDA_VISIBLE_DEVICES = "0"
 $env:PYTHONUTF8 = "1"
-Write-Ok "CUDA_VISIBLE_DEVICES=0, PYTHONUTF8=1"
+Write-Ok "CUDA_VISIBLE_DEVICES=0, PYTHONUTF8=1, NO_PROXY=localhost,127.0.0.1"
 Write-Info "Project root: $ProjectRoot"
+Write-Info "pip.ini: $PipIni"
 Write-Info "Python: $VenvPython"
 
 # ============================================================

@@ -122,7 +122,7 @@ echo   .venv\Scripts\activate
 echo   pip install torch --index-url https://download.pytorch.org/whl/cu128
 echo   pip install -r requirements.txt
 echo.
-echo Then run start_gui.bat again.
+echo Then run start_corpusforge.bat again.
 call :maybe_pause
 exit /b 2
 
@@ -142,7 +142,7 @@ echo   .venv\Scripts\activate
 echo   pip install torch --index-url https://download.pytorch.org/whl/cu128
 echo   pip install -r requirements.txt
 echo.
-echo Then run start_gui.bat again.
+echo Then run start_corpusforge.bat again.
 call :maybe_pause
 exit /b 4
 
