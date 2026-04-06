@@ -10,7 +10,7 @@ Before this update, the repo had the right intent documented in `Repo_Rules_2026
 
 ## Installer Features
 
-`INSTALL_WORKSTATION.bat` and `tools\setup_beast_2026-04-05.ps1` now provide:
+`INSTALL_WORKSTATION.bat` and `tools\setup_workstation_2026-04-06.ps1` now provide:
 
 - PowerShell process bypass
 - UTF-8-safe setup handling
@@ -20,6 +20,24 @@ Before this update, the repo had the right intent documented in `Repo_Rules_2026
 - auto-generated `.venv\pip.ini` without BOM
 - pinned `torch==2.7.1` on the CUDA 12.8 wheel index for NVIDIA workstations
 - OCR tool warnings for Tesseract and Poppler
+
+## Sanitization Policy
+
+This rule applies to everything that is going to a workstation or any remote repository used by workstation operators.
+
+The sanitization script is not the primary sanitizer.
+It is the final catchall before push.
+
+Required intent:
+
+- write workstation-facing docs and scripts in already-sanitized form
+- avoid banned provenance or internal-process wording in the first draft
+- treat the script as the last-minute backstop, not the only line of enterprise
+
+Operational rule:
+
+- sanitize by authoring choices first
+- run the script immediately before push second
 
 ## Recommended Path
 
@@ -86,6 +104,11 @@ Official sources:
 Dedicated repair helper:
 
 - `INSTALL_CUDA_TORCH_WORKSTATION.bat`
+
+If this workstation already has a working HybridRAG torch install, the fastest offline recovery path is:
+
+- `COPY_TORCH_FROM_EXISTING_HYBRIDRAG.bat`
+- [TORCH_REUSE_FROM_EXISTING_HYBRIDRAG_2026-04-06.md](/C:/CorpusForge/docs/TORCH_REUSE_FROM_EXISTING_HYBRIDRAG_2026-04-06.md)
 
 That script matches the proven HybridRAG3 Blackwell lane:
 

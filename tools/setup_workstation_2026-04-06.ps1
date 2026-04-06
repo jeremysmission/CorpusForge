@@ -1,14 +1,14 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    CorpusForge -- Non-interactive Beast workstation setup.
+    CorpusForge -- Non-interactive workstation setup.
 .DESCRIPTION
     Installs venv, CUDA torch, requirements, and verifies the environment.
-    Designed for Beast (dual 3090, Python 3.12, CUDA 12.8).
+    Designed for workstation installs (Python 3.12, CUDA 12.8 lane when NVIDIA is present).
     NO interactive prompts. Auto-retry on failure. Colored diagnostics.
 .NOTES
-    Author: Jeremy Randall (CoPilot+)
-    Date:   2026-04-05
+    Author: Jeremy Randall
+    Date:   2026-04-06
 #>
 
 # ============================================================
@@ -43,6 +43,13 @@ function Write-Fail  { param([string]$msg) $global:FailCount++; Write-Host "  [F
 function Write-Warn  { param([string]$msg) $global:WarnCount++; Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Write-Info  { param([string]$msg) Write-Host "  [INFO] $msg" -ForegroundColor Gray }
 function Format-Elapsed { $ts = $Stopwatch.Elapsed; return ("{0:D2}m {1:D2}s" -f [int]$ts.TotalMinutes, $ts.Seconds) }
+function Remove-TempFileQuietly {
+    param([string]$Path)
+    try {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+    } catch {
+    }
+}
 
 function Write-Utf8NoBomFile {
     param([string]$Path, [string]$Text)
@@ -110,7 +117,7 @@ function Write-TorchInstallGuidance {
     )
 
     Write-Host ""
-    Write-Host "  Torch install guidance for $RepoName:" -ForegroundColor Yellow
+    Write-Host "  Torch install guidance for ${RepoName}:" -ForegroundColor Yellow
     if ($RuntimeInfo) {
         Write-Host "    Python version: $($RuntimeInfo.python_version)" -ForegroundColor Gray
         Write-Host "    Python tag:     $($RuntimeInfo.python_tag)" -ForegroundColor Gray
@@ -131,6 +138,10 @@ function Write-TorchInstallGuidance {
     if ($CudaExpected) {
         Write-Host "    Dedicated helper:" -ForegroundColor Gray
         Write-Host "      INSTALL_CUDA_TORCH_WORKSTATION.bat" -ForegroundColor Gray
+        if ($RepoName -eq "CorpusForge") {
+            Write-Host "    Offline reuse from existing HybridRAG torch:" -ForegroundColor Gray
+            Write-Host "      COPY_TORCH_FROM_EXISTING_HYBRIDRAG.bat" -ForegroundColor Gray
+        }
         Write-Host "    Manual retry:" -ForegroundColor Gray
         Write-Host "      .venv\Scripts\pip.exe install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128 --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host download.pytorch.org" -ForegroundColor Gray
         Write-Host "    Direct wheel fallback example for Python 3.12 64-bit:" -ForegroundColor Gray
@@ -340,7 +351,7 @@ if ($LASTEXITCODE -eq 0) {
     Write-Fail "torch CUDA not available: $cudaCheck"
     exit 1
 }
-Remove-Item $verifyPy -Force -ErrorAction SilentlyContinue
+Remove-TempFileQuietly -Path $verifyPy
 
 # ============================================================
 # 9. Verify key imports
@@ -383,7 +394,7 @@ if ($LASTEXITCODE -eq 0) {
         elseif ($trimmed -match "FAIL:") { Write-Fail $trimmed }
     }
 }
-Remove-Item $importPy -Force -ErrorAction SilentlyContinue
+Remove-TempFileQuietly -Path $importPy
 
 # ============================================================
 # 10. Check Ollama
@@ -466,7 +477,7 @@ if ($LASTEXITCODE -eq 0) {
 } else {
     Write-Fail "Embedding smoke test failed: $smokeResult"
 }
-Remove-Item $smokePy -Force -ErrorAction SilentlyContinue
+Remove-TempFileQuietly -Path $smokePy
 
 # ============================================================
 # 14. Final summary
@@ -474,7 +485,7 @@ Remove-Item $smokePy -Force -ErrorAction SilentlyContinue
 $Stopwatch.Stop()
 Write-Host ""
 Write-Host ("=" * 60) -ForegroundColor Cyan
-Write-Host "  CorpusForge Beast Setup Complete -- $(Format-Elapsed)" -ForegroundColor Cyan
+Write-Host "  CorpusForge Workstation Setup Complete -- $(Format-Elapsed)" -ForegroundColor Cyan
 Write-Host ("=" * 60) -ForegroundColor Cyan
 Write-Host "  PASS: $global:PassCount" -ForegroundColor Green
 if ($global:WarnCount -gt 0) { Write-Host "  WARN: $global:WarnCount" -ForegroundColor Yellow }

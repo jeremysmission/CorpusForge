@@ -91,6 +91,9 @@ if !errorlevel! neq 0 (
     echo  Manual fallback example for Python 3.12 x64:
     echo    torch-2.7.1+cu128-cp312-cp312-win_amd64.whl
     echo.
+    echo  If this machine already has a working HybridRAG torch install:
+    echo    COPY_TORCH_FROM_EXISTING_HYBRIDRAG.bat
+    echo.
     goto :fail
 )
 echo  [OK] CUDA torch installed.

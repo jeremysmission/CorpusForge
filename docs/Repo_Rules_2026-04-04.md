@@ -80,7 +80,9 @@ All documents: `Intuitive_Title_YYYY-MM-DD.ext`
 
 ## 4. Sanitization Before Remote Push
 
-Run `python sanitize_before_push.py` before every push. See HybridRAG V2 Repo_Rules for full sanitization details.
+Run `python sanitize_before_push.py` before every push. This includes anything that will be used on workstations or by workstation operators.
+The script is the final catchall, not the sole sanitizer. Workstation-bound content should already be authored in sanitized form before the script runs.
+See HybridRAG V2 Repo_Rules for the full sanitization standard.
 
 ## 5. Waiver Compliance
 
