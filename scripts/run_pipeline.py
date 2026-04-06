@@ -12,7 +12,8 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config.schema import load_config
 from src.parse.dispatcher import get_supported_extensions
@@ -21,10 +22,14 @@ from src.pipeline import Pipeline
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="CorpusForge pipeline")
-    parser.add_argument(
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
         "--input",
-        required=True,
         help="Input file or directory to process.",
+    )
+    input_group.add_argument(
+        "--input-list",
+        help="Text file with one file path per line. Use canonical_files.txt from document dedup.",
     )
     parser.add_argument(
         "--config",
@@ -33,23 +38,40 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    config = load_config(args.config)
+    config_path = Path(args.config)
+    if not config_path.is_absolute():
+        config_path = PROJECT_ROOT / config_path
+    config = load_config(config_path)
 
     logging.basicConfig(
         level=getattr(logging, config.pipeline.log_level, logging.INFO),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
 
-    input_path = Path(args.input)
-    if input_path.is_file():
-        files = [input_path]
-    elif input_path.is_dir():
-        files = sorted(input_path.rglob("*"))
-        supported = get_supported_extensions()
-        files = [f for f in files if f.is_file() and f.suffix.lower() in supported]
+    supported = get_supported_extensions()
+    if args.input_list:
+        input_list_path = Path(args.input_list)
+        if not input_list_path.is_file():
+            print(f"Error: {input_list_path} not found.", file=sys.stderr)
+            sys.exit(1)
+        files = []
+        for raw_line in input_list_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            path = Path(line)
+            if path.is_file() and path.suffix.lower() in supported:
+                files.append(path)
     else:
-        print(f"Error: {input_path} not found.", file=sys.stderr)
-        sys.exit(1)
+        input_path = Path(args.input)
+        if input_path.is_file():
+            files = [input_path]
+        elif input_path.is_dir():
+            files = sorted(input_path.rglob("*"))
+            files = [f for f in files if f.is_file() and f.suffix.lower() in supported]
+        else:
+            print(f"Error: {input_path} not found.", file=sys.stderr)
+            sys.exit(1)
 
     if not files:
         print("No files to process.", file=sys.stderr)

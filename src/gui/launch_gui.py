@@ -1,4 +1,4 @@
-"""CorpusForge GUI entry point -- config, window, bg pipeline, safe updates."""
+"""CorpusForge GUI entry point -- normal pipeline or recovery dedup GUI."""
 from __future__ import annotations
 
 import logging, sys, threading, tkinter as tk
@@ -129,6 +129,12 @@ def _count_skip_list(config):
 
 
 def main():
+    if "--dedup" in sys.argv[1:]:
+        from src.gui.launch_dedup_gui import main as dedup_main
+        sys.argv = [sys.argv[0], *[arg for arg in sys.argv[1:] if arg != "--dedup"]]
+        dedup_main()
+        return
+
     config_path = _DEFAULT_CONFIG
     config = load_config(config_path)
     logging.basicConfig(
