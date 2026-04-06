@@ -26,7 +26,7 @@ Before this update, the repo had the right intent documented in `Repo_Rules_2026
 Laptop:
 
 ```text
-C:\Users\randaje\Desktop1\CorpusForge
+{USER_HOME}\Desktop1\CorpusForge
 ```
 
 Desktop:
