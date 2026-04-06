@@ -104,6 +104,7 @@ Official sources:
 Dedicated repair helper:
 
 - `INSTALL_CUDA_TORCH_WORKSTATION.bat`
+- `INSTALL_CUDA_TORCH_CU124_THEN_FORCE_CU128.bat`
 
 If this workstation already has a working HybridRAG torch install, the fastest offline recovery path is:
 
