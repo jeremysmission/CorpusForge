@@ -82,3 +82,14 @@ Official sources:
 
 - https://pytorch.org/get-started/previous-versions/
 - https://download.pytorch.org/whl/cu128/torch/
+
+Dedicated repair helper:
+
+- `INSTALL_CUDA_TORCH_WORKSTATION.bat`
+
+That script matches the proven HybridRAG3 Blackwell lane:
+
+- uninstall any existing CPU-only torch
+- install `torch==2.7.1` from the `cu128` index
+- use `--force-reinstall --no-deps`
+- verify `torch.cuda.is_available()`

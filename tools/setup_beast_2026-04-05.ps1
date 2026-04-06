@@ -129,6 +129,8 @@ function Write-TorchInstallGuidance {
         Write-Warn "If pip says 'from versions: none' here, the usual cause is proxy/cert access to download.pytorch.org, not a missing torch release."
     }
     if ($CudaExpected) {
+        Write-Host "    Dedicated helper:" -ForegroundColor Gray
+        Write-Host "      INSTALL_CUDA_TORCH_WORKSTATION.bat" -ForegroundColor Gray
         Write-Host "    Manual retry:" -ForegroundColor Gray
         Write-Host "      .venv\Scripts\pip.exe install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu128 --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host download.pytorch.org" -ForegroundColor Gray
         Write-Host "    Direct wheel fallback example for Python 3.12 64-bit:" -ForegroundColor Gray
