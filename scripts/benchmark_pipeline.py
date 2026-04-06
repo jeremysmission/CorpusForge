@@ -545,6 +545,16 @@ def main() -> None:
         action="store_true",
         help="Force full reindex (skip dedup shortcut).",
     )
+    parser.add_argument(
+        "--disable-enrich",
+        action="store_true",
+        help="Disable contextual enrichment for throughput runs.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Override export output directory for this run.",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -555,6 +565,10 @@ def main() -> None:
         config.pipeline.workers = args.workers
     if args.full_reindex:
         config.pipeline.full_reindex = True
+    if args.disable_enrich:
+        config.enrich.enabled = False
+    if args.output_dir:
+        config.paths.output_dir = args.output_dir
 
     logging.basicConfig(
         level=logging.WARNING,
