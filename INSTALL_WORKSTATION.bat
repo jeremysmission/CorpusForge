@@ -21,4 +21,11 @@ if not exist "%SCRIPT%" (
 
 call "%SCRIPT%"
 set "EXIT_CODE=%ERRORLEVEL%"
+echo.
+if not "%EXIT_CODE%"=="0" (
+  echo [FAIL] CorpusForge workstation install exited with code %EXIT_CODE%.
+) else (
+  echo [OK] CorpusForge workstation install finished.
+)
+pause
 endlocal & exit /b %EXIT_CODE%
