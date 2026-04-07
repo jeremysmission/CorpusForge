@@ -14,6 +14,8 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 
 # ---------------------------------------------------------------------------
 # Sub-models
@@ -67,6 +69,10 @@ class ParseConfig(BaseModel):
         description="OCR mode: 'skip' | 'auto' | 'force'. 'auto' detects scanned PDFs.",
     )
     max_chars_per_file: int = Field(default=5_000_000, ge=1000, description="Clamp file text to this length.")
+    defer_extensions: list[str] = Field(
+        default_factory=list,
+        description="Extensions to hash and skip for this run even if a parser exists.",
+    )
 
     @field_validator("ocr_mode")
     @classmethod
@@ -75,6 +81,19 @@ class ParseConfig(BaseModel):
         if v not in allowed:
             raise ValueError(f"ocr_mode must be one of {allowed}, got '{v}'")
         return v
+
+    @field_validator("defer_extensions")
+    @classmethod
+    def normalize_defer_extensions(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            ext = (value or "").strip().lower()
+            if not ext:
+                continue
+            if not ext.startswith("."):
+                ext = f".{ext}"
+            normalized.append(ext)
+        return list(dict.fromkeys(normalized))
 
 
 class EmbedConfig(BaseModel):
@@ -196,11 +215,34 @@ def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
     Falls back to Pydantic defaults for any missing fields.
     """
     path = Path(config_path)
+    if not path.is_absolute():
+        path = (PROJECT_ROOT / path).resolve()
+
     if path.exists():
         with open(path, encoding="utf-8-sig") as f:
             raw = yaml.safe_load(f) or {}
     else:
         print(f"[WARN] Config file not found at {path}, using defaults.", file=sys.stderr)
         raw = {}
+
+    paths = raw.setdefault("paths", {})
+    path_keys = ("source_dirs", "output_dir", "state_db", "landing_zone", "skip_list")
+    for key in path_keys:
+        if key not in paths:
+            continue
+        value = paths[key]
+        if key == "source_dirs":
+            resolved_dirs: list[str] = []
+            for entry in value or []:
+                entry_path = Path(entry)
+                if not entry_path.is_absolute():
+                    entry_path = (PROJECT_ROOT / entry_path).resolve()
+                resolved_dirs.append(str(entry_path))
+            paths[key] = resolved_dirs
+            continue
+
+        entry_path = Path(value)
+        if not entry_path.is_absolute():
+            paths[key] = str((PROJECT_ROOT / entry_path).resolve())
 
     return ForgeConfig(**raw)

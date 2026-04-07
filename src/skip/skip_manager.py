@@ -30,6 +30,24 @@ _ENCRYPTED_SIGNATURES: list[tuple[int, bytes]] = [
 _MAGIC_READ_SIZE = 4096
 
 
+def load_deferred_extension_map(skip_list_path: str | Path) -> dict[str, str]:
+    """Load deferred extension -> reason map without constructing a SkipManager."""
+    path = Path(skip_list_path)
+    if not path.exists():
+        return {}
+
+    with open(path, encoding="utf-8-sig") as f:
+        raw = yaml.safe_load(f) or {}
+
+    deferred_exts: dict[str, str] = {}
+    for entry in raw.get("deferred_formats", []):
+        ext = entry["ext"].lower()
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        deferred_exts[ext] = entry.get("reason", "deferred format")
+    return deferred_exts
+
+
 class SkipManager:
     """
     Decides whether a file should be skipped (hashed but not parsed).
@@ -44,7 +62,7 @@ class SkipManager:
     All skipped files are recorded with their SHA-256 hash and reason.
     """
 
-    def __init__(self, skip_list_path: str | Path, hasher: Hasher):
+    def __init__(self, skip_list_path: str | Path, hasher: Hasher, extra_deferred_exts: dict[str, str] | None = None):
         self.hasher = hasher
         self._skipped: list[dict] = []
         self._reason_counts: dict[str, int] = defaultdict(int)
@@ -54,18 +72,17 @@ class SkipManager:
             logger.warning("Skip list not found at %s — no skip rules loaded.", path)
             self._deferred_exts: dict[str, str] = {}
             self._conditions: dict = {}
+            if extra_deferred_exts:
+                self._deferred_exts.update(extra_deferred_exts)
             return
 
         with open(path, encoding="utf-8-sig") as f:
             raw = yaml.safe_load(f) or {}
 
         # Build extension -> reason map (lowercase, with leading dot)
-        self._deferred_exts = {}
-        for entry in raw.get("deferred_formats", []):
-            ext = entry["ext"].lower()
-            if not ext.startswith("."):
-                ext = f".{ext}"
-            self._deferred_exts[ext] = entry.get("reason", "deferred format")
+        self._deferred_exts = load_deferred_extension_map(path)
+        if extra_deferred_exts:
+            self._deferred_exts.update(extra_deferred_exts)
 
         self._conditions = raw.get("skip_conditions", {})
 
@@ -114,7 +131,15 @@ class SkipManager:
 
     def record_skip(self, file_path: Path, reason: str) -> None:
         """Hash the file and record it in the skip manifest."""
-        content_hash = self.hasher.hash_file(file_path)
+        state = self.hasher.get_state(file_path)
+        stat = file_path.stat()
+        if state and state["mtime"] == stat.st_mtime and state["size"] == stat.st_size:
+            content_hash = state["hash"]
+        else:
+            content_hash = self.hasher.hash_file(file_path)
+
+        status = "deferred" if file_path.suffix.lower() in self._deferred_exts else "skipped"
+        self.hasher.update_hash(file_path, content_hash, status=status)
         entry = {
             "path": str(file_path),
             "sha256": content_hash,
@@ -128,6 +153,10 @@ class SkipManager:
     @property
     def skip_count(self) -> int:
         return len(self._skipped)
+
+    @property
+    def deferred_extensions(self) -> set[str]:
+        return set(self._deferred_exts)
 
     def get_skip_manifest(self) -> dict:
         """Return the full skip report."""

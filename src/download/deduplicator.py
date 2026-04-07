@@ -25,6 +25,7 @@ class Deduplicator:
         self.hasher = hasher
         self.skipped_unchanged = 0
         self.skipped_duplicate = 0
+        self._pending_hashes: dict[str, str] = {}
 
     def filter_new_and_changed(self, files: list[Path]) -> list[Path]:
         """
@@ -41,23 +42,36 @@ class Deduplicator:
             if not path.exists() or not path.is_file():
                 continue
 
+            state = self.hasher.get_state(path)
+            stat = path.stat()
+
+            if state and state["mtime"] == stat.st_mtime and state["size"] == stat.st_size:
+                if state["status"] == "indexed":
+                    self.skipped_unchanged += 1
+                    continue
+                if state["status"] == "duplicate":
+                    self.skipped_duplicate += 1
+                    continue
+
             content_hash = self.hasher.hash_file(path)
             previous_hash = self.hasher.get_stored_hash(path)
 
             # Skip if unchanged since last run
-            if content_hash == previous_hash:
+            if state and state["status"] == "indexed" and content_hash == previous_hash:
                 self.skipped_unchanged += 1
                 continue
 
             # Check for _1 suffix duplicate
             if self._is_suffix_duplicate(path, content_hash):
                 self.skipped_duplicate += 1
+                self.hasher.update_hash(path, content_hash, status="duplicate")
                 logger.debug("Skipping _1 duplicate: %s", path.name)
                 continue
 
             # Check for content-hash duplicate within this batch
             if content_hash in seen_hashes:
                 self.skipped_duplicate += 1
+                self.hasher.update_hash(path, content_hash, status="duplicate")
                 logger.debug(
                     "Skipping content duplicate: %s (same as %s)",
                     path.name, seen_hashes[content_hash].name,
@@ -65,7 +79,7 @@ class Deduplicator:
                 continue
 
             seen_hashes[content_hash] = path
-            self.hasher.update_hash(path, content_hash)
+            self._pending_hashes[self.hasher._normalize_path(path)] = content_hash
             work_list.append(path)
 
         logger.info(
@@ -73,6 +87,15 @@ class Deduplicator:
             len(work_list), self.skipped_unchanged, self.skipped_duplicate,
         )
         return work_list
+
+    def mark_indexed(self, files: list[Path]) -> None:
+        """Mark successfully processed files as indexed after the pipeline completes."""
+        for path in files:
+            norm = self.hasher._normalize_path(path)
+            content_hash = self._pending_hashes.pop(norm, None)
+            if content_hash is None:
+                content_hash = self.hasher.hash_file(path)
+            self.hasher.update_hash(path, content_hash, status="indexed")
 
     def _is_suffix_duplicate(self, path: Path, content_hash: str) -> bool:
         """Check if this file is a _1 suffix copy of another file."""

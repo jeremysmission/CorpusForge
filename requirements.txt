@@ -75,6 +75,8 @@ python-evtx==0.8.1               # Apache 2.0, USA — Windows Event Log parser 
 dpkt==1.9.8                      # BSD, USA — Network packet capture parser (pcap_parser.py)
 numpy-stl==3.2.0                 # BSD, USA — STL 3D mesh parser (stl_parser.py)
 vsdx==0.6.1                      # BSD-3, UK (NATO) — Visio .vsdx diagram parser (visio_parser.py)
+access-parser==0.0.6             # Apache 2.0, USA — Access .accdb/.mdb parser (access_db_parser.py)
+psd-tools==1.13.1                # MIT, USA — Photoshop PSD parser (psd_parser.py)
 
 # Transitive deps (pinned from V1 to avoid drift):
 pyparsing==3.3.2                 # MIT — ezdxf dep

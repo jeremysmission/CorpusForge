@@ -92,9 +92,13 @@ class Pipeline:
         self.stale_timeout = config.pipeline.stale_future_timeout
         self.embed_flush_batch = config.pipeline.embed_flush_batch
 
+        config_deferred = {
+            ext: "Deferred by config for this run"
+            for ext in config.parse.defer_extensions
+        }
         self.hasher = Hasher(config.paths.state_db)
         self.deduplicator = Deduplicator(self.hasher)
-        self.skip_manager = SkipManager(config.paths.skip_list, self.hasher)
+        self.skip_manager = SkipManager(config.paths.skip_list, self.hasher, extra_deferred_exts=config_deferred)
         self.dispatcher = ParseDispatcher(
             timeout_seconds=config.parse.timeout_seconds,
             max_chars=config.parse.max_chars_per_file,
@@ -198,21 +202,24 @@ class Pipeline:
         # Stage 6: Embed (GPU batch with token-budget packing + OOM backoff)
         vectors = self._embed_chunks(all_chunks, stats)
 
+        export_stats = self._build_export_stats(stats, start_time)
+
         # Stage 8: Export
         export_dir = self.packager.export(
             chunks=all_chunks,
             vectors=vectors,
             entities=[],
-            stats=stats.to_dict(),
+            stats=export_stats,
         )
+        self.deduplicator.mark_indexed([Path(doc.source_path) for doc in all_docs])
         logger.info("Export written to: %s", export_dir)
 
         # Write skip manifest alongside export
         if self.skip_manager.skip_count > 0:
             self.skip_manager.write_skip_manifest(export_dir)
 
-        stats.skip_reasons = self.skip_manager.get_reason_summary()
-        stats.elapsed_seconds = time.time() - start_time
+        stats.skip_reasons = export_stats["skip_reasons"]
+        stats.elapsed_seconds = export_stats["elapsed_seconds"]
 
         # Pipeline summary
         rate = stats.chunks_created / max(stats.elapsed_seconds, 0.01)
@@ -402,6 +409,12 @@ class Pipeline:
             stats.files_after_dedup, stats.files_parsed, stats.files_skipped,
             stats.skip_reasons or "none",
         )
+
+    def _build_export_stats(self, stats: RunStats, start_time: float) -> dict:
+        """Finalize the stats snapshot that is written into manifest.json."""
+        stats.skip_reasons = self.skip_manager.get_reason_summary()
+        stats.elapsed_seconds = time.time() - start_time
+        return stats.to_dict()
 
     def _parse_files(
         self, files: list[Path], stats: RunStats

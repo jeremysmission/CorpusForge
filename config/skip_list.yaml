@@ -4,28 +4,6 @@
 
 # Formats deferred for production (hashed but not parsed)
 deferred_formats:
-  - ext: ".dwg"
-    reason: "AutoCAD binary — parser not yet ported"
-  - ext: ".dwt"
-    reason: "AutoCAD template — deferred with .dwg"
-  - ext: ".sldprt"
-    reason: "SolidWorks part — no parser available"
-  - ext: ".sldasm"
-    reason: "SolidWorks assembly — no parser available"
-  - ext: ".asm"
-    reason: "CAD assembly — ambiguous format"
-  - ext: ".prt"
-    reason: "CAD part — ambiguous format"
-  - ext: ".mpp"
-    reason: "MS Project — no parser available"
-  - ext: ".vsd"
-    reason: "Legacy Visio binary — use .vsdx"
-  - ext: ".one"
-    reason: "OneNote — proprietary binary"
-  - ext: ".ost"
-    reason: "Outlook offline store — use .msg/.eml instead"
-  - ext: ".eps"
-    reason: "Encapsulated PostScript — deferred"
   - ext: ".dwf"
     reason: "Design Web Format — deferred"
 

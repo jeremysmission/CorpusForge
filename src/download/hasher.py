@@ -34,6 +34,10 @@ class Hasher:
         """)
         self._conn.commit()
 
+    @staticmethod
+    def _normalize_path(file_path: Path | str) -> str:
+        return str(file_path).replace("\\", "/")
+
     def hash_file(self, file_path: Path) -> str:
         """Compute SHA-256 hash of file contents."""
         sha = hashlib.sha256()
@@ -47,20 +51,28 @@ class Hasher:
 
     def get_stored_hash(self, file_path: Path) -> str | None:
         """Get previously stored hash for a file path."""
-        norm = str(file_path).replace("\\", "/")
+        norm = self._normalize_path(file_path)
         row = self._conn.execute(
             "SELECT hash FROM file_state WHERE path = ?", (norm,)
         ).fetchone()
         return row["hash"] if row else None
 
-    def update_hash(self, file_path: Path, content_hash: str) -> None:
+    def get_state(self, file_path: Path | str) -> sqlite3.Row | None:
+        """Get the stored row for a file path."""
+        norm = self._normalize_path(file_path)
+        return self._conn.execute(
+            "SELECT path, hash, mtime, size, status FROM file_state WHERE path = ?",
+            (norm,),
+        ).fetchone()
+
+    def update_hash(self, file_path: Path, content_hash: str, status: str = "indexed") -> None:
         """Store or update hash for a file."""
-        norm = str(file_path).replace("\\", "/")
+        norm = self._normalize_path(file_path)
         stat = file_path.stat()
         self._conn.execute(
             """INSERT OR REPLACE INTO file_state (path, hash, mtime, size, status)
-               VALUES (?, ?, ?, ?, 'indexed')""",
-            (norm, content_hash, stat.st_mtime, stat.st_size),
+               VALUES (?, ?, ?, ?, ?)""",
+            (norm, content_hash, stat.st_mtime, stat.st_size, status),
         )
         self._conn.commit()
 

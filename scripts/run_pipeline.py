@@ -9,6 +9,7 @@ Usage:
 import argparse
 import logging
 import sys
+from collections import Counter
 from pathlib import Path
 
 # Add project root to path
@@ -18,6 +19,38 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src.config.schema import load_config
 from src.parse.dispatcher import get_supported_extensions
 from src.pipeline import Pipeline
+from src.skip.skip_manager import load_deferred_extension_map
+
+
+def _discover_candidates(files: list[Path], supported: set[str], deferred: dict[str, str]) -> tuple[list[Path], Counter, Counter]:
+    candidates: list[Path] = []
+    deferred_counts: Counter = Counter()
+    unsupported_counts: Counter = Counter()
+
+    for file_path in files:
+        ext = file_path.suffix.lower()
+        if ext in deferred:
+            candidates.append(file_path)
+            deferred_counts[ext or "[no extension]"] += 1
+        elif ext in supported:
+            candidates.append(file_path)
+        else:
+            unsupported_counts[ext or "[no extension]"] += 1
+
+    return candidates, deferred_counts, unsupported_counts
+
+
+def _format_counts(label: str, counts: Counter, deferred: dict[str, str] | None = None) -> list[str]:
+    if not counts:
+        return []
+
+    lines = [f"{label}:"]
+    for ext, count in counts.most_common(8):
+        if deferred and ext in deferred:
+            lines.append(f"  - {ext}: {count} ({deferred[ext]})")
+        else:
+            lines.append(f"  - {ext}: {count}")
+    return lines
 
 
 def main() -> None:
@@ -49,35 +82,46 @@ def main() -> None:
     )
 
     supported = get_supported_extensions()
+    deferred = load_deferred_extension_map(config.paths.skip_list)
+    deferred.update({ext: "Deferred by config for this run" for ext in config.parse.defer_extensions})
     if args.input_list:
         input_list_path = Path(args.input_list)
         if not input_list_path.is_file():
             print(f"Error: {input_list_path} not found.", file=sys.stderr)
             sys.exit(1)
-        files = []
+        listed_files: list[Path] = []
         for raw_line in input_list_path.read_text(encoding="utf-8").splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             path = Path(line)
-            if path.is_file() and path.suffix.lower() in supported:
-                files.append(path)
+            if path.is_file():
+                listed_files.append(path)
+        files, deferred_counts, unsupported_counts = _discover_candidates(listed_files, supported, deferred)
     else:
         input_path = Path(args.input)
         if input_path.is_file():
-            files = [input_path]
+            discovered = [input_path]
         elif input_path.is_dir():
-            files = sorted(input_path.rglob("*"))
-            files = [f for f in files if f.is_file() and f.suffix.lower() in supported]
+            discovered = sorted(f for f in input_path.rglob("*") if f.is_file())
         else:
             print(f"Error: {input_path} not found.", file=sys.stderr)
             sys.exit(1)
+        files, deferred_counts, unsupported_counts = _discover_candidates(discovered, supported, deferred)
 
     if not files:
         print("No files to process.", file=sys.stderr)
+        for line in _format_counts("Unsupported extensions skipped before parse", unsupported_counts):
+            print(line, file=sys.stderr)
         sys.exit(1)
 
     print(f"CorpusForge: processing {len(files)} file(s)...")
+    if deferred_counts:
+        for line in _format_counts("Deferred formats that will be hashed and recorded in the skip manifest", deferred_counts, deferred):
+            print(line)
+    if unsupported_counts:
+        for line in _format_counts("Unsupported extensions excluded from this run", unsupported_counts):
+            print(line)
 
     pipeline = Pipeline(config)
     stats = pipeline.run(files)

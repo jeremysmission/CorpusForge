@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging, sys, threading, tkinter as tk
+from collections import Counter
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -12,6 +13,7 @@ from src.config.schema import load_config, ForgeConfig
 from src.parse.dispatcher import get_supported_extensions
 from src.gui.app import CorpusForgeApp
 from src.gui.safe_after import safe_after, drain_ui_queue
+from src.skip.skip_manager import load_deferred_extension_map
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,24 @@ _EMPTY_STATS = {
     "files_skipped": 0, "chunks_created": 0, "chunks_enriched": 0,
     "vectors_created": 0, "elapsed_seconds": 0.0, "skip_reasons": "",
 }
+
+
+def _discover_candidates(files: list[Path], supported: set[str], deferred: dict[str, str]) -> tuple[list[Path], Counter, Counter]:
+    candidates: list[Path] = []
+    deferred_counts: Counter = Counter()
+    unsupported_counts: Counter = Counter()
+
+    for file_path in files:
+        ext = file_path.suffix.lower()
+        if ext in deferred:
+            candidates.append(file_path)
+            deferred_counts[ext or "[no extension]"] += 1
+        elif ext in supported:
+            candidates.append(file_path)
+        else:
+            unsupported_counts[ext or "[no extension]"] += 1
+
+    return candidates, deferred_counts, unsupported_counts
 
 
 class GUILogHandler(logging.Handler):
@@ -52,8 +72,11 @@ class PipelineRunner:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self.config.paths.source_dirs = [source]
-        self.config.paths.output_dir = output
+        source_path = Path(source).expanduser().resolve()
+        output_path = Path(output).expanduser().resolve()
+        output_path.mkdir(parents=True, exist_ok=True)
+        self.config.paths.source_dirs = [str(source_path)]
+        self.config.paths.output_dir = str(output_path)
         self._thread = threading.Thread(
             target=self._run, name="CorpusForge-Pipeline", daemon=True)
         self._thread.start()
@@ -78,15 +101,35 @@ class PipelineRunner:
         if not source_path.exists():
             return self._finish(f"Source not found: {source_path}", "ERROR")
         supported = get_supported_extensions()
+        deferred = load_deferred_extension_map(self.config.paths.skip_list)
+        deferred.update({ext: "Deferred by config for this run" for ext in self.config.parse.defer_extensions})
         if source_path.is_file():
-            files = [source_path]
+            discovered = [source_path]
         else:
-            files = sorted(source_path.rglob("*"))
-            files = [f for f in files if f.is_file() and f.suffix.lower() in supported]
+            discovered = sorted(f for f in source_path.rglob("*") if f.is_file())
+        files, deferred_counts, unsupported_counts = _discover_candidates(discovered, supported, deferred)
         if self.config.pipeline.max_files:
             files = files[: self.config.pipeline.max_files]
         if not files:
             return self._finish("No supported files found in source.", "WARNING")
+        if deferred_counts:
+            top = ", ".join(f"{ext}={count}" for ext, count in deferred_counts.most_common(6))
+            safe_after(
+                self.app.root,
+                0,
+                self.app.append_log,
+                f"Deferred formats will be hashed and listed in skip_manifest: {top}",
+                "WARNING",
+            )
+        if unsupported_counts:
+            top = ", ".join(f"{ext}={count}" for ext, count in unsupported_counts.most_common(6))
+            safe_after(
+                self.app.root,
+                0,
+                self.app.append_log,
+                f"Unsupported extensions excluded from this run: {top}",
+                "WARNING",
+            )
         safe_after(self.app.root, 0, self.app.append_log,
                    f"Found {len(files)} files to process.", "INFO")
         safe_after(self.app.root, 0, self.app.update_stats,

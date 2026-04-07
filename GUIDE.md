@@ -64,6 +64,23 @@ Minimum expectations:
 
 Do not use blind shotgun install methods for workstation setup.
 
+## Porting Guardrail
+
+When logic is copied from another repo, do not assume parser coverage, discovery filters, placeholder parsers, or deferred-format behavior are safe by default.
+
+Required before trusting a ported ingest path:
+
+- diff parser registry coverage against the live discovery filter
+- identify which formats are:
+  - fully parsed
+  - placeholder-only
+  - hashed-only / deferred
+  - unsupported
+- ensure deferred formats are counted, surfaced to the operator, and written into `skip_manifest.json`
+- document inherited deferrals before production use
+
+Never accept silent format loss as normal behavior.
+
 ## Related Docs
 
 - [WORKSTATION_SETUP_2026-04-06.md](/C:/CorpusForge/docs/WORKSTATION_SETUP_2026-04-06.md)

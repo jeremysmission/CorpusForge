@@ -47,6 +47,10 @@ def _build_parser_map() -> dict:
     from src.parse.parsers.stl_parser import StlParser
     from src.parse.parsers.evtx_parser import EvtxParser
     from src.parse.parsers.pcap_parser import PcapParser
+    from src.parse.parsers.access_db_parser import AccessDbParser
+    from src.parse.parsers.psd_parser import PsdParser
+    from src.parse.parsers.step_iges_parser import StepParser, IgesParser
+    from src.parse.parsers.placeholder_parser import PlaceholderParser
 
     txt = TxtParser()
     pdf = PdfParser()
@@ -74,12 +78,17 @@ def _build_parser_map() -> dict:
     stl = StlParser()
     evtx = EvtxParser()
     pcap = PcapParser()
+    access = AccessDbParser()
+    psd = PsdParser()
+    step = StepParser()
+    iges = IgesParser()
 
     return {
         # Plain text
-        ".txt": txt, ".md": txt, ".log": txt,
+        ".txt": txt, ".md": txt, ".rst": txt, ".log": txt,
         ".ini": txt, ".cfg": txt, ".conf": txt,
-        ".yaml": txt, ".yml": txt,
+        ".yaml": txt, ".yml": txt, ".properties": txt,
+        ".reg": txt, ".sao": txt, ".rsf": txt,
         # Structured text
         ".csv": csv_, ".tsv": csv_,
         ".json": json_,
@@ -100,29 +109,43 @@ def _build_parser_map() -> dict:
         # Web
         ".html": html, ".htm": html,
         # Archives
-        ".zip": archive,
-        ".tar": archive,
-        ".gz": archive,
-        ".7z": archive,
+        ".zip": archive, ".tar": archive, ".tgz": archive, ".gz": archive, ".7z": archive,
         # Images (OCR)
         ".jpg": image, ".jpeg": image,
-        ".png": image, ".gif": image,
-        ".bmp": image,
+        ".png": image, ".gif": image, ".webp": image,
+        ".bmp": image, ".wmf": image, ".emf": image,
         ".tiff": image, ".tif": image,
         # eBooks
         ".epub": epub,
         # OpenDocument
         ".odt": odt, ".ods": odt, ".odp": odt,
         # Diagrams
-        ".vsdx": visio,
+        ".vsdx": visio, ".drawio": txt, ".svg": txt, ".dia": txt,
         # Certificates
         ".cer": cert, ".pem": cert, ".crt": cert,
         # CAD / 3D
         ".dxf": dxf,
+        ".stp": step, ".step": step, ".ste": step,
+        ".igs": iges, ".iges": iges,
         ".stl": stl,
+        # Databases / layered images
+        ".accdb": access, ".mdb": access,
+        ".psd": psd,
         # Forensics / Security
         ".evtx": evtx,
         ".pcap": pcap, ".pcapng": pcap,
+        # Placeholder-only recognized formats
+        ".prt": PlaceholderParser(".prt"),
+        ".sldprt": PlaceholderParser(".sldprt"),
+        ".asm": PlaceholderParser(".asm"),
+        ".sldasm": PlaceholderParser(".sldasm"),
+        ".dwg": PlaceholderParser(".dwg"),
+        ".dwt": PlaceholderParser(".dwt"),
+        ".mpp": PlaceholderParser(".mpp"),
+        ".vsd": PlaceholderParser(".vsd"),
+        ".one": PlaceholderParser(".one"),
+        ".ost": PlaceholderParser(".ost"),
+        ".eps": PlaceholderParser(".eps"),
     }
 
 

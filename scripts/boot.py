@@ -35,6 +35,10 @@ def main() -> None:
     print(f"  Enrich:    {'ON' if config.enrich.enabled else 'OFF'} ({config.enrich.model})")
     print(f"  Extract:   {'ON' if config.extract.enabled else 'OFF (waiver pending)'}")
     print(f"  Parse:     timeout={config.parse.timeout_seconds}s, OCR={config.parse.ocr_mode}")
+    if config.parse.defer_extensions:
+        print(f"  Deferred:  {', '.join(config.parse.defer_extensions)}")
+    else:
+        print("  Deferred:  none")
     print(f"  Hardware:  GPU {config.hardware.gpu_index}, batch={config.hardware.embed_batch_size}")
     print(f"  Sources:   {config.paths.source_dirs}")
     print(f"  Output:    {config.paths.output_dir}")

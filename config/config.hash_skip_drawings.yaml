@@ -1,0 +1,68 @@
+# CorpusForge Profile -- Hash and skip drawing-heavy formats for faster rebuild prep
+
+paths:
+  source_dirs:
+    - "data/source"
+  output_dir: "data/output/hash_skip_drawings"
+  state_db: "data/file_state.sqlite3"
+  landing_zone: "data/source"
+  skip_list: "config/skip_list.yaml"
+
+chunk:
+  size: 1200
+  overlap: 200
+  max_heading_len: 160
+
+parse:
+  timeout_seconds: 60
+  ocr_mode: "auto"
+  max_chars_per_file: 5000000
+  defer_extensions:
+    - ".dwg"
+    - ".dwt"
+    - ".dxf"
+    - ".stp"
+    - ".step"
+    - ".ste"
+    - ".igs"
+    - ".iges"
+    - ".stl"
+    - ".vsdx"
+    - ".drawio"
+    - ".svg"
+    - ".dia"
+    - ".psd"
+
+embed:
+  model_name: "nomic-ai/nomic-embed-text-v1.5"
+  dim: 768
+  device: "cuda"
+  max_batch_tokens: 49152
+  dtype: "float16"
+
+enrich:
+  enabled: true
+  ollama_url: "http://127.0.0.1:11434"
+  model: "phi4:14b-q4_K_M"
+  max_chunk_chars: 500
+
+extract:
+  enabled: false
+  model_name: "urchade/gliner_multi-v2.1"
+  entity_types:
+    - PART_NUMBER
+    - PERSON
+    - SITE
+    - DATE
+    - ORGANIZATION
+    - FAILURE_MODE
+    - ACTION
+  min_confidence: 0.5
+
+pipeline:
+  full_reindex: false
+  log_level: "INFO"
+
+hardware:
+  gpu_index: 0
+  embed_batch_size: 256
