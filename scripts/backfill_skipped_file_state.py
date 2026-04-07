@@ -40,6 +40,11 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Optional max files to backfill. 0 means no limit.",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Assess what would be backfilled without writing to file_state.",
+    )
     return parser.parse_args()
 
 
@@ -60,14 +65,14 @@ def classify_file(path: Path, supported: set[str], deferred: dict[str, str]) -> 
     return "unsupported", "Unsupported extension backfilled for restart accounting"
 
 
-def main() -> None:
-    args = parse_args()
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = (PROJECT_ROOT / config_path).resolve()
+def backfill_file_state(
+    *,
+    input_path: Path,
+    config_path: Path,
+    limit: int = 0,
+    dry_run: bool = False,
+) -> dict:
     config = load_config(config_path)
-
-    input_path = Path(args.input).resolve()
     files = discover_files(input_path)
 
     supported = get_supported_extensions()
@@ -84,7 +89,7 @@ def main() -> None:
     try:
         for file_path in files:
             scanned += 1
-            if args.limit and hashed >= args.limit:
+            if limit and hashed >= limit:
                 break
 
             status, _reason = classify_file(file_path, supported, deferred)
@@ -98,6 +103,11 @@ def main() -> None:
                 unchanged += 1
                 continue
 
+            if dry_run:
+                hashed += 1
+                by_status[status] += 1
+                continue
+
             content_hash = hasher.hash_file(file_path)
             hasher.update_hash(file_path, content_hash, status=status)
             hashed += 1
@@ -105,17 +115,43 @@ def main() -> None:
     finally:
         hasher.close()
 
+    return {
+        "state_db": config.paths.state_db,
+        "scanned": scanned,
+        "parseable_skipped": skipped_supported,
+        "backfilled": hashed,
+        "already_current": unchanged,
+        "by_status": dict(by_status),
+        "mode": "DRY RUN" if dry_run else "WRITE",
+    }
+
+
+def main() -> None:
+    args = parse_args()
+    config_path = Path(args.config)
+    if not config_path.is_absolute():
+        config_path = (PROJECT_ROOT / config_path).resolve()
+
+    input_path = Path(args.input).resolve()
+    summary = backfill_file_state(
+        input_path=input_path,
+        config_path=config_path,
+        limit=args.limit,
+        dry_run=args.dry_run,
+    )
+
     print("=" * 56)
     print("  CorpusForge — Skipped File-State Backfill")
     print("=" * 56)
+    print(f"  Mode:               {summary['mode']}")
     print(f"  Input:              {input_path}")
-    print(f"  State DB:           {config.paths.state_db}")
-    print(f"  Files scanned:      {scanned}")
-    print(f"  Parseable skipped:  {skipped_supported}")
-    print(f"  Backfilled:         {hashed}")
-    print(f"  Already current:    {unchanged}")
-    if by_status:
-        for status, count in sorted(by_status.items()):
+    print(f"  State DB:           {summary['state_db']}")
+    print(f"  Files scanned:      {summary['scanned']}")
+    print(f"  Parseable skipped:  {summary['parseable_skipped']}")
+    print(f"  Backfilled:         {summary['backfilled']}")
+    print(f"  Already current:    {summary['already_current']}")
+    if summary["by_status"]:
+        for status, count in sorted(summary["by_status"].items()):
             print(f"  {status.title():<18}{count}")
     print("=" * 56)
 

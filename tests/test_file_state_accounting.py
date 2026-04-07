@@ -8,6 +8,7 @@ if str(ROOT) not in sys.path:
 from src.download.hasher import Hasher
 from src.download.deduplicator import Deduplicator
 from src.skip.skip_manager import SkipManager
+from scripts.backfill_skipped_file_state import backfill_file_state
 
 
 def test_skip_manager_records_deferred_file_in_state(tmp_path: Path) -> None:
@@ -112,5 +113,50 @@ def test_deduplicator_retries_previously_deferred_file(tmp_path: Path) -> None:
         dedup = Deduplicator(hasher)
         work = dedup.filter_new_and_changed([file_path])
         assert work == [file_path]
+    finally:
+        hasher.close()
+
+
+def test_backfill_script_dry_run_reports_without_writing(tmp_path: Path) -> None:
+    state_db = tmp_path / "file_state.sqlite3"
+    skip_yaml = tmp_path / "skip_list.yaml"
+    skip_yaml.write_text(
+        "deferred_formats:\n"
+        "  - ext: .dwg\n"
+        "    reason: deferred test\n"
+        "skip_conditions:\n"
+        "  zero_byte: true\n",
+        encoding="utf-8",
+    )
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(
+        "paths:\n"
+        "  output_dir: data/output\n"
+        f"  state_db: {state_db.as_posix()}\n"
+        f"  skip_list: {skip_yaml.as_posix()}\n"
+        "parse:\n"
+        "  defer_extensions: []\n",
+        encoding="utf-8",
+    )
+    source_dir = tmp_path / "input"
+    source_dir.mkdir()
+    (source_dir / "drawing.dwg").write_text("dwg content", encoding="utf-8")
+    (source_dir / "mystery.zzz").write_text("unknown", encoding="utf-8")
+    (source_dir / "keep.txt").write_text("parse me", encoding="utf-8")
+
+    summary = backfill_file_state(
+        input_path=source_dir,
+        config_path=cfg,
+        dry_run=True,
+    )
+
+    assert summary["mode"] == "DRY RUN"
+    assert summary["backfilled"] == 2
+    assert summary["parseable_skipped"] == 1
+    assert summary["by_status"] == {"deferred": 1, "unsupported": 1}
+
+    hasher = Hasher(str(state_db))
+    try:
+        assert hasher.get_all_tracked_paths() == []
     finally:
         hasher.close()
