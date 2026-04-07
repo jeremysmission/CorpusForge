@@ -43,6 +43,17 @@ function Write-Fail  { param([string]$msg) $global:FailCount++; Write-Host "  [F
 function Write-Warn  { param([string]$msg) $global:WarnCount++; Write-Host "  [WARN] $msg" -ForegroundColor Yellow }
 function Write-Info  { param([string]$msg) Write-Host "  [INFO] $msg" -ForegroundColor Gray }
 function Format-Elapsed { $ts = $Stopwatch.Elapsed; return ("{0:D2}m {1:D2}s" -f [int]$ts.TotalMinutes, $ts.Seconds) }
+function Wait-ForOperator {
+    param([string]$Message = "Press any key to continue")
+    if ($env:HYBRIDRAG_NO_PAUSE -eq "1") { return }
+    Write-Host ""
+    Write-Host "  $Message" -ForegroundColor White
+    try {
+        $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
+    } catch {
+        cmd /c pause
+    }
+}
 function Remove-TempFileQuietly {
     param([string]$Path)
     try {
@@ -61,19 +72,90 @@ function Write-Utf8NoBomFile {
 }
 
 function Initialize-PipConfig {
-    param([string]$PipIniPath)
-    $content = @"
-[global]
-trusted-host =
-    pypi.org
-    pypi.python.org
-    files.pythonhosted.org
-    download.pytorch.org
-timeout = 120
-retries = 3
-disable-pip-version-check = true
-"@
+    param(
+        [string]$PipIniPath,
+        [string]$ProxyUrl = ""
+    )
+    $lines = @(
+        "[global]",
+        "trusted-host =",
+        "    pypi.org",
+        "    pypi.python.org",
+        "    files.pythonhosted.org",
+        "    download.pytorch.org",
+        "timeout = 120",
+        "retries = 3",
+        "disable-pip-version-check = true"
+    )
+    if (-not [string]::IsNullOrWhiteSpace($ProxyUrl)) {
+        $lines += "proxy = $ProxyUrl"
+    }
+    $content = ($lines -join "`n") + "`n"
     Write-Utf8NoBomFile -Path $PipIniPath -Text $content
+}
+
+function Get-WorkstationProxyInfo {
+    $result = [ordered]@{
+        ProxyDetected = $false
+        ProxyUrl = ""
+        Source = ""
+        AutoConfigUrl = ""
+    }
+
+    $explicitProxy = $env:HTTPS_PROXY
+    if ([string]::IsNullOrWhiteSpace($explicitProxy)) {
+        $explicitProxy = $env:HTTP_PROXY
+    }
+    if (-not [string]::IsNullOrWhiteSpace($explicitProxy)) {
+        if ($explicitProxy -notmatch "^https?://") {
+            $explicitProxy = "http://$explicitProxy"
+        }
+        $result.ProxyDetected = $true
+        $result.ProxyUrl = $explicitProxy
+        $result.Source = "environment"
+        return [pscustomobject]$result
+    }
+
+    try {
+        $inetSettings = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+        $proxyEnabled = (Get-ItemProperty $inetSettings -ErrorAction SilentlyContinue).ProxyEnable
+        $proxyServer  = (Get-ItemProperty $inetSettings -ErrorAction SilentlyContinue).ProxyServer
+        $autoConfig   = (Get-ItemProperty $inetSettings -ErrorAction SilentlyContinue).AutoConfigURL
+        if ($autoConfig) {
+            $result.AutoConfigUrl = $autoConfig
+        }
+
+        if ($proxyEnabled -eq 1 -and $proxyServer) {
+            if ($proxyServer -match "https=([^;]+)") {
+                $resolvedProxy = $Matches[1]
+            } elseif ($proxyServer -match "http=([^;]+)") {
+                $resolvedProxy = $Matches[1]
+            } else {
+                $resolvedProxy = $proxyServer
+            }
+            if ($resolvedProxy -notmatch "^https?://") {
+                $resolvedProxy = "http://$resolvedProxy"
+            }
+            $result.ProxyDetected = $true
+            $result.ProxyUrl = $resolvedProxy
+            $result.Source = "windows_registry"
+        }
+    } catch {
+    }
+
+    return [pscustomobject]$result
+}
+
+function Test-PipConfigReadable {
+    param([string]$PythonExe)
+    try {
+        $pipConfigCheck = & $PythonExe -m pip config list 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0) { return $false }
+        if ($pipConfigCheck -match "could not load") { return $false }
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 function Test-NvidiaGpuPresent {
@@ -243,20 +325,84 @@ if (Test-Path $VenvPython) {
 $env:VIRTUAL_ENV = $VenvDir
 $env:PATH = (Join-Path $VenvDir "Scripts") + ";" + $env:PATH
 $PipIni = Join-Path $VenvDir "pip.ini"
-Initialize-PipConfig -PipIniPath $PipIni
-Write-Ok "Created proxy-safe pip config: $PipIni"
+$ProxyInfo = Get-WorkstationProxyInfo
+if ($ProxyInfo.ProxyDetected) {
+    if (-not $env:HTTP_PROXY) { $env:HTTP_PROXY = $ProxyInfo.ProxyUrl }
+    if (-not $env:HTTPS_PROXY) { $env:HTTPS_PROXY = $ProxyInfo.ProxyUrl }
+    $env:http_proxy = $env:HTTP_PROXY
+    $env:https_proxy = $env:HTTPS_PROXY
+    Write-Ok "Using proxy for pip ($($ProxyInfo.Source)): $($ProxyInfo.ProxyUrl)"
+} elseif (-not [string]::IsNullOrWhiteSpace($ProxyInfo.AutoConfigUrl)) {
+    Write-Warn "Detected PAC proxy config: $($ProxyInfo.AutoConfigUrl)"
+    Write-Info "pip may still need explicit HTTP_PROXY/HTTPS_PROXY values if package installs fail"
+} else {
+    Write-Info "No workstation proxy detected; pip will use direct internet"
+}
+Initialize-PipConfig -PipIniPath $PipIni -ProxyUrl $ProxyInfo.ProxyUrl
+if (Test-PipConfigReadable -PythonExe $VenvPython) {
+    Write-Ok "Created proxy-safe pip config: $PipIni"
+} else {
+    Write-Warn "pip.ini validation failed; rewriting once"
+    Initialize-PipConfig -PipIniPath $PipIni -ProxyUrl $ProxyInfo.ProxyUrl
+    if (Test-PipConfigReadable -PythonExe $VenvPython) {
+        Write-Ok "pip.ini repaired: $PipIni"
+    } else {
+        Write-Fail "pip.ini validation failed -- pip cannot read $PipIni"
+        exit 1
+    }
+}
 $RequireCuda = Test-NvidiaGpuPresent
 $RuntimeInfo = Get-PythonRuntimeInfo -PythonExe $VenvPython
+
+# ============================================================
+# 4.5 Assessment Summary
+# ============================================================
+Write-Step "Assessment summary"
+$pipVersionOutput = & $VenvPython -m pip --version 2>&1
+$torchSummary = & $VenvPython -c "import importlib.util; import sys; spec=importlib.util.find_spec('torch'); print('installed=' + str(spec is not None)); sys.exit(0)" 2>&1
+$pipSystemCertsSummary = & $VenvPython -m pip show pip-system-certs 2>&1
+if ($RuntimeInfo) {
+    Write-Info "Repo Python: $($RuntimeInfo.python_version) ($($RuntimeInfo.python_tag), 64-bit=$($RuntimeInfo.is_64bit))"
+}
+Write-Info "Repo pip: $(($pipVersionOutput | Out-String).Trim())"
+Write-Info "Repo pip.ini: $PipIni"
+if ($ProxyInfo.ProxyDetected) {
+    Write-Info "Proxy source: $($ProxyInfo.Source)"
+    Write-Info "Proxy value:  $($ProxyInfo.ProxyUrl)"
+} elseif (-not [string]::IsNullOrWhiteSpace($ProxyInfo.AutoConfigUrl)) {
+    Write-Info "Proxy PAC:    $($ProxyInfo.AutoConfigUrl)"
+} else {
+    Write-Info "Proxy:        direct / not detected"
+}
+Write-Info "GPU present:   $RequireCuda"
+Write-Info "torch in venv: $((($torchSummary | Out-String).Trim()) -replace '^installed=', '')"
+if ($LASTEXITCODE -eq 0 -and $pipSystemCertsSummary -notmatch "Package\(s\) not found") {
+    Write-Info "pip-system-certs: installed"
+} else {
+    Write-Info "pip-system-certs: missing"
+}
+Write-Info "Next phase will repair only missing or broken layers"
+Wait-ForOperator -Message "Press any key to continue with workstation repair"
 
 # ============================================================
 # 5. Upgrade pip + pip-system-certs
 # ============================================================
 Write-Step "Upgrading pip and installing pip-system-certs"
-& $VenvPython -m pip install --upgrade pip @TrustedHosts --quiet 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) { Write-Ok "pip upgraded" } else { Write-Warn "pip upgrade returned non-zero" }
+$pipUpgradeOutput = & $VenvPython -m pip install --upgrade pip @TrustedHosts 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Ok "pip upgraded"
+} else {
+    Write-Warn "pip upgrade returned non-zero"
+    Write-Info (($pipUpgradeOutput | Out-String).Trim())
+}
 
-& $VenvPip install pip-system-certs @TrustedHosts --quiet 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) { Write-Ok "pip-system-certs installed" } else { Write-Warn "pip-system-certs failed (non-blocking)" }
+$pipSystemCertsOutput = & $VenvPip install pip-system-certs @TrustedHosts 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Ok "pip-system-certs installed"
+} else {
+    Write-Warn "pip-system-certs failed (non-blocking)"
+    Write-Info (($pipSystemCertsOutput | Out-String).Trim())
+}
 
 # ============================================================
 # 6. Install torch CUDA (BEFORE requirements.txt)

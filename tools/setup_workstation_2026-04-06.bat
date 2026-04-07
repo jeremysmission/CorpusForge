@@ -15,6 +15,12 @@ if not exist "%SCRIPT%" (
 echo [INFO] CorpusForge workstation setup
 echo [INFO] Script: %SCRIPT%
 echo [INFO] Launching with session-only PowerShell execution-policy bypass.
+echo [INFO] The installer will assess the workstation first, then pause before making changes.
+if /i not "%HYBRIDRAG_NO_PAUSE%"=="1" (
+  echo.
+  echo Press any key to start the assessment.
+  pause >nul
+)
 if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
   "%ProgramFiles%\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%"
 ) else (
