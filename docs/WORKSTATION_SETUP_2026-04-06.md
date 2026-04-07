@@ -99,6 +99,10 @@ cd <CorpusForge repo root>
 start_corpusforge.bat --dedup
 ```
 
+Laptop production-grade chunk vetting:
+
+- [WORKSTATION_LAPTOP_PRODUCTION_CHUNK_VETTING_2026-04-06.md](/C:/CorpusForge/docs/WORKSTATION_LAPTOP_PRODUCTION_CHUNK_VETTING_2026-04-06.md)
+
 ## Why This Matters
 
 The HybridRAG3 workstation postmortem showed that work-machine setup fails when:

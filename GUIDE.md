@@ -67,4 +67,5 @@ Do not use blind shotgun install methods for workstation setup.
 ## Related Docs
 
 - [WORKSTATION_SETUP_2026-04-06.md](/C:/CorpusForge/docs/WORKSTATION_SETUP_2026-04-06.md)
+- [WORKSTATION_LAPTOP_PRODUCTION_CHUNK_VETTING_2026-04-06.md](/C:/CorpusForge/docs/WORKSTATION_LAPTOP_PRODUCTION_CHUNK_VETTING_2026-04-06.md)
 - [DEDUP_RECOVERY_PLAN_2026-04-06.md](/C:/HybridRAG_V2/docs/DEDUP_RECOVERY_PLAN_2026-04-06.md)
