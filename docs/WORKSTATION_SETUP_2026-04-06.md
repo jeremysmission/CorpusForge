@@ -21,6 +21,23 @@ Before this update, the repo had the right intent documented in `Repo_Rules_2026
 - pinned `torch==2.7.1` on the CUDA 12.8 wheel index for NVIDIA workstations
 - OCR tool warnings for Tesseract and Poppler
 
+## Proven Workstation Lessons Carried Forward
+
+These are the prior workstation bring-up patterns now treated as standard:
+
+- detect proxy settings before package bootstrap
+- write proxy-aware repo-local `.venv\pip.ini`
+- install `pip-system-certs` in this repo `.venv`
+- install large dependencies in smaller retryable steps on work networks
+- verify the actual torch/CUDA outcome after install
+- keep `NO_PROXY=127.0.0.1,localhost` for local-only services
+
+Practical meaning:
+
+- a working torch install in another repo does not prove this repo is healthy
+- rerunning the workstation installer should act as diagnosis plus repair
+- session proxy variables help, but repo-local pip configuration is the more durable layer
+
 ## Sanitization Policy
 
 This rule applies to everything that is going to a workstation or any remote repository used by workstation operators.
@@ -91,6 +108,13 @@ The HybridRAG3 workstation postmortem showed that work-machine setup fails when:
 - machine-specific paths leak through tracked config
 
 CorpusForge now avoids that specific class of failure on fresh installs.
+
+The main patterns carried forward are:
+
+- repo-local proxy-aware pip configuration
+- per-repo certificate bootstrap
+- grouped install steps for fragile corporate-network paths
+- explicit torch verification instead of trusting pip output
 
 ## Torch Failure Note
 
