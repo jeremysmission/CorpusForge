@@ -288,8 +288,50 @@ class CorpusForgeApp:
         )
         self.extract_chk.pack(side=tk.LEFT, padx=(0, 12))
 
+        # Row 2: Batch/concurrency controls
+        row2 = ttk.Frame(parent)
+        row2.pack(fill=tk.X, pady=(4, 2))
+
+        enrich_concurrent_default = 2
+        extract_batch_default = 16
+        embed_batch_default = 256
+        if self._config is not None:
+            enrich_concurrent_default = self._config.enrich.max_concurrent
+            extract_batch_default = self._config.extract.batch_size
+            embed_batch_default = self._config.hardware.embed_batch_size
+
+        tk.Label(row2, text="Enrich concurrent:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
+        self.enrich_concurrent_var = tk.IntVar(value=enrich_concurrent_default)
+        tk.Spinbox(
+            row2, from_=1, to=8, textvariable=self.enrich_concurrent_var,
+            font=FONT, bg=t["input_bg"], fg=t["input_fg"],
+            insertbackground=t["fg"], relief=tk.FLAT, bd=2, width=3,
+            buttonbackground=t["panel_bg"],
+        ).pack(side=tk.LEFT, padx=(4, 16))
+
+        tk.Label(row2, text="Extract batch:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
+        self.extract_batch_var = tk.IntVar(value=extract_batch_default)
+        tk.Spinbox(
+            row2, from_=1, to=128, textvariable=self.extract_batch_var,
+            font=FONT, bg=t["input_bg"], fg=t["input_fg"],
+            insertbackground=t["fg"], relief=tk.FLAT, bd=2, width=4,
+            buttonbackground=t["panel_bg"],
+        ).pack(side=tk.LEFT, padx=(4, 16))
+
+        tk.Label(row2, text="Embed batch:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
+        self.embed_batch_var = tk.IntVar(value=embed_batch_default)
+        tk.Spinbox(
+            row2, from_=1, to=1024, increment=32, textvariable=self.embed_batch_var,
+            font=FONT, bg=t["input_bg"], fg=t["input_fg"],
+            insertbackground=t["fg"], relief=tk.FLAT, bd=2, width=5,
+            buttonbackground=t["panel_bg"],
+        ).pack(side=tk.LEFT, padx=(4, 12))
+
         self.save_settings_btn = ttk.Button(
-            row1, text="Save Settings", style="Tertiary.TButton",
+            row2, text="Save Settings", style="Tertiary.TButton",
             command=self._handle_save_settings,
         )
         self.save_settings_btn.pack(side=tk.RIGHT)
@@ -304,8 +346,15 @@ class CorpusForgeApp:
                 "overlap": self.overlap_var.get(),
             },
             "embed": {"enabled": self.embed_var.get()},
-            "enrich": {"enabled": self.enrich_var.get()},
-            "extract": {"enabled": self.extract_var.get()},
+            "enrich": {
+                "enabled": self.enrich_var.get(),
+                "max_concurrent": self.enrich_concurrent_var.get(),
+            },
+            "extract": {
+                "enabled": self.extract_var.get(),
+                "batch_size": self.extract_batch_var.get(),
+            },
+            "hardware": {"embed_batch_size": self.embed_batch_var.get()},
         }
         if self._on_save_settings:
             self._on_save_settings(settings)

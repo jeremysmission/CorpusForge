@@ -52,6 +52,7 @@ extract:
 pipeline:
   full_reindex: false
   log_level: "INFO"
+  workers: 8                     # Parallel parse threads. Override per-machine in config.local.yaml (Beast: 16)
 
 hardware:
   gpu_index: 0       # GPU 0 = compute, GPU 1 = display
