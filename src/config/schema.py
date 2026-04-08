@@ -209,9 +209,27 @@ class ForgeConfig(BaseModel):
 # Loader
 # ---------------------------------------------------------------------------
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge override into base. Override wins on conflicts."""
+    merged = dict(base)
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
     """
     Load and validate CorpusForge configuration from YAML.
+
+    Loading order:
+      1. config.yaml (base, committed to git)
+      2. config.local.yaml (machine-specific overrides, gitignored)
+
+    config.local.yaml is optional and only overrides the keys it defines.
+    Use it for machine-specific settings like workers, GPU index, paths.
 
     Falls back to Pydantic defaults for any missing fields.
     """
@@ -225,6 +243,15 @@ def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
     else:
         print(f"[WARN] Config file not found at {path}, using defaults.", file=sys.stderr)
         raw = {}
+
+    # Apply config.local.yaml overrides if present (gitignored, machine-specific)
+    local_path = path.parent / "config.local.yaml"
+    if local_path.exists():
+        with open(local_path, encoding="utf-8-sig") as f:
+            local_raw = yaml.safe_load(f) or {}
+        if local_raw:
+            raw = _deep_merge(raw, local_raw)
+            print(f"[INFO] Applied local overrides from {local_path}", file=sys.stderr)
 
     paths = raw.setdefault("paths", {})
     path_keys = ("source_dirs", "output_dir", "state_db", "landing_zone", "skip_list")
