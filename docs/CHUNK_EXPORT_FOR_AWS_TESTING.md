@@ -1,7 +1,7 @@
 # Chunk Export for AWS AI Enrichment Testing
 
 **Date:** 2026-04-07
-**Author:** Agent 1 (CorpusForge Coder)
+**Author:** Jeremy Randall (CoPilot+)
 
 ## Quick Start — Produce Chunks
 
@@ -47,15 +47,24 @@ Each line is a JSON object with these fields:
 
 ## Verified Export (2026-04-07)
 
+**E2E proof run — 198 real files, mixed formats (txt, xml, json, pdf, html):**
+
 | Metric | Value |
 |--------|-------|
-| Files processed | 5 |
-| Chunks produced | 12 |
-| Chunks enriched | 12/12 |
-| Vectors | 12 x 768 (float16) |
-| Export size | ~50 KB |
-| Pipeline time | 27s (enrichment + embedding) |
-| Chunk-only time | 0.26s |
+| Files input | 198 |
+| Files parsed | 118 |
+| Files skipped (OCR sidecar) | 74 |
+| Files failed (empty PDFs) | 6 |
+| Chunks produced | 17,695 |
+| Chunks enriched | 0 (Ollama not running — Sprint 3 dependency) |
+| Vectors | 17,695 x 768 (float16) |
+| All required fields present | Yes (7/7 in every chunk) |
+| Chunk/vector count match | Yes |
+| Manifest stats accurate | Yes |
+| Throughput | 177.3 chunks/sec |
+| Pipeline time | 99.8s |
+| GPU | GPU 0 (auto-selected, RTX 3090) |
+| Exit code | 0 (success) |
 
 ## For AWS AI Testing
 
