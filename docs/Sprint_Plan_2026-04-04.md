@@ -64,98 +64,134 @@
 
 ---
 
-## Sprint 2: Enrichment + Entity Extraction (Week 2 — April 12-18)
+## Sprint 2: Unblock Chunking + Config-Driven Formats + GUI Settings (ACTIVE — April 7+)
 
-**Goal:** Add contextual enrichment and first-pass entity extraction to the pipeline.
+**Goal:** Get chunking working NOW, eliminate all hardcoded skips, make GUI human-operable with config controls. Produce chunks for AWS AI enrichment testing ASAP.
 
-### Slice 2.1: Contextual Enrichment (Day 1-3)
-- [ ] Implement `enrich/ollama_client.py` — local Ollama API for phi4:14B
-- [ ] Implement `enrich/enricher.py` — generate context prefix per chunk
-- [ ] Enrichment prompt: document title, section heading, topic summary
-- [ ] Incremental: only enrich new/changed chunks (checkpoint tracking)
-- [ ] GPU memory management: phi4:14B (~9GB) + embedder on separate GPU if available
+**Why this sprint exists:** Chunking broke on 2026-04-07. We need working chunk output to test enrichment through AWS AIs. GUI is monitor-only with no operator controls. Placeholder formats are hardcoded in Python, violating the "everything in config" rule.
 
-### Slice 2.2: GLiNER2 Entity Extraction (Day 3-5)
-- [ ] Implement `extract/ner_extractor.py` — GLiNER2 zero-shot NER
-- [ ] Entity types: PART_NUMBER, PERSON, SITE, DATE, ORGANIZATION, FAILURE_MODE
-- [ ] Output: candidate_entities.jsonl with confidence scores
-- [ ] Run on CPU (does not compete with GPU for embedding/enrichment)
-- [ ] **Fallback if GLiNER waiver blocked:** skip first-pass, V2 uses GPT-4o for all extraction
+### Slice 2.1: Diagnose and Fix Chunking Pipeline (P0 — Day 1)
+- [ ] Reproduce the chunking failure from today's run
+- [ ] Check uncommitted `run_pipeline.py` changes for clues
+- [ ] Verify CUDA/torch availability (`python -c "import torch; print(torch.cuda.is_available())"`)
+- [ ] Verify config.yaml paths resolve correctly (source_dirs, output_dir)
+- [ ] Run pipeline on 10-file test subset, capture full traceback
+- [ ] Fix root cause, verify chunks.jsonl + vectors.npy produced
+- [ ] **Exit:** Pipeline produces chunks from real source files
 
-### Slice 2.3: Updated Export (Day 5-6)
-- [ ] Add enriched_text to chunks.jsonl
-- [ ] Add entities.jsonl to export package
-- [ ] Update manifest.json with enrichment/extraction stats
-- [ ] Test: V2 imports enriched chunks, BM25 search uses enriched text
+### Slice 2.2: Move All Hardcoded Format Skips to Config (P0 — Day 1-2)
+- [ ] Move placeholder formats (`.dwg`, `.dwt`, `.prt`, `.sldprt`, `.asm`, `.sldasm`, `.mpp`, `.vsd`, `.one`, `.ost`, `.eps`) from hardcoded `dispatcher.py` lines 138-149 into `config/skip_list.yaml` under a new `placeholder_formats` section
+- [ ] `dispatcher.py` reads placeholder list from config at startup, not from hardcoded dict
+- [ ] Operator can add/remove placeholder formats by editing config only
+- [ ] Add `parse.defer_extensions` support in dispatcher (already in schema, wire it up)
+- [ ] **Exit:** Zero hardcoded format decisions in Python — all driven from config/skip_list.yaml
 
-### Slice 2.4: Run Report (Day 6-7)
-- [ ] Implement run_report.json generation
-- [ ] Stats: files processed/skipped/failed, chunks created, entities extracted
-- [ ] Timing per stage
-- [ ] Error summary with file paths
+### Slice 2.3: GUI Settings Panel (P1 — Day 2-3)
+- [ ] Add "Settings" tab/panel to GUI alongside Pipeline Control
+- [ ] **Worker count:** Spinbox to change `pipeline.workers` (1-32), updates config live
+- [ ] **Chunking toggle:** Checkbox to enable/disable chunking stage
+- [ ] **Enrichment toggle:** Checkbox to enable/disable `enrich.enabled`
+- [ ] **Entity extraction toggle:** Checkbox to enable/disable `extract.enabled`
+- [ ] **OCR mode:** Dropdown for `parse.ocr_mode` (skip/auto/force)
+- [ ] **Chunk size / overlap:** Editable fields for `chunk.size` and `chunk.overlap`
+- [ ] Settings changes write back to config.yaml on save (not live — requires pipeline restart)
+- [ ] **Exit:** Human operator can configure all major pipeline options from GUI without editing YAML
+
+### Slice 2.4: End-to-End Chunk Export Proof (P0 — Day 3)
+- [ ] Run full pipeline on real source subset (100+ files, mixed formats)
+- [ ] Verify chunks.jsonl has correct structure (chunk_id, text, source_path, metadata)
+- [ ] Verify vectors.npy shape matches chunk count
+- [ ] Export chunks in format ready for AWS AI enrichment testing
+- [ ] Document: exact command to produce chunks for AWS testing
+- [ ] **Exit:** Working chunk export, operator can produce chunks from GUI or CLI
 
 ### Sprint 2 Exit Criteria
-- [ ] Enriched chunks produce better retrieval in V2 (A/B test on golden queries)
-- [ ] Entity extraction produces candidate entities V2 can validate
-- [ ] Run report provides operational visibility
-- [ ] Full pipeline (download → export) runs end-to-end with all stages
+- [ ] Chunking pipeline runs end-to-end and produces exportable chunks
+- [ ] All format skip/defer decisions live in config, zero hardcoded
+- [ ] GUI has settings panel with worker count, chunking, enrichment, extraction, OCR toggles
+- [ ] Chunks exported and ready for AWS AI enrichment testing
 
 ---
 
-## Sprint 3: GUI + Scheduling (Week 3 — April 19-25)
+## Sprint 3: Enrichment + Entity Extraction (Week 3 — April 14-18)
 
-**Goal:** Monitoring GUI and automated nightly scheduling.
+**Goal:** Wire up enrichment and entity extraction stages, produce enriched chunks.
 
-### Slice 3.1: GUI (Day 1-4)
-- [ ] Implement `gui/app.py` — main Tkinter window (V2 aesthetic)
-- [ ] Implement `gui/progress_panel.py` — pipeline stage, progress bar, ETA
-- [ ] Implement `gui/status_panel.py` — last run stats, error count
-- [ ] Implement `gui/theme.py` — shared dark/light color scheme
-- [ ] "Run Now" button for manual trigger
-- [ ] Run history (last 10 runs)
+### Slice 3.1: Contextual Enrichment Validation (Day 1-2)
+- [ ] Verify enricher works with Ollama phi4:14B on Beast
+- [ ] Test graceful degradation when Ollama unavailable
+- [ ] Validate enriched_text field in chunks.jsonl export
+- [ ] A/B: compare retrieval quality enriched vs plain chunks
 
-### Slice 3.2: Scheduling (Day 4-5)
-- [ ] Implement `scripts/schedule_nightly.py` — Windows Task Scheduler setup
-- [ ] Headless mode (no GUI, log to file)
-- [ ] Configurable schedule time in config.yaml
+### Slice 3.2: Entity Extraction Implementation (Day 2-4)
+- [ ] Implement `extract/ner_extractor.py` — GLiNER2 zero-shot NER (or GPT-4o fallback)
+- [ ] Entity types: PART_NUMBER, PERSON, SITE, DATE, ORGANIZATION, FAILURE_MODE, ACTION
+- [ ] Output: entities.jsonl with confidence scores
+- [ ] Wire into pipeline orchestrator as optional stage
+- [ ] **Fallback if GLiNER waiver blocked:** GPT-4o extraction via API
 
-### Slice 3.3: Audit Tool (Day 5-7)
-- [ ] Implement `scripts/audit_index.py` — "what did we process?" report
-- [ ] File counts by format, parse success rate, chunk distribution
-- [ ] Duplicate detection report
+### Slice 3.3: Run Report + Audit (Day 4-5)
+- [ ] Run report generation (files processed, chunks, entities, timing, errors)
+- [ ] Format coverage audit (what parsed, what placeholder'd, what skipped)
 - [ ] Quality score distribution
-- [ ] Entity extraction coverage
 
 ### Sprint 3 Exit Criteria
-- [ ] GUI shows real-time pipeline progress
-- [ ] Nightly schedule configured and tested
+- [ ] Enriched chunks produce measurably better retrieval
+- [ ] Entity extraction produces candidate entities
+- [ ] Run report provides operational visibility
+
+---
+
+## Sprint 4: GUI Polish + Scheduling (Week 4 — April 19-25)
+
+**Goal:** Production-quality GUI and automated scheduling.
+
+### Slice 4.1: GUI Improvements (Day 1-3)
+- [ ] Run history (last 10 runs with stats)
+- [ ] Format coverage display (what's parsing, what's placeholder, what's skipped)
+- [ ] Deferred format management from GUI
+- [ ] Error drill-down panel
+
+### Slice 4.2: Scheduling (Day 3-5)
+- [ ] Windows Task Scheduler setup script
+- [ ] Headless mode (no GUI, log to file)
+- [ ] Configurable schedule in config.yaml
+
+### Slice 4.3: Audit Tool (Day 5-7)
+- [ ] Comprehensive corpus audit report
+- [ ] Duplicate detection report
+- [ ] Quality score distribution
+
+### Sprint 4 Exit Criteria
+- [ ] GUI is production-quality for operator use
+- [ ] Nightly schedule tested
 - [ ] Audit report provides corpus visibility
 
 ---
 
-## Sprint 4: Production Hardening (Week 4 — April 26 - May 2)
+## Sprint 5: Production Hardening (Week 5 — April 26 - May 2)
 
 **Goal:** Run against full production corpus, harden for demo.
 
-### Slice 4.1: Full Corpus Run (Day 1-4)
+### Slice 5.1: Full Corpus Run (Day 1-4)
 - [ ] Run pipeline against full 420K file corpus
 - [ ] Monitor: memory, GPU utilization, disk I/O, timing
 - [ ] Fix any scale-related issues (file handle limits, SQLite locking, etc.)
 - [ ] Verify: V2 import handles full-scale export
 
-### Slice 4.2: Performance Tuning (Day 4-6)
+### Slice 5.2: Performance Tuning (Day 4-6)
 - [ ] Optimize batch sizes for Beast GPU topology (GPU 0 compute, GPU 1 display)
 - [ ] Optimize SQLite WAL mode for concurrent reads during export
 - [ ] Profile memory usage on full corpus
 - [ ] Target: incremental nightly run < 90 minutes
 
-### Slice 4.3: Demo Prep (Day 6-7)
+### Slice 5.3: Demo Prep (Day 6-7)
 - [ ] Verify V2 demo queries work against CorpusForge-produced data
 - [ ] Document: "How to run CorpusForge from scratch"
 - [ ] Document: "How to check if tonight's run succeeded"
 - [ ] Final audit report on production corpus
 
-### Sprint 4 Exit Criteria
+### Sprint 5 Exit Criteria
 - [ ] Full corpus processed successfully
 - [ ] Incremental nightly run under 90 minutes
 - [ ] V2 demo queries produce correct answers on CorpusForge data
