@@ -52,7 +52,7 @@ def select_gpu() -> int:
         # Pick GPU with lowest memory usage
         best = min(gpus, key=lambda g: g[1])
         logger.info(
-            "GPU selection: %s → picked GPU %d (%d MiB used)",
+            "GPU selection: %s -- picked GPU %d (%d MiB used)",
             ", ".join(f"GPU {i}: {m} MiB" for i, m in gpus),
             best[0],
             best[1],
