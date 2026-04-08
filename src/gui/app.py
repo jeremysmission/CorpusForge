@@ -337,7 +337,39 @@ class CorpusForgeApp:
         self.save_settings_btn.pack(side=tk.RIGHT)
 
     def _handle_save_settings(self):
-        """Collect current settings and invoke the save callback."""
+        """Collect current settings, validate, and invoke the save callback."""
+        # Debounce: ignore rapid clicks within 500ms
+        now = time.time()
+        if hasattr(self, "_last_save_time") and (now - self._last_save_time) < 0.5:
+            return
+        self._last_save_time = now
+        # Validate all numeric fields — reject invalid values with error dialog
+        validations = [
+            ("Workers", self.workers_var, 1, 32),
+            ("Chunk size", self.chunk_size_var, 100, 10000),
+            ("Overlap", self.overlap_var, 0, 2000),
+            ("Enrich concurrent", self.enrich_concurrent_var, 1, 8),
+            ("Extract batch", self.extract_batch_var, 1, 128),
+            ("Embed batch", self.embed_batch_var, 1, 1024),
+        ]
+        errors = []
+        for label, var, lo, hi in validations:
+            try:
+                val = var.get()
+                if val < lo or val > hi:
+                    errors.append(f"{label}: must be {lo}-{hi} (got {val})")
+            except (tk.TclError, ValueError):
+                errors.append(f"{label}: invalid number")
+
+        if errors:
+            from tkinter import messagebox
+            messagebox.showerror(
+                "Invalid Settings",
+                "Fix these before saving:\n\n" + "\n".join(errors),
+            )
+            self.append_log(f"Settings NOT saved — validation errors: {'; '.join(errors)}", "ERROR")
+            return
+
         settings = {
             "pipeline": {"workers": self.workers_var.get()},
             "parse": {"ocr_mode": self.ocr_var.get()},
