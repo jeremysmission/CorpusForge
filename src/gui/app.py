@@ -336,6 +336,12 @@ class CorpusForgeApp:
         )
         self.save_settings_btn.pack(side=tk.RIGHT)
 
+        self.reset_defaults_btn = ttk.Button(
+            row2, text="Reset to Defaults",
+            command=self._handle_reset_defaults,
+        )
+        self.reset_defaults_btn.pack(side=tk.RIGHT, padx=(0, 6))
+
     def _handle_save_settings(self):
         """Collect current settings, validate, and invoke the save callback."""
         # Debounce: ignore rapid clicks within 500ms
@@ -399,6 +405,43 @@ class CorpusForgeApp:
             f"extract={'ON' if settings['extract']['enabled'] else 'OFF'}",
             "INFO",
         )
+
+    def _handle_reset_defaults(self):
+        """Reset all settings controls to base config.yaml values (ignoring local overrides)."""
+        from tkinter import messagebox
+        if not messagebox.askyesno(
+            "Reset to Defaults",
+            "Reset all settings to config.yaml defaults?\n\n"
+            "This does not change config files — only resets the GUI controls.\n"
+            "Click Save Settings after to persist.",
+        ):
+            return
+
+        # Read base config only (no local overrides)
+        try:
+            import yaml
+            from pathlib import Path
+            config_path = Path(self.config_path) if self.config_path else Path("config/config.yaml")
+            if not config_path.is_absolute():
+                from src.config.schema import PROJECT_ROOT
+                config_path = PROJECT_ROOT / config_path
+            with open(config_path, encoding="utf-8-sig") as f:
+                raw = yaml.safe_load(f) or {}
+
+            self.workers_var.set(raw.get("pipeline", {}).get("workers", 8))
+            self.ocr_var.set(raw.get("parse", {}).get("ocr_mode", "auto"))
+            self.chunk_size_var.set(raw.get("chunk", {}).get("size", 1200))
+            self.overlap_var.set(raw.get("chunk", {}).get("overlap", 200))
+            self.embed_var.set(raw.get("embed", {}).get("enabled", True))
+            self.enrich_var.set(raw.get("enrich", {}).get("enabled", True))
+            self.extract_var.set(raw.get("extract", {}).get("enabled", False))
+            self.enrich_concurrent_var.set(raw.get("enrich", {}).get("max_concurrent", 2))
+            self.extract_batch_var.set(raw.get("extract", {}).get("batch_size", 16))
+            self.embed_batch_var.set(raw.get("hardware", {}).get("embed_batch_size", 256))
+
+            self.append_log("Settings reset to config.yaml defaults. Click Save to persist.", "INFO")
+        except Exception as exc:
+            self.append_log(f"Failed to reset defaults: {exc}", "ERROR")
 
     def _build_stats_panel(self, parent, t):
         """Two-column grid of live statistics."""
