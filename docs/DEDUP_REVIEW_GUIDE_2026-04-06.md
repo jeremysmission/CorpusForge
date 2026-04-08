@@ -101,6 +101,14 @@ The tool writes:
 
 into a timestamped review folder under the dedup output directory unless you specify `--output-dir`.
 
+For chunk-dedup outputs, the reviewer will automatically try to pull duplicate-member metadata from the sibling pre-dedup export when it exists. If that raw export is in a different location, pass it explicitly:
+
+```powershell
+python scripts/review_dedup_samples.py --dedup-dir C:\CorpusForge\data\output\my_export_dedup --raw-chunks C:\CorpusForge\data\output\my_export\chunks.jsonl
+```
+
+If the raw chunk file is unavailable, the report still works, but some duplicate members may only show limited metadata and should not be treated as final human-review evidence.
+
 ---
 
 ## Review Order
@@ -119,4 +127,3 @@ Suggested order:
 - `scripts/review_dedup_samples.py`
 - `scripts/build_document_dedup_index.py`
 - `scripts/run_pipeline.py --input-list`
-

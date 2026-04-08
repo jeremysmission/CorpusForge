@@ -16,7 +16,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 @dataclass
 class ReviewMember:
+    member_id: str
     path: str
+    preview: str
     status: str
     ext: str
     parse_quality: float
@@ -81,6 +83,11 @@ def parse_args() -> argparse.Namespace:
         choices=("largest", "similarity", "path"),
         default="largest",
         help="Sort order for sampled families.",
+    )
+    parser.add_argument(
+        "--raw-chunks",
+        default="",
+        help="Optional path to the pre-dedup chunks.jsonl used to recover duplicate-member metadata.",
     )
     return parser.parse_args()
 
@@ -192,7 +199,9 @@ def build_document_review_families(dedup_dir: Path) -> list[ReviewFamily]:
 
         members.append(
             ReviewMember(
+                member_id=canonical_row["path"],
                 path=canonical_row["path"],
+                preview="",
                 status=canonical_row["status"],
                 ext=canonical_row["ext"],
                 parse_quality=float(canonical_row["parse_quality"]),
@@ -208,7 +217,9 @@ def build_document_review_families(dedup_dir: Path) -> list[ReviewFamily]:
             sqlite_row = row_map.get(row["path"], row)
             members.append(
                 ReviewMember(
+                    member_id=sqlite_row["path"],
                     path=sqlite_row["path"],
+                    preview="",
                     status=sqlite_row["status"],
                     ext=sqlite_row["ext"],
                     parse_quality=float(sqlite_row["parse_quality"]),
@@ -248,10 +259,58 @@ def load_chunk_map(chunks_path: Path) -> dict[str, dict]:
     return chunk_map
 
 
-def build_chunk_review_families(dedup_report_path: Path, chunks_path: Path) -> list[ReviewFamily]:
+def resolve_raw_chunks_path(dedup_dir: Path, explicit: str) -> Path | None:
+    if explicit:
+        raw_chunks = Path(explicit).resolve()
+        return raw_chunks if raw_chunks.exists() else None
+
+    if dedup_dir.name.endswith("_dedup"):
+        sibling = dedup_dir.with_name(dedup_dir.name.removesuffix("_dedup")) / "chunks.jsonl"
+        if sibling.exists():
+            return sibling
+
+    return None
+
+
+def build_chunk_lookup(dedup_chunks_path: Path, raw_chunks_path: Path | None) -> dict[str, dict]:
+    chunk_map: dict[str, dict] = {}
+    if raw_chunks_path and raw_chunks_path.exists():
+        chunk_map.update(load_chunk_map(raw_chunks_path))
+    chunk_map.update(load_chunk_map(dedup_chunks_path))
+    return chunk_map
+
+
+def chunk_member_from_row(
+    chunk_id: str,
+    chunk_row: dict,
+    *,
+    status: str,
+    similarity: float,
+    dedup_reason: str,
+    fallback_source: str = "",
+) -> ReviewMember:
+    source_path = chunk_row.get("source_path") or fallback_source or f"[missing metadata] {chunk_id}"
+    preview = clean_preview(chunk_row.get("text", ""), 180)
+    text_length = int(chunk_row.get("text_length", len(chunk_row.get("text", ""))))
+    return ReviewMember(
+        member_id=chunk_id,
+        path=source_path,
+        preview=preview,
+        status=status,
+        ext=Path(source_path).suffix.lower(),
+        parse_quality=float(chunk_row.get("parse_quality", 0.0)),
+        raw_chars=text_length,
+        normalized_chars=text_length,
+        similarity=similarity,
+        dedup_reason=dedup_reason,
+        normalized_hash=chunk_id,
+    )
+
+
+def build_chunk_review_families(dedup_report_path: Path, chunks_path: Path, raw_chunks_path: Path | None) -> list[ReviewFamily]:
     report = load_json(dedup_report_path)
     sample_clusters = report.get("sample_clusters", [])
-    chunk_map = load_chunk_map(chunks_path)
+    chunk_map = build_chunk_lookup(chunks_path, raw_chunks_path)
     families: list[ReviewFamily] = []
 
     for cluster in sample_clusters:
@@ -259,18 +318,16 @@ def build_chunk_review_families(dedup_report_path: Path, chunks_path: Path) -> l
         canonical_chunk = chunk_map.get(canonical_id, {})
         canonical_source = cluster.get("canonical_source") or canonical_chunk.get("source_path", canonical_id)
         members: list[ReviewMember] = []
+        unresolved_duplicates = 0
 
         members.append(
-            ReviewMember(
-                path=canonical_source,
+            chunk_member_from_row(
+                canonical_id,
+                canonical_chunk,
                 status="canonical",
-                ext=Path(canonical_source).suffix.lower(),
-                parse_quality=float(canonical_chunk.get("parse_quality", 0.0)),
-                raw_chars=int(canonical_chunk.get("text_length", len(canonical_chunk.get("text", "")))),
-                normalized_chars=int(canonical_chunk.get("text_length", len(canonical_chunk.get("text", "")))),
                 similarity=1.0,
                 dedup_reason="cluster_canonical",
-                normalized_hash=canonical_id,
+                fallback_source=canonical_source,
             )
         )
 
@@ -278,23 +335,21 @@ def build_chunk_review_families(dedup_report_path: Path, chunks_path: Path) -> l
         similarities = cluster.get("similarity_to_canonical", [])
         for idx, dup_id in enumerate(duplicate_chunk_ids):
             dup_chunk = chunk_map.get(dup_id, {})
-            source_path = dup_chunk.get("source_path", dup_id)
-            preview = clean_preview(dup_chunk.get("text", ""), 180)
             members.append(
-                ReviewMember(
-                    path=f"{source_path} :: {preview}" if preview else source_path,
+                chunk_member_from_row(
+                    dup_id,
+                    dup_chunk,
                     status="duplicate",
-                    ext=Path(source_path).suffix.lower(),
-                    parse_quality=float(dup_chunk.get("parse_quality", 0.0)),
-                    raw_chars=int(dup_chunk.get("text_length", len(dup_chunk.get("text", "")))),
-                    normalized_chars=int(dup_chunk.get("text_length", len(dup_chunk.get("text", "")))),
                     similarity=float(similarities[idx]) if idx < len(similarities) else 0.0,
                     dedup_reason="chunk_cluster_member",
-                    normalized_hash=dup_id,
                 )
             )
+            if not dup_chunk:
+                unresolved_duplicates += 1
 
         recommendation, flags = recommend_family(members[0].ext, members)
+        if unresolved_duplicates:
+            flags = list(flags) + ["missing_raw_chunk_metadata"]
         families.append(
             ReviewFamily(
                 family_id=canonical_id,
@@ -350,7 +405,9 @@ def write_outputs(output_dir: Path, families: list[ReviewFamily], source_label: 
                 "min_similarity",
                 "recommendation",
                 "review_flags",
+                "member_id",
                 "member_path",
+                "member_preview",
                 "member_status",
                 "member_ext",
                 "member_parse_quality",
@@ -375,13 +432,13 @@ def write_outputs(output_dir: Path, families: list[ReviewFamily], source_label: 
                     f"- Recommendation: `{family.recommendation}`",
                     f"- Flags: {', '.join(family.review_flags)}",
                     "",
-                    "| Status | Path | Ext | Parse Quality | Similarity | Reason |",
-                    "| --- | --- | --- | ---: | ---: | --- |",
+                    "| Status | Path | Preview | Ext | Parse Quality | Similarity | Reason |",
+                    "| --- | --- | --- | --- | ---: | ---: | --- |",
                 ]
             )
             for member in family.members:
                 report_lines.append(
-                    f"| {member.status} | `{markdown_escape(member.path)}` | `{member.ext}` | "
+                    f"| {member.status} | `{markdown_escape(member.path)}` | {markdown_escape(member.preview)} | `{member.ext}` | "
                     f"{member.parse_quality:.3f} | {member.similarity:.3f} | {member.dedup_reason} |"
                 )
                 row = {
@@ -394,7 +451,9 @@ def write_outputs(output_dir: Path, families: list[ReviewFamily], source_label: 
                     "min_similarity": round(family.min_similarity, 4),
                     "recommendation": family.recommendation,
                     "review_flags": family.review_flags,
+                    "member_id": member.member_id,
                     "member_path": member.path,
+                    "member_preview": member.preview,
                     "member_status": member.status,
                     "member_ext": member.ext,
                     "member_parse_quality": member.parse_quality,
@@ -425,8 +484,13 @@ def main() -> None:
         families = build_document_review_families(dedup_dir)
         source_label = f"document dedup output: {dedup_dir}"
     elif (dedup_dir / "dedup_report.json").exists() and (dedup_dir / "chunks.jsonl").exists():
-        families = build_chunk_review_families(dedup_dir / "dedup_report.json", dedup_dir / "chunks.jsonl")
+        raw_chunks_path = resolve_raw_chunks_path(dedup_dir, args.raw_chunks)
+        families = build_chunk_review_families(dedup_dir / "dedup_report.json", dedup_dir / "chunks.jsonl", raw_chunks_path)
         source_label = f"chunk dedup output: {dedup_dir}"
+        if raw_chunks_path:
+            source_label += f" (raw chunks: {raw_chunks_path})"
+        else:
+            source_label += " (raw chunks unavailable; some duplicate members may lack source metadata)"
     else:
         raise FileNotFoundError(
             f"{dedup_dir} does not contain duplicate_files.jsonl or dedup_report.json + chunks.jsonl"
