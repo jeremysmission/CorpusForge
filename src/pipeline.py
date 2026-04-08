@@ -13,6 +13,7 @@ V1 achieved 60-200 chunks/sec sustained with this pattern.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -317,6 +318,9 @@ class Pipeline:
         # Write run report (slice 3.3)
         self._write_run_report(export_dir, stats)
 
+        # Append to run history (slice 4.1)
+        self._append_run_history(export_dir, stats)
+
         return stats
 
     def _write_run_report(self, export_dir: Path, stats: RunStats) -> None:
@@ -369,6 +373,38 @@ class Pipeline:
         with open(report_path, "w", encoding="utf-8", newline="\n") as f:
             f.write("\n".join(lines) + "\n")
         logger.info("Run report written to: %s", report_path)
+
+    def _append_run_history(self, export_dir: Path, stats: RunStats) -> None:
+        """Append this run to the history log (last 10 runs kept)."""
+        from datetime import datetime
+        history_path = Path(self.config.paths.output_dir) / "run_history.jsonl"
+        entry = {
+            "timestamp": datetime.now().isoformat(),
+            "export_dir": str(export_dir),
+            "files_found": stats.files_found,
+            "files_parsed": stats.files_parsed,
+            "files_skipped": stats.files_skipped,
+            "files_failed": stats.files_failed,
+            "chunks_created": stats.chunks_created,
+            "chunks_enriched": stats.chunks_enriched,
+            "vectors_created": stats.vectors_created,
+            "entities_extracted": stats.entities_extracted,
+            "elapsed_seconds": round(stats.elapsed_seconds, 1),
+            "format_coverage": stats.format_coverage,
+        }
+        # Append
+        try:
+            with open(history_path, "a", encoding="utf-8", newline="\n") as f:
+                f.write(json.dumps(entry) + "\n")
+            # Trim to last 10
+            with open(history_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            if len(lines) > 10:
+                with open(history_path, "w", encoding="utf-8", newline="\n") as f:
+                    f.writelines(lines[-10:])
+            logger.info("Run history updated: %s", history_path)
+        except Exception as exc:
+            logger.warning("Failed to update run history: %s", exc)
 
     # ------------------------------------------------------------------
     # Parallel parse pipeline (ported from V1 indexer.py)

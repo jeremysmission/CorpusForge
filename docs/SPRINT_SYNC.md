@@ -119,15 +119,15 @@
 
 **Exit Criteria:** GUI production-quality, headless mode tested, nightly schedule configured, 50+ tests.
 
-### V2 Sprint 14: Structured Promotion (GATE-2: blocked until Forge S3 green)
+### V2 Sprint 14: Structured Promotion (READY FOR QA)
 
 | Slice | Repo | Priority | What | Status | Owner |
 |-------|------|----------|------|--------|-------|
-| 14.1 | V2 | P0 | Entity extraction at scale on full rebuilt corpus | TODO | Agent 2 |
-| 14.2 | V2 | P0 | Entity normalization + controlled vocabulary matching (25 IGS sites) | TODO | Agent 2 |
-| 14.3 | V2 | P0 | Relationship graph population from extracted entities | TODO | Agent 2 |
-| 14.4 | V2 | P1 | Table extraction integration (if Docling waiver approved) | TODO | Agent 2 |
-| 14.5 | V2 | P1 | Query router tuning: verify AGGREGATION, ENTITY_LOOKUP, RELATIONSHIP paths work on real data | TODO | Agent 2 |
+| 14.1 | V2 | P0 | Entity extraction at scale on full rebuilt corpus | DONE | Agent 2 |
+| 14.2 | V2 | P0 | Entity normalization + controlled vocabulary matching (25 IGS sites) | DONE (label mapping) | Agent 2 |
+| 14.3 | V2 | P0 | Relationship graph population from extracted entities | DONE (existing) | Agent 2 |
+| 14.4 | V2 | P1 | Table extraction integration (if Docling waiver approved) | DEFERRED | Agent 2 |
+| 14.5 | V2 | P1 | Query router tuning: verify AGGREGATION, ENTITY_LOOKUP, RELATIONSHIP paths work on real data | DONE (25/25) | Agent 2 |
 
 **Exit Criteria:** Entities promoted at scale, relationship graph populated, query router working on all paths.
 

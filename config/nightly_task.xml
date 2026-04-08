@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  CorpusForge Nightly Pipeline — Windows Task Scheduler Template
+
+  Import: schtasks /create /tn "CorpusForge Nightly" /xml config\nightly_task.xml
+  Delete: schtasks /delete /tn "CorpusForge Nightly" /f
+  Run now: schtasks /run /tn "CorpusForge Nightly"
+  Status: schtasks /query /tn "CorpusForge Nightly" /v
+
+  Edit paths below to match your machine before importing.
+-->
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>CorpusForge nightly incremental pipeline run</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-04-08T02:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT4H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <!-- EDIT THIS: Path to your CorpusForge Python venv -->
+      <Command>C:\CorpusForge\.venv\Scripts\python.exe</Command>
+      <!-- EDIT THIS: Adjust --input path to your source data -->
+      <Arguments>scripts\run_pipeline.py --input data\source --log-file data\output\nightly.log</Arguments>
+      <WorkingDirectory>C:\CorpusForge</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
