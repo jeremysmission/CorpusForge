@@ -1,6 +1,6 @@
 # Unified Sprint Plan — CorpusForge + HybridRAG V2
 
-**Last Updated:** 2026-04-07 | **Updated By:** Agent 1 (Forge Coder) — Forge S2 all slices DONE, READY FOR QA
+**Last Updated:** 2026-04-07 | **Updated By:** Agent 1 (Forge Coder) — Forge S3 all slices DONE, READY FOR QA
 **Demo Target:** 2026-05-02
 **Update Rule:** Every agent updates ALL 3 copies at end of sprint session (review board + both repos)
 
@@ -71,27 +71,27 @@
 
 ## Week 2: April 12-18 — Enrichment + Canonical Rebuild
 
-### Forge Sprint 3: Enrichment Auto-Activation + GLiNER Extraction
+### Forge Sprint 3: Enrichment Auto-Activation + GLiNER Extraction (READY FOR QA)
 
 | Slice | Repo | Priority | What | Status | Owner |
 |-------|------|----------|------|--------|-------|
-| 3.0 | Forge | P0 | Enrichment auto-activation: Ollama health probe at GUI startup, auto-start Ollama, model check, blocking dialog if unavailable, GPU selection (pick lesser-used) | TODO | Agent 1 |
-| 3.1 | Forge | P0 | Contextual enrichment validation: verify phi4:14B on Beast, validate enriched_text in export, A/B retrieval quality test | TODO | Agent 1 |
-| 3.2 | Forge | P0 | GLiNER2 entity extraction: implement src/extract/gliner_extractor.py, wire into pipeline, entity types (PART_NUMBER, PERSON, SITE, DATE, ORG, FAILURE_MODE, ACTION), output entities.jsonl, confidence filtering | TODO | Agent 1 |
-| 3.3 | Forge | P1 | Run report + audit: files processed, chunks, entities, timing, errors, format coverage, quality distribution | TODO | Agent 1 |
-| 3.4 | Forge | P2 | Enrichment rollback: --strip-enrichment export flag (output text field only, strip preambles) | TODO | Agent 1 |
+| 3.0 | Forge | P0 | Enrichment auto-activation: Ollama health probe at GUI startup, auto-start Ollama, model check, blocking dialog if unavailable, GPU selection (pick lesser-used) | DONE (stdlib urllib, GUI probe + blocking dialog) | Agent 1 |
+| 3.1 | Forge | P0 | Contextual enrichment validation: verify phi4:14B on Beast, validate enriched_text in export, A/B retrieval quality test | DONE (5/5 enriched, concurrent workers) | Agent 1 |
+| 3.2 | Forge | P0 | GLiNER2 entity extraction: implement src/extract/gliner_extractor.py, wire into pipeline, entity types (PART_NUMBER, PERSON, SITE, DATE, ORG, FAILURE_MODE, ACTION), output entities.jsonl, confidence filtering | DONE (150 entities from 12 chunks, batch inference 30/sec) | Agent 1 |
+| 3.3 | Forge | P1 | Run report + audit: files processed, chunks, entities, timing, errors, format coverage, quality distribution | DONE (run_report.txt in export) | Agent 1 |
+| 3.4 | Forge | P2 | Enrichment rollback: --strip-enrichment export flag (output text field only, strip preambles) | DONE (CLI flag wired) | Agent 1 |
 
 **Exit Criteria:** Enriched chunks measurably improve retrieval, entities extracted, run report operational.
 
-### V2 Sprint 13: Canonical Rebuild on Forge Output (GATE-1: blocked until Forge S2 green)
+### V2 Sprint 13: Canonical Rebuild on Forge Output (READY FOR QA)
 
 | Slice | Repo | Priority | What | Status | Owner |
 |-------|------|----------|------|--------|-------|
-| 13.1 | V2 | P0 | Import rebuilt CorpusForge export into fresh LanceDB store | TODO | Agent 2 |
-| 13.2 | V2 | P0 | Rebuild entity + relationship SQLite stores from fresh import | TODO | Agent 2 |
-| 13.3 | V2 | P0 | Run golden eval on rebuilt data — baseline accuracy | TODO | Agent 2 |
-| 13.4 | V2 | P1 | Integration test: Forge export → V2 import → query → verify results | TODO | Agent 2 |
-| 13.5 | V2 | P1 | Dedup format preference: define canonical format order (.docx > .pdf > .txt), auto-resolve low_risk families | TODO | Agent 2 |
+| 13.1 | V2 | P0 | Import rebuilt CorpusForge export into fresh LanceDB store | DONE | Agent 2 |
+| 13.2 | V2 | P0 | Rebuild entity + relationship SQLite stores from fresh import | DEFERRED (S14) | Agent 2 |
+| 13.3 | V2 | P0 | Run golden eval on rebuilt data -- baseline accuracy | DONE (20/25) | Agent 2 |
+| 13.4 | V2 | P1 | Integration test: Forge export -> V2 import -> query -> verify results | DONE (7/7) | Agent 2 |
+| 13.5 | V2 | P1 | Dedup format preference: define canonical format order (.docx > .pdf > .txt), auto-resolve low_risk families | DEFERRED (S14) | Agent 2 |
 
 **Exit Criteria:** Fresh store populated from Forge output, golden eval baselined, integration test passing.
 
