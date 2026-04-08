@@ -238,11 +238,40 @@ def main():
         if runner[0]:
             runner[0].stop()
 
+    def on_save_settings(settings):
+        """Write GUI settings back to config.yaml and update live config."""
+        import yaml
+        config_file = Path(config_path)
+        if not config_file.is_absolute():
+            config_file = (_PROJECT_ROOT / config_file).resolve()
+        try:
+            with open(config_file, encoding="utf-8-sig") as f:
+                raw = yaml.safe_load(f) or {}
+            for section, values in settings.items():
+                if section not in raw:
+                    raw[section] = {}
+                raw[section].update(values)
+            with open(config_file, "w", encoding="utf-8") as f:
+                yaml.dump(raw, f, default_flow_style=False, sort_keys=False)
+            # Update live config object
+            config.pipeline.workers = settings["pipeline"]["workers"]
+            config.parse.ocr_mode = settings["parse"]["ocr_mode"]
+            config.chunk.size = settings["chunk"]["size"]
+            config.chunk.overlap = settings["chunk"]["overlap"]
+            config.embed.enabled = settings["embed"]["enabled"]
+            config.enrich.enabled = settings["enrich"]["enabled"]
+            config.extract.enabled = settings["extract"]["enabled"]
+            logger.info("Settings saved to %s", config_file)
+        except Exception as exc:
+            logger.error("Failed to save settings: %s", exc)
+            app.append_log(f"ERROR saving settings: {exc}", "ERROR")
+
     app = CorpusForgeApp(
-        root=root, config_path=config_path,
+        root=root, config_path=config_path, config=config,
         supported_formats=supported_count, skip_list_count=skip_count,
         enrichment_enabled=config.enrich.enabled,
         on_start=on_start, on_stop=on_stop,
+        on_save_settings=on_save_settings,
     )
     gui_handler = GUILogHandler(app)
     gui_handler.setFormatter(logging.Formatter(

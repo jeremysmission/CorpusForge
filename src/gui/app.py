@@ -34,19 +34,23 @@ class CorpusForgeApp:
         self,
         root: tk.Tk,
         config_path: str = "",
+        config=None,
         supported_formats: int = 0,
         skip_list_count: int = 0,
         enrichment_enabled: bool = False,
         on_start=None,
         on_stop=None,
+        on_save_settings=None,
     ):
         self.root = root
         self.config_path = config_path
+        self._config = config
         self.supported_formats = supported_formats
         self.skip_list_count = skip_list_count
         self.enrichment_enabled = enrichment_enabled
         self._on_start = on_start
         self._on_stop = on_stop
+        self._on_save_settings = on_save_settings
         self._running = False
         self._start_time: Optional[float] = None
         self._timer_id: Optional[str] = None
@@ -95,6 +99,12 @@ class CorpusForgeApp:
         ctrl_frame.pack(fill=tk.X, pady=(0, 6))
 
         self._build_control_panel(ctrl_frame, t)
+
+        # -- Settings Panel --
+        settings_frame = ttk.LabelFrame(main, text="Settings", padding=8)
+        settings_frame.pack(fill=tk.X, pady=(0, 6))
+
+        self._build_settings_panel(settings_frame, t)
 
         # -- Live Stats Panel --
         stats_frame = ttk.LabelFrame(main, text="Live Stats", padding=8)
@@ -181,6 +191,133 @@ class CorpusForgeApp:
             bg=t["panel_bg"], fg=t["label_fg"],
         )
         self.progress_label.pack(side=tk.RIGHT)
+
+    def _build_settings_panel(self, parent, t):
+        """Pipeline settings: workers, toggles, chunk params. Changes saved to config."""
+        # Row 0: Workers + OCR mode
+        row0 = ttk.Frame(parent)
+        row0.pack(fill=tk.X, pady=2)
+
+        tk.Label(row0, text="Workers:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
+
+        workers_default = 8
+        if self._config is not None:
+            workers_default = self._config.pipeline.workers
+        self.workers_var = tk.IntVar(value=workers_default)
+        self.workers_spin = tk.Spinbox(
+            row0, from_=1, to=32, textvariable=self.workers_var,
+            font=FONT, bg=t["input_bg"], fg=t["input_fg"],
+            insertbackground=t["fg"], relief=tk.FLAT, bd=2, width=4,
+            buttonbackground=t["panel_bg"],
+        )
+        self.workers_spin.pack(side=tk.LEFT, padx=(4, 16))
+
+        tk.Label(row0, text="OCR:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
+
+        ocr_default = "auto"
+        if self._config is not None:
+            ocr_default = self._config.parse.ocr_mode
+        self.ocr_var = tk.StringVar(value=ocr_default)
+        self.ocr_combo = ttk.Combobox(
+            row0, textvariable=self.ocr_var, values=["skip", "auto", "force"],
+            state="readonly", width=6,
+        )
+        self.ocr_combo.pack(side=tk.LEFT, padx=(4, 16))
+
+        tk.Label(row0, text="Chunk size:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
+
+        chunk_size_default = 1200
+        if self._config is not None:
+            chunk_size_default = self._config.chunk.size
+        self.chunk_size_var = tk.IntVar(value=chunk_size_default)
+        self.chunk_size_spin = tk.Spinbox(
+            row0, from_=100, to=10000, increment=100,
+            textvariable=self.chunk_size_var,
+            font=FONT, bg=t["input_bg"], fg=t["input_fg"],
+            insertbackground=t["fg"], relief=tk.FLAT, bd=2, width=6,
+            buttonbackground=t["panel_bg"],
+        )
+        self.chunk_size_spin.pack(side=tk.LEFT, padx=(4, 16))
+
+        tk.Label(row0, text="Overlap:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
+
+        overlap_default = 200
+        if self._config is not None:
+            overlap_default = self._config.chunk.overlap
+        self.overlap_var = tk.IntVar(value=overlap_default)
+        self.overlap_spin = tk.Spinbox(
+            row0, from_=0, to=2000, increment=50,
+            textvariable=self.overlap_var,
+            font=FONT, bg=t["input_bg"], fg=t["input_fg"],
+            insertbackground=t["fg"], relief=tk.FLAT, bd=2, width=5,
+            buttonbackground=t["panel_bg"],
+        )
+        self.overlap_spin.pack(side=tk.LEFT, padx=(4, 0))
+
+        # Row 1: Toggles + Save button
+        row1 = ttk.Frame(parent)
+        row1.pack(fill=tk.X, pady=(4, 2))
+
+        embed_default = True
+        enrich_default = True
+        extract_default = False
+        if self._config is not None:
+            embed_default = self._config.embed.enabled
+            enrich_default = self._config.enrich.enabled
+            extract_default = self._config.extract.enabled
+
+        self.embed_var = tk.BooleanVar(value=embed_default)
+        self.embed_chk = ttk.Checkbutton(
+            row1, text="Embedding", variable=self.embed_var,
+        )
+        self.embed_chk.pack(side=tk.LEFT, padx=(0, 12))
+
+        self.enrich_var = tk.BooleanVar(value=enrich_default)
+        self.enrich_chk = ttk.Checkbutton(
+            row1, text="Enrichment", variable=self.enrich_var,
+        )
+        self.enrich_chk.pack(side=tk.LEFT, padx=(0, 12))
+
+        self.extract_var = tk.BooleanVar(value=extract_default)
+        self.extract_chk = ttk.Checkbutton(
+            row1, text="Entity Extraction", variable=self.extract_var,
+        )
+        self.extract_chk.pack(side=tk.LEFT, padx=(0, 12))
+
+        self.save_settings_btn = ttk.Button(
+            row1, text="Save Settings", style="Tertiary.TButton",
+            command=self._handle_save_settings,
+        )
+        self.save_settings_btn.pack(side=tk.RIGHT)
+
+    def _handle_save_settings(self):
+        """Collect current settings and invoke the save callback."""
+        settings = {
+            "pipeline": {"workers": self.workers_var.get()},
+            "parse": {"ocr_mode": self.ocr_var.get()},
+            "chunk": {
+                "size": self.chunk_size_var.get(),
+                "overlap": self.overlap_var.get(),
+            },
+            "embed": {"enabled": self.embed_var.get()},
+            "enrich": {"enabled": self.enrich_var.get()},
+            "extract": {"enabled": self.extract_var.get()},
+        }
+        if self._on_save_settings:
+            self._on_save_settings(settings)
+        self.append_log(
+            f"Settings saved: workers={settings['pipeline']['workers']}, "
+            f"OCR={settings['parse']['ocr_mode']}, "
+            f"chunk={settings['chunk']['size']}/{settings['chunk']['overlap']}, "
+            f"embed={'ON' if settings['embed']['enabled'] else 'OFF'}, "
+            f"enrich={'ON' if settings['enrich']['enabled'] else 'OFF'}, "
+            f"extract={'ON' if settings['extract']['enabled'] else 'OFF'}",
+            "INFO",
+        )
 
     def _build_stats_panel(self, parent, t):
         """Two-column grid of live statistics."""
