@@ -1,12 +1,9 @@
 """
-GLiNER2 entity extraction — zero-shot NER with batch inference.
+GLiNER2 entity extraction — zero-shot NER with concurrent batch inference.
 
 Extracts candidate entities from chunk text using GLiNER multi-v2.1.
-Uses GLiNER's native batch inference (model.inference) which processes
-multiple texts in parallel at the tensor level — faster than threading.
-
-Batch size is config-driven (extract.batch_size in config.yaml / config.local.yaml)
-so each machine can tune to its CPU/RAM capacity.
+Uses concurrent workers (ThreadPoolExecutor), each processing batches via
+GLiNER's native model.inference(). Config-driven batch_size and max_concurrent.
 
 Output: list[dict] where each dict is one entity occurrence:
   {chunk_id, text, label, score, start, end}
@@ -16,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -33,16 +31,15 @@ class ExtractorConfig:
     ])
     min_confidence: float = 0.5
     batch_size: int = 16
+    max_concurrent: int = 4
 
 
 class GlinerExtractor:
     """
-    Zero-shot NER using GLiNER multi-v2.1.
+    Zero-shot NER using GLiNER multi-v2.1 with concurrent workers.
 
-    Designed for the CorpusForge pipeline:
-      chunker output -> enricher -> embedder -> **extractor** -> export
-
-    Each chunk produces zero or more entity candidates written to entities.jsonl.
+    Each worker gets its own batch of chunks and calls model.inference().
+    max_concurrent workers run simultaneously via ThreadPoolExecutor.
     """
 
     def __init__(self, config: ExtractorConfig | None = None):
@@ -59,33 +56,58 @@ class GlinerExtractor:
             logger.info("GLiNER loaded in %.1fs", time.time() - start)
         return self._model
 
+    def _extract_batch(self, batch_chunks: list[tuple[int, dict]]) -> list[dict]:
+        """Extract entities from a single batch of chunks."""
+        model = self._get_model()
+        texts = [c["text"] for _, c in batch_chunks]
+        chunk_ids = [c.get("chunk_id", "") for _, c in batch_chunks]
+        entities = []
+
+        try:
+            batch_results = model.inference(
+                texts,
+                self.config.entity_types,
+                threshold=self.config.min_confidence,
+                batch_size=self.config.batch_size,
+            )
+            for chunk_id, entities_for_chunk in zip(chunk_ids, batch_results):
+                for ent in entities_for_chunk:
+                    entities.append({
+                        "chunk_id": chunk_id,
+                        "text": ent["text"],
+                        "label": ent["label"],
+                        "score": round(ent["score"], 4),
+                        "start": ent["start"],
+                        "end": ent["end"],
+                    })
+        except Exception as exc:
+            logger.warning("Batch extraction failed: %s", exc)
+
+        return entities
+
     def extract_entities(self, chunks: list[dict]) -> list[dict]:
         """
-        Extract entities from all chunks using batch inference.
+        Extract entities from all chunks using concurrent batch workers.
 
-        Parameters
-        ----------
-        chunks : list[dict]
-            Chunk dicts from the pipeline. Must contain 'chunk_id' and 'text'.
-
-        Returns
-        -------
-        list[dict]
-            Entity candidates: {chunk_id, text, label, score, start, end}
+        Splits chunks into work units of batch_size, then dispatches
+        max_concurrent workers to process them in parallel.
         """
         if not self.config.enabled:
             logger.info("Entity extraction disabled — skipping.")
             return []
 
-        model = self._get_model()
+        self._get_model()  # Pre-load before threading
         total = len(chunks)
         batch_size = self.config.batch_size
+        max_workers = self.config.max_concurrent
         start = time.time()
         all_entities: list[dict] = []
 
         logger.info(
-            "Starting entity extraction on %d chunks (batch_size=%d, %d entity types, threshold=%.2f)...",
-            total, batch_size, len(self.config.entity_types), self.config.min_confidence,
+            "Starting entity extraction on %d chunks (batch_size=%d, workers=%d, "
+            "%d entity types, threshold=%.2f)...",
+            total, batch_size, max_workers,
+            len(self.config.entity_types), self.config.min_confidence,
         )
 
         # Filter out chunks too short to have meaningful entities
@@ -94,45 +116,27 @@ class GlinerExtractor:
         if skipped:
             logger.info("Skipping %d chunks shorter than 20 chars.", skipped)
 
-        # Process in batches using GLiNER's native batch inference
+        # Split into batches
+        batches = []
         for batch_start in range(0, len(valid_chunks), batch_size):
-            batch = valid_chunks[batch_start:batch_start + batch_size]
-            texts = [c["text"] for _, c in batch]
-            chunk_ids = [c.get("chunk_id", "") for _, c in batch]
+            batches.append(valid_chunks[batch_start:batch_start + batch_size])
 
-            try:
-                batch_results = model.inference(
-                    texts,
-                    self.config.entity_types,
-                    threshold=self.config.min_confidence,
-                    batch_size=batch_size,
-                )
-
-                for chunk_id, entities_for_chunk in zip(chunk_ids, batch_results):
-                    for ent in entities_for_chunk:
-                        all_entities.append({
-                            "chunk_id": chunk_id,
-                            "text": ent["text"],
-                            "label": ent["label"],
-                            "score": round(ent["score"], 4),
-                            "start": ent["start"],
-                            "end": ent["end"],
-                        })
-            except Exception as exc:
-                logger.warning(
-                    "Batch extraction failed (chunks %d-%d): %s",
-                    batch_start, batch_start + len(batch), exc,
-                )
-
-            # Progress logging
-            processed = min(batch_start + len(batch), len(valid_chunks))
-            if processed % (batch_size * 10) == 0 or processed == len(valid_chunks):
-                elapsed = time.time() - start
-                rate = processed / elapsed if elapsed > 0 else 0
-                logger.info(
-                    "Extraction progress: %d/%d chunks (%.1f chunks/sec, %d entities found)",
-                    processed, len(valid_chunks), rate, len(all_entities),
-                )
+        # Dispatch batches to concurrent workers
+        done_count = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(self._extract_batch, batch): i for i, batch in enumerate(batches)}
+            for future in as_completed(futures):
+                entities = future.result()
+                all_entities.extend(entities)
+                done_count += 1
+                chunks_done = min(done_count * batch_size, len(valid_chunks))
+                if done_count % max(len(batches) // 10, 1) == 0 or done_count == len(batches):
+                    elapsed = time.time() - start
+                    rate = chunks_done / elapsed if elapsed > 0 else 0
+                    logger.info(
+                        "Extraction progress: %d/%d chunks (%.1f chunks/sec, %d entities found)",
+                        chunks_done, len(valid_chunks), rate, len(all_entities),
+                    )
 
         elapsed = time.time() - start
         logger.info(

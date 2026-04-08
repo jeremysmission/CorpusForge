@@ -180,8 +180,9 @@ class Pipeline:
         """Lazy-load the GLiNER extractor on first use."""
         if self._extractor is None:
             from src.extract.gliner_extractor import GlinerExtractor, ExtractorConfig
-            logger.info("Loading extractor: %s (batch_size=%d)...",
-                        self.config.extract.model_name, self.config.extract.batch_size)
+            logger.info("Loading extractor: %s (batch_size=%d, workers=%d)...",
+                        self.config.extract.model_name, self.config.extract.batch_size,
+                        self.config.extract.max_concurrent)
             self._extractor = GlinerExtractor(
                 config=ExtractorConfig(
                     enabled=self.config.extract.enabled,
@@ -189,6 +190,7 @@ class Pipeline:
                     entity_types=self.config.extract.entity_types,
                     min_confidence=self.config.extract.min_confidence,
                     batch_size=self.config.extract.batch_size,
+                    max_concurrent=self.config.extract.max_concurrent,
                 )
             )
         return self._extractor

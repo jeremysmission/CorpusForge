@@ -175,6 +175,12 @@ class ExtractConfig(BaseModel):
         description="Batch size for GLiNER inference. Higher = faster but more RAM. "
                     "Beast: 16, workstation: 20-32. Set per-machine in config.local.yaml.",
     )
+    max_concurrent: int = Field(
+        default=4,
+        ge=1, le=32,
+        description="Concurrent extraction workers. Each worker processes one batch. "
+                    "Beast: 16. Set per-machine in config.local.yaml.",
+    )
 
 
 class PipelineConfig(BaseModel):

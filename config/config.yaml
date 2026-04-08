@@ -48,6 +48,7 @@ extract:
     - ACTION
   min_confidence: 0.5
   batch_size: 16                 # GLiNER batch inference size. Higher = faster, more RAM. Adjust in config.local.yaml
+  max_concurrent: 4              # Concurrent extraction workers. Beast: 16. Adjust in config.local.yaml
 
 pipeline:
   full_reindex: false
