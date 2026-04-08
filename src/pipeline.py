@@ -114,6 +114,7 @@ class Pipeline:
         # Lazy-loaded models — only initialized when their stage runs
         self._embedder: Embedder | None = None
         self._enricher: ContextualEnricher | None = None
+        self._extractor = None
 
         models = []
         if config.embed.enabled:
@@ -165,9 +166,27 @@ class Pipeline:
                     ollama_url=self.config.enrich.ollama_url,
                     model=self.config.enrich.model,
                     max_chunk_chars=self.config.enrich.max_chunk_chars,
+                    max_concurrent=self.config.enrich.max_concurrent,
                 )
             )
         return self._enricher
+
+    def _get_extractor(self):
+        """Lazy-load the GLiNER extractor on first use."""
+        if self._extractor is None:
+            from src.extract.gliner_extractor import GlinerExtractor, ExtractorConfig
+            logger.info("Loading extractor: %s (batch_size=%d)...",
+                        self.config.extract.model_name, self.config.extract.batch_size)
+            self._extractor = GlinerExtractor(
+                config=ExtractorConfig(
+                    enabled=self.config.extract.enabled,
+                    model_name=self.config.extract.model_name,
+                    entity_types=self.config.extract.entity_types,
+                    min_confidence=self.config.extract.min_confidence,
+                    batch_size=self.config.extract.batch_size,
+                )
+            )
+        return self._extractor
 
     def run(
         self,
@@ -254,13 +273,21 @@ class Pipeline:
             logger.info("Embedding disabled — chunk-only export.")
             vectors = np.empty((0, 768), dtype=np.float16)
 
+        # Stage 7: Entity extraction (GLiNER batch on CPU) — skipped if disabled
+        entities = []
+        if self.config.extract.enabled:
+            extractor = self._get_extractor()
+            entities = extractor.extract_entities(all_chunks)
+        else:
+            logger.info("Entity extraction disabled — skipping.")
+
         export_stats = self._build_export_stats(stats, start_time)
 
         # Stage 8: Export
         export_dir = self.packager.export(
             chunks=all_chunks,
             vectors=vectors,
-            entities=[],
+            entities=entities,
             stats=export_stats,
         )
         self.deduplicator.mark_indexed([Path(doc.source_path) for doc in all_docs])

@@ -17,6 +17,7 @@ import json
 import logging
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from urllib.error import URLError
 from urllib.request import urlopen, Request
@@ -57,6 +58,7 @@ class EnricherConfig:
     ollama_url: str = "http://127.0.0.1:11434"
     model: str = "phi4:14b-q4_K_M"
     max_chunk_chars: int = 500
+    max_concurrent: int = 2
 
 
 @dataclass
@@ -197,23 +199,18 @@ class ContextualEnricher:
     # ------------------------------------------------------------------
 
     def _init_client(self) -> None:
-        """Create an OpenAI SDK client pointed at the local Ollama instance."""
+        """Verify Ollama is reachable (stdlib only — no openai SDK needed)."""
         try:
-            from openai import OpenAI
-
-            base_url = self.config.ollama_url.rstrip("/") + "/v1"
-            self._client = OpenAI(
-                base_url=base_url,
-                api_key="ollama",
-            )
-
-            # Quick health check — list models to verify Ollama is running
-            self._client.models.list()
+            base = self.config.ollama_url.rstrip("/")
+            req = Request(f"{base}/api/version", method="GET")
+            with urlopen(req, timeout=5) as resp:
+                if resp.status != 200:
+                    raise ConnectionError("Ollama returned non-200")
             self._available = True
             logger.info(
                 "Contextual enricher ready: %s via %s",
                 self.config.model,
-                base_url,
+                base,
             )
         except Exception as exc:
             self._available = False
@@ -262,36 +259,39 @@ class ContextualEnricher:
         enriched_count = 0
         failed_count = 0
         start = time.time()
+        max_workers = self.config.max_concurrent
 
-        logger.info("Starting contextual enrichment for %d chunks...", total)
+        logger.info(
+            "Starting contextual enrichment for %d chunks (%d concurrent workers)...",
+            total, max_workers,
+        )
 
-        batch_size = 10
-        for batch_start in range(0, total, batch_size):
-            batch_end = min(batch_start + batch_size, total)
-            batch = chunks[batch_start:batch_end]
+        def _enrich_one(idx: int) -> tuple[int, str | None]:
+            chunk = chunks[idx]
+            source = chunk["source_path"]
+            doc_text = doc_texts.get(source, "")
+            chunk_text = chunk["text"]
+            preamble = self._generate_preamble(doc_text, chunk_text)
+            return idx, preamble
 
-            for chunk in batch:
-                source = chunk["source_path"]
-                doc_text = doc_texts.get(source, "")
-                chunk_text = chunk["text"]
-
-                preamble = self._generate_preamble(doc_text, chunk_text)
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_enrich_one, i): i for i in range(total)}
+            done = 0
+            for future in as_completed(futures):
+                idx, preamble = future.result()
                 if preamble:
-                    chunk["enriched_text"] = f"{preamble}\n\n{chunk_text}"
+                    chunks[idx]["enriched_text"] = f"{preamble}\n\n{chunks[idx]['text']}"
                     enriched_count += 1
                 else:
                     failed_count += 1
-
-            # Progress logging per batch
-            processed = min(batch_end, total)
-            elapsed = time.time() - start
-            rate = processed / elapsed if elapsed > 0 else 0
-            logger.info(
-                "Enrichment progress: %d/%d chunks (%.1f chunks/sec)",
-                processed,
-                total,
-                rate,
-            )
+                done += 1
+                if done % 50 == 0 or done == total:
+                    elapsed = time.time() - start
+                    rate = done / elapsed if elapsed > 0 else 0
+                    logger.info(
+                        "Enrichment progress: %d/%d chunks (%.1f chunks/sec)",
+                        done, total, rate,
+                    )
 
         elapsed = time.time() - start
         logger.info(
@@ -324,13 +324,22 @@ class ContextualEnricher:
         )
 
         try:
-            response = self._client.chat.completions.create(
-                model=self.config.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,
-                max_tokens=150,
+            base = self.config.ollama_url.rstrip("/")
+            payload = json.dumps({
+                "model": self.config.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0, "num_predict": 150},
+            }).encode("utf-8")
+            req = Request(
+                f"{base}/api/chat",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
             )
-            preamble = response.choices[0].message.content.strip()
+            with urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read())
+            preamble = data.get("message", {}).get("content", "").strip()
             # Basic sanity check — preamble should be non-empty and reasonable
             if preamble and len(preamble) > 10:
                 return preamble

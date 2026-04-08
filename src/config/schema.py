@@ -140,6 +140,13 @@ class EnrichConfig(BaseModel):
         default=500,
         description="Max chars of chunk text sent to enrichment model (for speed).",
     )
+    max_concurrent: int = Field(
+        default=2,
+        ge=1, le=8,
+        description="Concurrent enrichment requests to Ollama. "
+                    "Higher = faster but needs more GPU VRAM. Beast: 2-3. "
+                    "Set per-machine in config.local.yaml.",
+    )
 
 
 class ExtractConfig(BaseModel):
@@ -161,6 +168,12 @@ class ExtractConfig(BaseModel):
         default=0.5,
         ge=0.0, le=1.0,
         description="Minimum GLiNER confidence to include in candidates.",
+    )
+    batch_size: int = Field(
+        default=16,
+        ge=1, le=128,
+        description="Batch size for GLiNER inference. Higher = faster but more RAM. "
+                    "Beast: 16, workstation: 20-32. Set per-machine in config.local.yaml.",
     )
 
 

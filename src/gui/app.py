@@ -429,6 +429,52 @@ class CorpusForgeApp:
     def _on_start_click(self):
         if self._running:
             return
+
+        # Ollama health probe — if enrichment is enabled, verify Ollama is ready
+        if self.enrich_var.get():
+            from src.enrichment.contextual_enricher import probe_enrichment
+            ollama_url = "http://127.0.0.1:11434"
+            model = "phi4:14b-q4_K_M"
+            if self._config is not None:
+                ollama_url = self._config.enrich.ollama_url
+                model = self._config.enrich.model
+
+            self.append_log("Probing Ollama for enrichment readiness...", "INFO")
+            probe = probe_enrichment(
+                ollama_url=ollama_url, model=model, auto_start=True,
+            )
+            if not probe.ready:
+                from tkinter import messagebox
+                choice = messagebox.askyesnocancel(
+                    "Enrichment Unavailable",
+                    f"Ollama enrichment is not ready:\n{probe.status_text}\n\n"
+                    "Yes = Continue without enrichment\n"
+                    "No = Retry probe\n"
+                    "Cancel = Abort",
+                )
+                if choice is None:  # Cancel
+                    return
+                if choice is False:  # No = Retry
+                    probe = probe_enrichment(
+                        ollama_url=ollama_url, model=model, auto_start=True,
+                        start_timeout=30,
+                    )
+                    if not probe.ready:
+                        messagebox.showwarning(
+                            "Still Unavailable",
+                            f"Ollama still not ready: {probe.status_text}\n\n"
+                            "Continuing without enrichment.",
+                        )
+                        self.enrich_var.set(False)
+                if choice is True:  # Yes = Continue without
+                    self.enrich_var.set(False)
+            else:
+                self.append_log(
+                    f"Ollama ready: {model}"
+                    + (" (auto-started)" if probe.auto_started else ""),
+                    "INFO",
+                )
+
         self._set_running(True)
         if self._on_start:
             self._on_start(

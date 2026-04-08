@@ -33,9 +33,10 @@ enrich:
   ollama_url: "http://127.0.0.1:11434"
   model: "phi4:14b-q4_K_M"
   max_chunk_chars: 500
+  max_concurrent: 2              # Concurrent Ollama requests (I/O-bound). Beast: 2-3, adjust in config.local.yaml
 
 extract:
-  enabled: false  # GLiNER waiver pending — flip to true when approved
+  enabled: true                  # GLiNER2 entity extraction
   model_name: "urchade/gliner_multi-v2.1"
   entity_types:
     - PART_NUMBER
@@ -46,6 +47,7 @@ extract:
     - FAILURE_MODE
     - ACTION
   min_confidence: 0.5
+  batch_size: 16                 # GLiNER batch inference size. Higher = faster, more RAM. Adjust in config.local.yaml
 
 pipeline:
   full_reindex: false
