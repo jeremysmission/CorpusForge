@@ -27,7 +27,7 @@ from .config.schema import ForgeConfig
 from .chunk.chunker import Chunker
 from .chunk.chunk_ids import make_chunk_id
 from .embed.embedder import Embedder
-from .enrichment.contextual_enricher import ContextualEnricher, EnricherConfig
+from .enrichment.contextual_enricher import ContextualEnricher, EnricherConfig, probe_enrichment
 from .export.packager import Packager
 from .download.hasher import Hasher
 from .download.deduplicator import Deduplicator
@@ -102,28 +102,72 @@ class Pipeline:
         self.dispatcher = ParseDispatcher(
             timeout_seconds=config.parse.timeout_seconds,
             max_chars=config.parse.max_chars_per_file,
+            skip_list_path=config.paths.skip_list,
         )
         self.chunker = Chunker(
             chunk_size=config.chunk.size,
             overlap=config.chunk.overlap,
             max_heading_len=config.chunk.max_heading_len,
         )
-        self.enricher = ContextualEnricher(
-            config=EnricherConfig(
-                enabled=config.enrich.enabled,
+        self.packager = Packager(output_dir=config.paths.output_dir)
+
+        # Lazy-loaded models — only initialized when their stage runs
+        self._embedder: Embedder | None = None
+        self._enricher: ContextualEnricher | None = None
+
+        models = []
+        if config.embed.enabled:
+            models.append("embedder")
+        if config.enrich.enabled:
+            models.append("enricher")
+        if config.extract.enabled:
+            models.append("extractor")
+        if models:
+            logger.info("Models to load on first use: %s", ", ".join(models))
+        else:
+            logger.info("Chunk-only mode — no AI models will be loaded.")
+
+        # Pre-flight: fail loud if enrichment enabled but Ollama unavailable
+        if config.enrich.enabled:
+            probe = probe_enrichment(
                 ollama_url=config.enrich.ollama_url,
                 model=config.enrich.model,
-                max_chunk_chars=config.enrich.max_chunk_chars,
+                auto_start=True,
             )
-        )
-        self.embedder = Embedder(
-            model_name=config.embed.model_name,
-            dim=config.embed.dim,
-            device=config.embed.device,
-            max_batch_tokens=config.embed.max_batch_tokens,
-            dtype=config.embed.dtype,
-        )
-        self.packager = Packager(output_dir=config.paths.output_dir)
+            if not probe.ready:
+                raise RuntimeError(
+                    f"Enrichment is enabled but not available: {probe.status_text}. "
+                    f"Disable enrichment (enrich.enabled: false) or fix the issue."
+                )
+
+    def _get_embedder(self) -> Embedder:
+        """Lazy-load the embedder on first use."""
+        if self._embedder is None:
+            logger.info("Loading embedder: %s on %s...",
+                        self.config.embed.model_name, self.config.embed.device)
+            self._embedder = Embedder(
+                model_name=self.config.embed.model_name,
+                dim=self.config.embed.dim,
+                device=self.config.embed.device,
+                max_batch_tokens=self.config.embed.max_batch_tokens,
+                dtype=self.config.embed.dtype,
+            )
+        return self._embedder
+
+    def _get_enricher(self) -> ContextualEnricher:
+        """Lazy-load the enricher on first use."""
+        if self._enricher is None:
+            logger.info("Loading enricher: %s via %s...",
+                        self.config.enrich.model, self.config.enrich.ollama_url)
+            self._enricher = ContextualEnricher(
+                config=EnricherConfig(
+                    enabled=self.config.enrich.enabled,
+                    ollama_url=self.config.enrich.ollama_url,
+                    model=self.config.enrich.model,
+                    max_chunk_chars=self.config.enrich.max_chunk_chars,
+                )
+            )
+        return self._enricher
 
     def run(
         self,
@@ -192,15 +236,23 @@ class Pipeline:
             stats.elapsed_seconds = time.time() - start_time
             return stats
 
-        # Stage 5: Contextual enrichment (phi4:14B via Ollama)
-        doc_texts = {doc.source_path: doc.text for doc in all_docs}
-        all_chunks = self.enricher.enrich_chunks(all_chunks, doc_texts)
-        stats.chunks_enriched = sum(
-            1 for c in all_chunks if c.get("enriched_text") is not None
-        )
+        # Stage 5: Contextual enrichment (phi4:14B via Ollama) — skipped if disabled
+        if self.config.enrich.enabled:
+            enricher = self._get_enricher()
+            doc_texts = {doc.source_path: doc.text for doc in all_docs}
+            all_chunks = enricher.enrich_chunks(all_chunks, doc_texts)
+            stats.chunks_enriched = sum(
+                1 for c in all_chunks if c.get("enriched_text") is not None
+            )
+        else:
+            logger.info("Enrichment disabled — skipping.")
 
-        # Stage 6: Embed (GPU batch with token-budget packing + OOM backoff)
-        vectors = self._embed_chunks(all_chunks, stats)
+        # Stage 6: Embed (GPU batch with token-budget packing + OOM backoff) — skipped if disabled
+        if self.config.embed.enabled:
+            vectors = self._embed_chunks(all_chunks, stats)
+        else:
+            logger.info("Embedding disabled — chunk-only export.")
+            vectors = np.empty((0, 768), dtype=np.float16)
 
         export_stats = self._build_export_stats(stats, start_time)
 
@@ -455,7 +507,8 @@ class Pipeline:
         self, chunks: list[dict], stats: RunStats
     ) -> np.ndarray:
         """Embed all chunks — GPU batch with token-budget packing + OOM backoff."""
+        embedder = self._get_embedder()
         texts = [c.get("enriched_text") or c["text"] for c in chunks]
-        vectors = self.embedder.embed_batch(texts)
+        vectors = embedder.embed_batch(texts)
         stats.vectors_created = len(vectors)
         return vectors

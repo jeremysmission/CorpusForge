@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging, sys, threading, tkinter as tk
 from collections import Counter
 from pathlib import Path
+from tkinter import messagebox
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
@@ -14,6 +15,7 @@ from src.parse.dispatcher import get_supported_extensions
 from src.gui.app import CorpusForgeApp
 from src.gui.safe_after import safe_after, drain_ui_queue
 from src.skip.skip_manager import load_deferred_extension_map
+from src.enrichment.contextual_enricher import probe_enrichment
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +102,30 @@ class PipelineRunner:
         source_path = Path(self.config.paths.source_dirs[0])
         if not source_path.exists():
             return self._finish(f"Source not found: {source_path}", "ERROR")
-        supported = get_supported_extensions()
+
+        # Pre-run enrichment check — fail loud before burning parse time
+        if self.config.enrich.enabled:
+            safe_after(self.app.root, 0, self.app.append_log,
+                       "Checking enrichment readiness (Ollama + model)...", "INFO")
+            probe = probe_enrichment(
+                ollama_url=self.config.enrich.ollama_url,
+                model=self.config.enrich.model,
+                auto_start=True,
+            )
+            if probe.ready:
+                safe_after(self.app.root, 0, self.app.update_enrichment_status,
+                           "ready", "green")
+                if probe.auto_started:
+                    safe_after(self.app.root, 0, self.app.append_log,
+                               "Ollama auto-started successfully.", "INFO")
+            else:
+                safe_after(self.app.root, 0, self.app.update_enrichment_status,
+                           probe.status_text, "red")
+                return self._finish(
+                    f"Enrichment pre-flight failed: {probe.status_text}. "
+                    f"Disable enrichment or fix the issue.", "ERROR")
+
+        supported = get_supported_extensions(self.config.paths.skip_list)
         deferred = load_deferred_extension_map(self.config.paths.skip_list)
         deferred.update({ext: "Deferred by config for this run" for ext in self.config.parse.defer_extensions})
         if source_path.is_file():
@@ -137,8 +162,19 @@ class PipelineRunner:
         if self._stop_event.is_set():
             return self._finish("Pipeline cancelled.", "WARNING",
                                 {**_EMPTY_STATS, "files_found": len(files)})
-        safe_after(self.app.root, 0, self.app.append_log,
-                   "Initializing pipeline (loading models)...", "INFO")
+        stages = []
+        if self.config.enrich.enabled:
+            stages.append("enrichment")
+        if self.config.embed.enabled:
+            stages.append("embedding")
+        if self.config.extract.enabled:
+            stages.append("extraction")
+        if stages:
+            safe_after(self.app.root, 0, self.app.append_log,
+                       f"Initializing pipeline (stages: parse, chunk, {', '.join(stages)})...", "INFO")
+        else:
+            safe_after(self.app.root, 0, self.app.append_log,
+                       "Initializing pipeline (chunk-only mode — no AI models)...", "INFO")
         pipeline = Pipeline(self.config)
         safe_after(self.app.root, 0, self.app.append_log, "Running...", "INFO")
 
@@ -184,7 +220,11 @@ def main():
         level=getattr(logging, config.pipeline.log_level, logging.INFO),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    supported_count = len(get_supported_extensions())
+
+    # Auto-select least-used GPU before any CUDA operations
+    from src.gpu_selector import apply_gpu_selection
+    gpu_idx = apply_gpu_selection()
+    supported_count = len(get_supported_extensions(config.paths.skip_list))
     skip_count = _count_skip_list(config)
     root = tk.Tk()
     runner = [None]
@@ -225,6 +265,35 @@ def main():
         f"Config: {config_path} | {supported_count} formats | "
         f"{skip_count} deferred | Enrichment: {'ON' if config.enrich.enabled else 'OFF'}",
         "INFO")
+
+    # Startup enrichment probe — update status bar with actual Ollama state
+    if config.enrich.enabled:
+        def _startup_probe():
+            probe = probe_enrichment(
+                ollama_url=config.enrich.ollama_url,
+                model=config.enrich.model,
+                auto_start=True,
+            )
+            if probe.ready:
+                safe_after(root, 0, app.update_enrichment_status, "ready", "green")
+                msg = "Enrichment ready"
+                if probe.auto_started:
+                    msg += " (Ollama auto-started)"
+                safe_after(root, 0, app.append_log, msg, "INFO")
+            elif probe.ollama_running and not probe.model_available:
+                safe_after(root, 0, app.update_enrichment_status,
+                           probe.status_text, "orange")
+                safe_after(root, 0, app.append_log,
+                           f"WARNING: {probe.status_text}", "WARNING")
+            else:
+                safe_after(root, 0, app.update_enrichment_status,
+                           probe.status_text, "red")
+                safe_after(root, 0, app.append_log,
+                           f"WARNING: {probe.status_text}", "WARNING")
+
+        threading.Thread(target=_startup_probe, daemon=True,
+                         name="enrichment-probe").start()
+
     root.mainloop()
 
 

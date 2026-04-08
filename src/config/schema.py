@@ -99,6 +99,7 @@ class ParseConfig(BaseModel):
 class EmbedConfig(BaseModel):
     """Embedding model and batching settings."""
 
+    enabled: bool = Field(default=True, description="Enable embedding stage. Disable for chunk-only exports.")
     model_name: str = Field(
         default="nomic-ai/nomic-embed-text-v1.5",
         description="HuggingFace model ID for sentence-transformers.",

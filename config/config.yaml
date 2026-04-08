@@ -21,6 +21,7 @@ parse:
   max_chars_per_file: 5000000
 
 embed:
+  enabled: true           # Set false for chunk-only export (no vectors, no GPU needed)
   model_name: "nomic-ai/nomic-embed-text-v1.5"
   dim: 768
   device: "cuda"

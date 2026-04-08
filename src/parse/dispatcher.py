@@ -4,6 +4,9 @@ Parse dispatcher — routes files to the appropriate parser by extension.
 Ported from V1 (src/parsers/registry.py + src/core/parse_dispatch.py).
 Each parser returns a ParsedDocument. Unsupported formats are skipped.
 Error isolation: single file failure never crashes the pipeline.
+
+Format decisions: All placeholder and deferred formats are loaded from
+config/skip_list.yaml — zero hardcoded format skips in this file.
 """
 
 from __future__ import annotations
@@ -19,8 +22,12 @@ logger = logging.getLogger(__name__)
 _PARSER_MAP: dict | None = None
 
 
-def _build_parser_map() -> dict:
-    """Build extension → parser instance map. Called once on first use."""
+def _build_parser_map(skip_list_path: str = "config/skip_list.yaml") -> dict:
+    """Build extension → parser instance map. Called once on first use.
+
+    Placeholder formats are loaded from config/skip_list.yaml — not hardcoded.
+    To change which formats get placeholder treatment, edit the YAML file.
+    """
     from src.parse.parsers.txt_parser import TxtParser
     from src.parse.parsers.pdf_parser import PdfParser
     from src.parse.parsers.docx_parser import DocxParser
@@ -51,6 +58,7 @@ def _build_parser_map() -> dict:
     from src.parse.parsers.psd_parser import PsdParser
     from src.parse.parsers.step_iges_parser import StepParser, IgesParser
     from src.parse.parsers.placeholder_parser import PlaceholderParser
+    from src.skip.skip_manager import load_placeholder_format_map
 
     txt = TxtParser()
     pdf = PdfParser()
@@ -83,7 +91,7 @@ def _build_parser_map() -> dict:
     step = StepParser()
     iges = IgesParser()
 
-    return {
+    parser_map = {
         # Plain text
         ".txt": txt, ".md": txt, ".rst": txt, ".log": txt,
         ".ini": txt, ".cfg": txt, ".conf": txt,
@@ -134,35 +142,36 @@ def _build_parser_map() -> dict:
         # Forensics / Security
         ".evtx": evtx,
         ".pcap": pcap, ".pcapng": pcap,
-        # Placeholder-only recognized formats
-        ".prt": PlaceholderParser(".prt"),
-        ".sldprt": PlaceholderParser(".sldprt"),
-        ".asm": PlaceholderParser(".asm"),
-        ".sldasm": PlaceholderParser(".sldasm"),
-        ".dwg": PlaceholderParser(".dwg"),
-        ".dwt": PlaceholderParser(".dwt"),
-        ".mpp": PlaceholderParser(".mpp"),
-        ".vsd": PlaceholderParser(".vsd"),
-        ".one": PlaceholderParser(".one"),
-        ".ost": PlaceholderParser(".ost"),
-        ".eps": PlaceholderParser(".eps"),
     }
 
+    # Load placeholder formats from config — zero hardcoded format decisions
+    placeholder_map = load_placeholder_format_map(skip_list_path)
+    for ext in placeholder_map:
+        if ext not in parser_map:
+            parser_map[ext] = PlaceholderParser(ext)
+    if placeholder_map:
+        logger.info("Loaded %d placeholder formats from config: %s",
+                     len(placeholder_map), ", ".join(sorted(placeholder_map)))
 
-def get_supported_extensions() -> set[str]:
+    return parser_map
+
+
+def get_supported_extensions(skip_list_path: str = "config/skip_list.yaml") -> set[str]:
     """Return all supported file extensions."""
     global _PARSER_MAP
     if _PARSER_MAP is None:
-        _PARSER_MAP = _build_parser_map()
+        _PARSER_MAP = _build_parser_map(skip_list_path)
     return set(_PARSER_MAP.keys())
 
 
 class ParseDispatcher:
     """Routes files to the appropriate parser based on extension."""
 
-    def __init__(self, timeout_seconds: int = 60, max_chars: int = 5_000_000):
+    def __init__(self, timeout_seconds: int = 60, max_chars: int = 5_000_000,
+                 skip_list_path: str = "config/skip_list.yaml"):
         self.timeout = timeout_seconds
         self.max_chars = max_chars
+        self._skip_list_path = skip_list_path
 
     def parse(self, file_path: Path) -> ParsedDocument:
         """
@@ -172,7 +181,7 @@ class ParseDispatcher:
         """
         global _PARSER_MAP
         if _PARSER_MAP is None:
-            _PARSER_MAP = _build_parser_map()
+            _PARSER_MAP = _build_parser_map(self._skip_list_path)
 
         ext = file_path.suffix.lower()
         parser = _PARSER_MAP.get(ext)

@@ -13,9 +13,13 @@ Graceful degradation: if Ollama is unreachable, chunks pass through unchanged.
 
 from __future__ import annotations
 
+import json
 import logging
+import subprocess
 import time
 from dataclasses import dataclass
+from urllib.error import URLError
+from urllib.request import urlopen, Request
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +57,120 @@ class EnricherConfig:
     ollama_url: str = "http://127.0.0.1:11434"
     model: str = "phi4:14b-q4_K_M"
     max_chunk_chars: int = 500
+
+
+@dataclass
+class EnrichmentProbeResult:
+    """Result of an enrichment readiness probe."""
+
+    ollama_running: bool = False
+    model_available: bool = False
+    auto_started: bool = False
+    error: str = ""
+
+    @property
+    def ready(self) -> bool:
+        return self.ollama_running and self.model_available
+
+    @property
+    def status_text(self) -> str:
+        if self.ready:
+            return "ready"
+        if not self.ollama_running:
+            return f"Ollama not running ({self.error})"
+        if not self.model_available:
+            return f"Model not found ({self.error})"
+        return self.error or "unknown"
+
+
+def probe_enrichment(
+    ollama_url: str = "http://127.0.0.1:11434",
+    model: str = "phi4:14b-q4_K_M",
+    auto_start: bool = True,
+    start_timeout: int = 15,
+) -> EnrichmentProbeResult:
+    """
+    Probe Ollama readiness for enrichment. No external dependencies (stdlib only).
+
+    Steps:
+      1. GET /api/version — is Ollama running?
+      2. If not and auto_start → spawn `ollama serve`, wait up to start_timeout seconds
+      3. GET /api/tags — is the required model available?
+
+    Returns EnrichmentProbeResult with status details.
+    """
+    result = EnrichmentProbeResult()
+    base = ollama_url.rstrip("/")
+
+    # Step 1: Check if Ollama is running
+    if _ollama_is_running(base):
+        result.ollama_running = True
+    elif auto_start:
+        # Step 2: Attempt auto-start
+        logger.info("Ollama not running — attempting auto-start...")
+        try:
+            subprocess.Popen(
+                ["ollama", "serve"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except FileNotFoundError:
+            result.error = "Ollama not installed. Install from ollama.com"
+            return result
+        except Exception as exc:
+            result.error = f"Failed to start Ollama: {exc}"
+            return result
+
+        # Wait for Ollama to come up
+        deadline = time.time() + start_timeout
+        while time.time() < deadline:
+            if _ollama_is_running(base):
+                result.ollama_running = True
+                result.auto_started = True
+                logger.info("Ollama auto-started successfully.")
+                break
+            time.sleep(1)
+        else:
+            result.error = f"Ollama failed to start within {start_timeout}s"
+            return result
+    else:
+        result.error = "Ollama not running"
+        return result
+
+    # Step 3: Check if model is available
+    try:
+        req = Request(f"{base}/api/tags", method="GET")
+        with urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        model_names = [m.get("name", "") for m in data.get("models", [])]
+        # Match by prefix — "phi4:14b-q4_K_M" matches "phi4:14b-q4_K_M"
+        # Also match short names like "phi4" against full tags
+        model_base = model.split(":")[0]
+        if any(model in name or name.startswith(model) for name in model_names):
+            result.model_available = True
+        elif any(name.startswith(model_base) for name in model_names):
+            result.model_available = True
+        else:
+            result.error = (
+                f"Model {model} not found. "
+                f"Run: ollama pull {model}"
+            )
+            logger.warning("Available models: %s", model_names)
+    except Exception as exc:
+        result.error = f"Failed to query models: {exc}"
+
+    return result
+
+
+def _ollama_is_running(base_url: str) -> bool:
+    """Quick check: is Ollama responding on its API port?"""
+    try:
+        req = Request(f"{base_url}/api/version", method="GET")
+        with urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 class ContextualEnricher:

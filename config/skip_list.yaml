@@ -1,11 +1,39 @@
 # CorpusForge Skip List — formats hashed but not parsed
-# Date: 2026-04-05
+# Date: 2026-04-07
 # Rule: All skipped files are still SHA-256 hashed for the manifest.
+# Rule: NO hardcoded format decisions in Python — everything here.
 
 # Formats deferred for production (hashed but not parsed)
 deferred_formats:
   - ext: ".dwf"
-    reason: "Design Web Format — deferred"
+    reason: "Design Web Format — no open-source parser available"
+
+# Placeholder formats — recognized, hashed, identity-card text only (no content extraction)
+# To fully skip a format: move it from placeholder_formats to deferred_formats
+# To add parsing: remove it from here and add a real parser in src/parse/parsers/
+placeholder_formats:
+  - ext: ".dwg"
+    reason: "AutoCAD Drawing — proprietary binary, convert to DXF for full parsing"
+  - ext: ".dwt"
+    reason: "AutoCAD Drawing Template — same binary family as DWG"
+  - ext: ".prt"
+    reason: "SolidWorks Part — requires SolidWorks + pywin32 COM API"
+  - ext: ".sldprt"
+    reason: "SolidWorks Part — same as .prt"
+  - ext: ".asm"
+    reason: "SolidWorks Assembly — requires SolidWorks + pywin32 COM API"
+  - ext: ".sldasm"
+    reason: "SolidWorks Assembly — same as .asm"
+  - ext: ".mpp"
+    reason: "Microsoft Project — MPXJ can read but needs Java runtime"
+  - ext: ".vsd"
+    reason: "Visio Diagram (Legacy) — binary OLE, convert to .vsdx for full parsing"
+  - ext: ".one"
+    reason: "OneNote Section — export to PDF or HTML before ingest"
+  - ext: ".ost"
+    reason: "Outlook Offline Storage — export as .msg or .eml preferred"
+  - ext: ".eps"
+    reason: "Encapsulated PostScript — needs extra rendering tooling"
 
 skip_conditions:
   encrypted: true

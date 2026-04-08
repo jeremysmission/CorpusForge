@@ -466,6 +466,19 @@ class CorpusForgeApp:
             text=f"Enrichment: {enrich_text}", fg=enrich_fg,
         )
 
+    def update_enrichment_status(self, status: str, color: str = "gray"):
+        """Update the enrichment status indicator in the status bar.
+
+        Args:
+            status: Human-readable status text (e.g. "ready", "Ollama not running")
+            color: Theme color key — "green", "orange", "red", "gray"
+        """
+        t = current_theme()
+        fg = t.get(color, t["gray"])
+        self._status_labels["enrich"].configure(
+            text=f"Enrichment: {status}", fg=fg,
+        )
+
 
 # ------------------------------------------------------------------
 # Helpers

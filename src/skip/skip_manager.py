@@ -30,6 +30,17 @@ _ENCRYPTED_SIGNATURES: list[tuple[int, bytes]] = [
 _MAGIC_READ_SIZE = 4096
 
 
+def _load_format_list(raw: dict, key: str, default_reason: str) -> dict[str, str]:
+    """Load an extension -> reason map from a skip_list.yaml section."""
+    result: dict[str, str] = {}
+    for entry in raw.get(key, []):
+        ext = entry["ext"].lower()
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        result[ext] = entry.get("reason", default_reason)
+    return result
+
+
 def load_deferred_extension_map(skip_list_path: str | Path) -> dict[str, str]:
     """Load deferred extension -> reason map without constructing a SkipManager."""
     path = Path(skip_list_path)
@@ -39,13 +50,19 @@ def load_deferred_extension_map(skip_list_path: str | Path) -> dict[str, str]:
     with open(path, encoding="utf-8-sig") as f:
         raw = yaml.safe_load(f) or {}
 
-    deferred_exts: dict[str, str] = {}
-    for entry in raw.get("deferred_formats", []):
-        ext = entry["ext"].lower()
-        if not ext.startswith("."):
-            ext = f".{ext}"
-        deferred_exts[ext] = entry.get("reason", "deferred format")
-    return deferred_exts
+    return _load_format_list(raw, "deferred_formats", "deferred format")
+
+
+def load_placeholder_format_map(skip_list_path: str | Path) -> dict[str, str]:
+    """Load placeholder extension -> reason map from skip_list.yaml."""
+    path = Path(skip_list_path)
+    if not path.exists():
+        return {}
+
+    with open(path, encoding="utf-8-sig") as f:
+        raw = yaml.safe_load(f) or {}
+
+    return _load_format_list(raw, "placeholder_formats", "placeholder format")
 
 
 class SkipManager:
