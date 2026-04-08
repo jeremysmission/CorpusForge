@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-04-07 | **Updated By:** Agent 1 (Forge Coder) — Forge S2 all slices DONE, READY FOR QA
 **Demo Target:** 2026-05-02
-**Update Rule:** Every agent updates ALL 3 copies at end of sprint session (war room + both repos)
+**Update Rule:** Every agent updates ALL 3 copies at end of sprint session (review board + both repos)
 
 ---
 
@@ -15,7 +15,7 @@
 | Agent 3 | QA + Planning + Cross-Repo | Read-only both + V1 docs | None | ACTIVE |
 
 **Copies of this file (keep all 3 in sync):**
-- `C:\Users\jerem\AgentTeam\war_rooms\HybridRAG3_Educational\SPRINT_SYNC.md` (canonical)
+- `{USER_HOME}\AgentTeam\war_rooms\HybridRAG3_Educational\SPRINT_SYNC.md` (canonical)
 - `C:\CorpusForge\docs\SPRINT_SYNC.md`
 - `C:\HybridRAG_V2\docs\SPRINT_SYNC.md`
 
