@@ -79,6 +79,51 @@ class RunStats:
         }
 
 
+def _apply_cpu_reservation():
+    """Reserve 2 CPU cores for user interaction — affinity + priority + thread cap.
+
+    Layer 1: CPU affinity — pin this process to cores 2-N, leaving 0-1 for user.
+    Layer 2: Process priority — set to below-normal so user apps win contention.
+    Layer 3: PyTorch threads — cap to N-2 so tensor ops don't saturate all cores.
+    """
+    cpu_count = os.cpu_count() or 8
+    reserved = 2
+    max_threads = max(cpu_count - reserved, 1)
+
+    # Layer 1: CPU affinity (strongest guarantee)
+    try:
+        import psutil
+        p = psutil.Process()
+        available_cores = list(range(reserved, cpu_count))
+        if available_cores:
+            p.cpu_affinity(available_cores)
+            logger.info("CPU affinity: pinned to cores %d-%d (cores 0-%d reserved for user)",
+                        reserved, cpu_count - 1, reserved - 1)
+    except ImportError:
+        logger.info("psutil not installed — skipping CPU affinity (install for guaranteed core reservation)")
+    except Exception as exc:
+        logger.warning("CPU affinity failed: %s", exc)
+
+    # Layer 2: Process priority — below normal
+    try:
+        import psutil
+        p = psutil.Process()
+        p.nice(getattr(psutil, "BELOW_NORMAL_PRIORITY_CLASS", 10))
+        logger.info("Process priority: set to below-normal")
+    except Exception:
+        pass
+
+    # Layer 3: PyTorch thread cap
+    try:
+        import torch
+        torch.set_num_threads(max_threads)
+    except Exception:
+        pass
+    os.environ.setdefault("OMP_NUM_THREADS", str(max_threads))
+    os.environ.setdefault("MKL_NUM_THREADS", str(max_threads))
+    logger.info("CPU threads: %d/%d (2 reserved for user)", max_threads, cpu_count)
+
+
 class Pipeline:
     """
     Orchestrates all pipeline stages with parallel parsing.
@@ -95,18 +140,8 @@ class Pipeline:
         self.config = config
         self.workers = config.pipeline.workers
 
-        # Reserve 1 CPU core for user — cap PyTorch threads to N-1
-        cpu_count = os.cpu_count() or 8
-        max_threads = max(cpu_count - 1, 1)
-        try:
-            import torch
-            torch.set_num_threads(max_threads)
-            torch.set_num_interop_threads(max_threads)
-        except Exception:
-            pass
-        os.environ.setdefault("OMP_NUM_THREADS", str(max_threads))
-        os.environ.setdefault("MKL_NUM_THREADS", str(max_threads))
-        logger.info("CPU reservation: %d/%d threads (1 reserved for user)", max_threads, cpu_count)
+        # Reserve 2 CPU cores for user — affinity + priority + thread cap
+        _apply_cpu_reservation()
         self.stale_timeout = config.pipeline.stale_future_timeout
         self.embed_flush_batch = config.pipeline.embed_flush_batch
 
