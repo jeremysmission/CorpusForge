@@ -158,7 +158,7 @@
 - [ ] `src/ingest/entity_extractor.py` — GPT-4o second-pass on complex chunks
 - [ ] `src/ingest/quality_gate.py` — confidence threshold (>= 0.7), type-specific validation
 - [ ] `src/ingest/entity_normalizer.py` — controlled vocabulary for sites, part patterns, name cleanup
-- [ ] Site vocabulary YAML (25 IGS sites with aliases)
+- [ ] Site vocabulary YAML (25 enterprise program sites with aliases)
 - [ ] Part number patterns (ARC-NNNN, IGSI-NNNN, PO-YYYY-NNNN)
 - [ ] `scripts/audit_extraction.py` — quality report (accepted/rejected/reasons)
 

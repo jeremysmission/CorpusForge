@@ -36,6 +36,12 @@ sanitize_before_push.py
 # Machine-specific config overrides (workers, GPU, paths)
 config/config.local.yaml
 
+# CoPilot+ instruction file — never push to remote
+CLAUDE.md
+
+# Production source data — never push to remote
+ProductionSource/
+
 # Credentials / secrets
 .env
 *.key

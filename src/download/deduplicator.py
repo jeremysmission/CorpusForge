@@ -2,8 +2,8 @@
 Deduplicator — detects and eliminates duplicate files before processing.
 
 Two dedup strategies:
-  1. _1 suffix detection: Report.docx and Report_1.docx with same hash → skip _1
-  2. Content-hash dedup: any files with identical SHA-256 → process only once
+  1. _N suffix detection: Report.docx and Report_1.docx with same hash -> skip _N
+  2. Content-hash dedup: any files with identical SHA-256 -> process only once
 
 54% of the production corpus consists of _1 suffix duplicates (measured).
 """
@@ -11,11 +11,20 @@ Two dedup strategies:
 from __future__ import annotations
 
 import logging
+import re
+import time
 from pathlib import Path
+from typing import Callable, Optional
 
 from src.download.hasher import Hasher
 
 logger = logging.getLogger(__name__)
+
+# Mtime tolerance for float comparison (2 seconds covers FAT32/NTFS precision)
+_MTIME_TOLERANCE = 2.0
+
+# Pattern matching _1, _2, _3 etc. at end of stem
+_SUFFIX_RE = re.compile(r"^(.+?)_(\d+)$")
 
 
 class Deduplicator:
@@ -27,45 +36,71 @@ class Deduplicator:
         self.skipped_duplicate = 0
         self._pending_hashes: dict[str, str] = {}
 
-    def filter_new_and_changed(self, files: list[Path]) -> list[Path]:
+    def filter_new_and_changed(
+        self,
+        files: list[Path],
+        on_progress: Optional[Callable[[int, int, str, int], None]] = None,
+    ) -> list[Path]:
         """
         Return only files that are new or changed since last run.
 
         Skips:
           - Files with unchanged content hash
-          - _1 suffix duplicates with identical content to the original
+          - _N suffix duplicates with identical content to the original
+
+        Args:
+            files: List of file paths to check.
+            on_progress: Optional callback(scanned, total, current_file, duplicates)
+                called periodically for GUI/CLI progress display.
         """
         work_list = []
         seen_hashes: dict[str, Path] = {}
+        total = len(files)
+        last_progress = time.time()
 
-        for path in files:
+        for i, path in enumerate(files):
             if not path.exists() or not path.is_file():
                 continue
 
-            state = self.hasher.get_state(path)
-            stat = path.stat()
+            # Emit progress every 5 seconds
+            now = time.time()
+            if on_progress and (now - last_progress >= 5.0 or i == 0):
+                on_progress(i, total, path.name, self.skipped_duplicate)
+                last_progress = now
 
-            if state and state["mtime"] == stat.st_mtime and state["size"] == stat.st_size:
-                if state["status"] == "indexed":
-                    self.skipped_unchanged += 1
+            state = self.hasher.get_state(path)
+
+            if state:
+                try:
+                    stat = path.stat()
+                except OSError:
                     continue
-                if state["status"] == "duplicate":
-                    self.skipped_duplicate += 1
-                    continue
+                mtime_match = abs(state["mtime"] - stat.st_mtime) < _MTIME_TOLERANCE
+                size_match = state["size"] == stat.st_size
+
+                if mtime_match and size_match:
+                    if state["status"] == "indexed":
+                        self.skipped_unchanged += 1
+                        continue
+                    if state["status"] == "duplicate":
+                        self.skipped_duplicate += 1
+                        continue
 
             content_hash = self.hasher.hash_file(path)
             previous_hash = self.hasher.get_stored_hash(path)
 
-            # Skip if unchanged since last run
+            # Skip if unchanged since last run (hash matches despite mtime drift)
             if state and state["status"] == "indexed" and content_hash == previous_hash:
                 self.skipped_unchanged += 1
+                # Update mtime in DB to avoid re-hashing next time
+                self.hasher.update_hash(path, content_hash, status="indexed")
                 continue
 
-            # Check for _1 suffix duplicate
+            # Check for _N suffix duplicate (e.g. Report_1.docx, Report_2.docx)
             if self._is_suffix_duplicate(path, content_hash):
                 self.skipped_duplicate += 1
                 self.hasher.update_hash(path, content_hash, status="duplicate")
-                logger.debug("Skipping _1 duplicate: %s", path.name)
+                logger.debug("Skipping suffix duplicate: %s", path.name)
                 continue
 
             # Check for content-hash duplicate within this batch
@@ -81,6 +116,10 @@ class Deduplicator:
             seen_hashes[content_hash] = path
             self._pending_hashes[self.hasher._normalize_path(path)] = content_hash
             work_list.append(path)
+
+        # Final progress
+        if on_progress:
+            on_progress(total, total, "", self.skipped_duplicate)
 
         logger.info(
             "Dedup: %d files to process, %d unchanged, %d duplicates",
@@ -98,13 +137,15 @@ class Deduplicator:
             self.hasher.update_hash(path, content_hash, status="indexed")
 
     def _is_suffix_duplicate(self, path: Path, content_hash: str) -> bool:
-        """Check if this file is a _1 suffix copy of another file."""
+        """Check if this file is a _N suffix copy of another file."""
         stem = path.stem
-        if not stem.endswith("_1"):
+        m = _SUFFIX_RE.match(stem)
+        if not m:
             return False
 
-        original_stem = stem[:-2]
-        original_path = path.with_stem(original_stem)
+        original_stem = m.group(1)
+        # Reconstruct original path with same parent and suffix
+        original_path = path.parent / (original_stem + path.suffix)
 
         if not original_path.exists():
             return False

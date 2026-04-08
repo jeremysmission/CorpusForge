@@ -94,6 +94,19 @@ class Pipeline:
     def __init__(self, config: ForgeConfig):
         self.config = config
         self.workers = config.pipeline.workers
+
+        # Reserve 1 CPU core for user — cap PyTorch threads to N-1
+        cpu_count = os.cpu_count() or 8
+        max_threads = max(cpu_count - 1, 1)
+        try:
+            import torch
+            torch.set_num_threads(max_threads)
+            torch.set_num_interop_threads(max_threads)
+        except Exception:
+            pass
+        os.environ.setdefault("OMP_NUM_THREADS", str(max_threads))
+        os.environ.setdefault("MKL_NUM_THREADS", str(max_threads))
+        logger.info("CPU reservation: %d/%d threads (1 reserved for user)", max_threads, cpu_count)
         self.stale_timeout = config.pipeline.stale_future_timeout
         self.embed_flush_batch = config.pipeline.embed_flush_batch
 
@@ -199,6 +212,7 @@ class Pipeline:
         self,
         input_files: list[Path],
         on_file_start: callable | None = None,
+        on_stage_progress: callable | None = None,
     ) -> RunStats:
         """
         Run the pipeline on a list of input files.
@@ -207,20 +221,30 @@ class Pipeline:
             input_files: List of file paths to process.
             on_file_start: Optional callback(file_path, file_index, total_files)
                 called before each file is parsed. Used by GUI for progress.
+            on_stage_progress: Optional callback(stage, current, total, detail)
+                called periodically for each pipeline stage. Used by GUI for
+                live progress across all phases.
 
         Returns RunStats with processing results.
         """
         self._on_file_start = on_file_start
+        self._on_stage_progress = on_stage_progress
         stats = RunStats()
         start_time = time.time()
 
         stats.files_found = len(input_files)
 
         # Stage 2: Hash & dedup
+        self._emit_stage("dedup", 0, len(input_files), "Starting dedup scan...")
         if self.config.pipeline.full_reindex:
             work_files = input_files
         else:
-            work_files = self.deduplicator.filter_new_and_changed(input_files)
+            def _dedup_progress(scanned, total, current, dupes):
+                self._emit_stage("dedup", scanned, total, f"{current} ({dupes} dupes)")
+
+            work_files = self.deduplicator.filter_new_and_changed(
+                input_files, on_progress=_dedup_progress
+            )
             stats.skipped_unchanged = self.deduplicator.skipped_unchanged
             stats.skipped_duplicate = self.deduplicator.skipped_duplicate
         stats.files_after_dedup = len(work_files)
@@ -251,6 +275,7 @@ class Pipeline:
             return stats
 
         # Stage 3+4+5+6: Parallel parse → chunk → enrich → embed
+        self._emit_stage("parse", 0, len(parse_files), "Starting parse...")
         if self.workers > 1 and len(parse_files) > 1:
             all_chunks, all_docs = self._parallel_parse_and_chunk(parse_files, stats)
         else:
@@ -264,18 +289,22 @@ class Pipeline:
 
         # Stage 5: Contextual enrichment (phi4:14B via Ollama) — skipped if disabled
         if self.config.enrich.enabled:
+            self._emit_stage("enrich", 0, len(all_chunks), "Loading enricher...")
             enricher = self._get_enricher()
             doc_texts = {doc.source_path: doc.text for doc in all_docs}
             all_chunks = enricher.enrich_chunks(all_chunks, doc_texts)
             stats.chunks_enriched = sum(
                 1 for c in all_chunks if c.get("enriched_text") is not None
             )
+            self._emit_stage("enrich", stats.chunks_enriched, len(all_chunks), "Done")
         else:
             logger.info("Enrichment disabled — skipping.")
 
         # Stage 6: Embed (GPU batch with token-budget packing + OOM backoff) — skipped if disabled
         if self.config.embed.enabled:
+            self._emit_stage("embed", 0, len(all_chunks), "Loading embedder...")
             vectors = self._embed_chunks(all_chunks, stats)
+            self._emit_stage("embed", stats.vectors_created, len(all_chunks), "Done")
         else:
             logger.info("Embedding disabled — chunk-only export.")
             vectors = np.empty((0, 768), dtype=np.float16)
@@ -283,9 +312,11 @@ class Pipeline:
         # Stage 7: Entity extraction (GLiNER batch on CPU) — skipped if disabled
         entities = []
         if self.config.extract.enabled:
+            self._emit_stage("extract", 0, len(all_chunks), "Loading extractor...")
             extractor = self._get_extractor()
             entities = extractor.extract_entities(all_chunks)
             stats.entities_extracted = len(entities)
+            self._emit_stage("extract", len(entities), len(all_chunks), "Done")
         else:
             logger.info("Entity extraction disabled — skipping.")
 
@@ -324,6 +355,16 @@ class Pipeline:
         self._append_run_history(export_dir, stats)
 
         return stats
+
+    def _emit_stage(self, stage: str, current: int, total: int, detail: str = "") -> None:
+        """Emit stage progress to callback and log heartbeat."""
+        if self._on_stage_progress:
+            try:
+                self._on_stage_progress(stage, current, total, detail)
+            except Exception:
+                pass
+        # CLI heartbeat log every call
+        logger.info("[%s] %d/%d %s", stage, current, total, detail)
 
     def _write_run_report(self, export_dir: Path, stats: RunStats) -> None:
         """Write a human-readable run report alongside the export."""
@@ -458,6 +499,7 @@ class Pipeline:
                 pending[fut] = (idx, fp)
 
             last_completion = time.time()
+            last_stage_update = time.time()
 
             while pending:
                 # Drain completed futures
@@ -506,6 +548,16 @@ class Pipeline:
                         stats.errors.append({
                             "file": str(fp_done), "error": str(e),
                         })
+
+                    # Parse stage progress every 5 seconds
+                    now_stage = time.time()
+                    if now_stage - last_stage_update >= 5.0:
+                        done_count = stats.files_parsed + stats.files_failed
+                        self._emit_stage(
+                            "parse", done_count, total,
+                            f"{fp_done.name} ({len(all_chunks)} chunks)",
+                        )
+                        last_stage_update = now_stage
 
                     # Submit next file to keep pool saturated
                     try:
@@ -635,6 +687,15 @@ class Pipeline:
         """Embed all chunks — GPU batch with token-budget packing + OOM backoff."""
         embedder = self._get_embedder()
         texts = [c.get("enriched_text") or c["text"] for c in chunks]
+        total = len(texts)
+        self._emit_stage("embed", 0, total, "Starting embedding...")
+
+        # Embed with periodic progress reporting
+        embed_start = time.time()
         vectors = embedder.embed_batch(texts)
+        embed_elapsed = time.time() - embed_start
         stats.vectors_created = len(vectors)
+
+        rate = stats.vectors_created / max(embed_elapsed, 0.01)
+        self._emit_stage("embed", stats.vectors_created, total, f"{rate:.0f} chunks/sec")
         return vectors

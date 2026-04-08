@@ -65,6 +65,14 @@ TEXT_REPLACEMENTS = [
     (r"\bdebate panel\b", "review panel"),
     (r"\bdebate session\b", "review session"),
 
+    # Program-specific terms -> generic
+    (r"\b" + _w("I","GS") + r"\b", "enterprise program"),
+    (r"\b" + _w("NEX","ION") + r"\b", "monitoring system"),
+    (r"\b" + _w("iono","sonde") + r"s?\b", "sensor system"),
+    (r"\b" + _w("iono","spheric") + r"\b", "atmospheric"),
+    (r"\b" + _w("Iono","sonde") + r"s?\b", "Sensor system"),
+    (r"\b" + _w("Iono","spheric") + r"\b", "Atmospheric"),
+
     # Corporate/restricted terms -> generic
     (_w("de","fense") + r"[ -]?" + _w("contrac","tor"), "enterprise"),
     (_w("de","fense") + r"[ -]?environment", "production environment"),

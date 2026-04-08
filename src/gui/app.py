@@ -41,6 +41,10 @@ class CorpusForgeApp:
         on_start=None,
         on_stop=None,
         on_save_settings=None,
+        on_transfer_start=None,
+        on_transfer_stop=None,
+        on_dedup_only_start=None,
+        on_dedup_only_stop=None,
     ):
         self.root = root
         self.config_path = config_path
@@ -51,7 +55,13 @@ class CorpusForgeApp:
         self._on_start = on_start
         self._on_stop = on_stop
         self._on_save_settings = on_save_settings
+        self._on_transfer_start = on_transfer_start
+        self._on_transfer_stop = on_transfer_stop
+        self._on_dedup_only_start = on_dedup_only_start
+        self._on_dedup_only_stop = on_dedup_only_stop
         self._running = False
+        self._transfer_running = False
+        self._dedup_only_running = False
         self._start_time: Optional[float] = None
         self._timer_id: Optional[str] = None
 
@@ -94,6 +104,12 @@ class CorpusForgeApp:
         )
         title_lbl.pack(anchor=tk.W, pady=(0, 8))
 
+        # -- Transfer Panel --
+        transfer_frame = ttk.LabelFrame(main, text="Bulk Transfer", padding=8)
+        transfer_frame.pack(fill=tk.X, pady=(0, 6))
+
+        self._build_transfer_panel(transfer_frame, t)
+
         # -- Pipeline Control Panel --
         ctrl_frame = ttk.LabelFrame(main, text="Pipeline Control", padding=8)
         ctrl_frame.pack(fill=tk.X, pady=(0, 6))
@@ -105,6 +121,12 @@ class CorpusForgeApp:
         settings_frame.pack(fill=tk.X, pady=(0, 6))
 
         self._build_settings_panel(settings_frame, t)
+
+        # -- Dedup-Only Panel --
+        dedup_only_frame = ttk.LabelFrame(main, text="Dedup-Only Pass", padding=8)
+        dedup_only_frame.pack(fill=tk.X, pady=(0, 6))
+
+        self._build_dedup_only_panel(dedup_only_frame, t)
 
         # -- Live Stats Panel --
         stats_frame = ttk.LabelFrame(main, text="Live Stats", padding=8)
@@ -443,6 +465,156 @@ class CorpusForgeApp:
         except Exception as exc:
             self.append_log(f"Failed to reset defaults: {exc}", "ERROR")
 
+    def _build_transfer_panel(self, parent, t):
+        """Bulk Transfer: source path, start/stop, live progress."""
+        row0 = ttk.Frame(parent)
+        row0.pack(fill=tk.X, pady=2)
+
+        tk.Label(row0, text="From:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], width=8, anchor=tk.W).pack(side=tk.LEFT)
+
+        self.transfer_src_var = tk.StringVar(value="")
+        self.transfer_src_entry = tk.Entry(
+            row0, textvariable=self.transfer_src_var, font=FONT,
+            bg=t["input_bg"], fg=t["input_fg"], insertbackground=t["fg"],
+            relief=tk.FLAT, bd=2,
+        )
+        self.transfer_src_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4))
+
+        self.browse_transfer_src_btn = ttk.Button(
+            row0, text="Browse", command=self._browse_transfer_source,
+        )
+        self.browse_transfer_src_btn.pack(side=tk.RIGHT)
+
+        row1 = ttk.Frame(parent)
+        row1.pack(fill=tk.X, pady=2)
+
+        tk.Label(row1, text="To:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], width=8, anchor=tk.W).pack(side=tk.LEFT)
+
+        self.transfer_dest_var = tk.StringVar(value="data/staging")
+        self.transfer_dest_entry = tk.Entry(
+            row1, textvariable=self.transfer_dest_var, font=FONT,
+            bg=t["input_bg"], fg=t["input_fg"], insertbackground=t["fg"],
+            relief=tk.FLAT, bd=2,
+        )
+        self.transfer_dest_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4))
+
+        self.browse_transfer_dest_btn = ttk.Button(
+            row1, text="Browse", command=self._browse_transfer_dest,
+        )
+        self.browse_transfer_dest_btn.pack(side=tk.RIGHT)
+
+        row2 = ttk.Frame(parent)
+        row2.pack(fill=tk.X, pady=(6, 2))
+
+        self.transfer_start_btn = ttk.Button(
+            row2, text="Start Transfer", style="Accent.TButton",
+            command=self._on_transfer_start_click,
+        )
+        self.transfer_start_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.transfer_stop_btn = ttk.Button(
+            row2, text="Stop", style="Tertiary.TButton",
+            command=self._on_transfer_stop_click, state=tk.DISABLED,
+        )
+        self.transfer_stop_btn.pack(side=tk.LEFT, padx=(0, 12))
+
+        self.transfer_progress_var = tk.DoubleVar(value=0.0)
+        self.transfer_progress_bar = ttk.Progressbar(
+            row2, variable=self.transfer_progress_var, maximum=100,
+            mode="determinate", length=250,
+        )
+        self.transfer_progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+
+        self.transfer_status_label = tk.Label(
+            row2, text="Idle", font=FONT_SMALL,
+            bg=t["panel_bg"], fg=t["label_fg"],
+        )
+        self.transfer_status_label.pack(side=tk.RIGHT)
+
+        # Transfer stats row
+        row3 = ttk.Frame(parent)
+        row3.pack(fill=tk.X, pady=2)
+
+        self._transfer_stat_labels = {}
+        for key, label_text in [
+            ("files", "Files:"), ("bytes", "Transferred:"),
+            ("speed", "Speed:"), ("eta", "ETA:"), ("current", "Current:"),
+        ]:
+            tk.Label(row3, text=label_text, font=FONT_SMALL, bg=t["panel_bg"],
+                     fg=t["label_fg"]).pack(side=tk.LEFT, padx=(0, 2))
+            val = tk.Label(row3, text="--", font=FONT_SMALL, bg=t["panel_bg"],
+                           fg=t["fg"])
+            val.pack(side=tk.LEFT, padx=(0, 10))
+            self._transfer_stat_labels[key] = val
+
+    def _build_dedup_only_panel(self, parent, t):
+        """Dedup-only mode: run dedup without embed/enrich/extract."""
+        row0 = ttk.Frame(parent)
+        row0.pack(fill=tk.X, pady=2)
+
+        tk.Label(row0, text="Source:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], width=8, anchor=tk.W).pack(side=tk.LEFT)
+
+        self.dedup_only_src_var = tk.StringVar(value="data/staging")
+        self.dedup_only_src_entry = tk.Entry(
+            row0, textvariable=self.dedup_only_src_var, font=FONT,
+            bg=t["input_bg"], fg=t["input_fg"], insertbackground=t["fg"],
+            relief=tk.FLAT, bd=2,
+        )
+        self.dedup_only_src_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4))
+
+        self.browse_dedup_only_btn = ttk.Button(
+            row0, text="Browse",
+            command=lambda: self._browse_into(self.dedup_only_src_var, "Select Dedup Source"),
+        )
+        self.browse_dedup_only_btn.pack(side=tk.RIGHT)
+
+        row1 = ttk.Frame(parent)
+        row1.pack(fill=tk.X, pady=(6, 2))
+
+        self.dedup_only_start_btn = ttk.Button(
+            row1, text="Run Dedup Only", style="Accent.TButton",
+            command=self._on_dedup_only_start_click,
+        )
+        self.dedup_only_start_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.dedup_only_stop_btn = ttk.Button(
+            row1, text="Stop", style="Tertiary.TButton",
+            command=self._on_dedup_only_stop_click, state=tk.DISABLED,
+        )
+        self.dedup_only_stop_btn.pack(side=tk.LEFT, padx=(0, 12))
+
+        self.dedup_only_progress_var = tk.DoubleVar(value=0.0)
+        self.dedup_only_progress_bar = ttk.Progressbar(
+            row1, variable=self.dedup_only_progress_var, maximum=100,
+            mode="determinate", length=250,
+        )
+        self.dedup_only_progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+
+        self.dedup_only_status_label = tk.Label(
+            row1, text="Idle", font=FONT_SMALL,
+            bg=t["panel_bg"], fg=t["label_fg"],
+        )
+        self.dedup_only_status_label.pack(side=tk.RIGHT)
+
+        # Dedup stats row
+        row2 = ttk.Frame(parent)
+        row2.pack(fill=tk.X, pady=2)
+
+        self._dedup_only_stat_labels = {}
+        for key, label_text in [
+            ("scanned", "Scanned:"), ("duplicates", "Duplicates:"),
+            ("current", "Current:"), ("elapsed", "Elapsed:"), ("eta", "ETA:"),
+        ]:
+            tk.Label(row2, text=label_text, font=FONT_SMALL, bg=t["panel_bg"],
+                     fg=t["label_fg"]).pack(side=tk.LEFT, padx=(0, 2))
+            val = tk.Label(row2, text="--", font=FONT_SMALL, bg=t["panel_bg"],
+                           fg=t["fg"])
+            val.pack(side=tk.LEFT, padx=(0, 10))
+            self._dedup_only_stat_labels[key] = val
+
     def _build_stats_panel(self, parent, t):
         """Two-column grid of live statistics."""
         # Left column
@@ -549,6 +721,52 @@ class CorpusForgeApp:
         path = filedialog.askdirectory(title="Select Output Folder")
         if path:
             self.output_var.set(path)
+
+    def _browse_transfer_source(self):
+        path = filedialog.askdirectory(title="Select Transfer Source")
+        if path:
+            self.transfer_src_var.set(path)
+
+    def _browse_transfer_dest(self):
+        path = filedialog.askdirectory(title="Select Transfer Destination")
+        if path:
+            self.transfer_dest_var.set(path)
+
+    def _browse_into(self, var, title):
+        path = filedialog.askdirectory(title=title)
+        if path:
+            var.set(path)
+
+    def _on_transfer_start_click(self):
+        if self._transfer_running:
+            return
+        self._transfer_running = True
+        self.transfer_start_btn.configure(state=tk.DISABLED)
+        self.transfer_stop_btn.configure(state=tk.NORMAL)
+        if self._on_transfer_start:
+            self._on_transfer_start(
+                source=self.transfer_src_var.get(),
+                dest=self.transfer_dest_var.get(),
+            )
+
+    def _on_transfer_stop_click(self):
+        if self._on_transfer_stop:
+            self._on_transfer_stop()
+        self.append_log("Transfer stop requested.", "WARNING")
+
+    def _on_dedup_only_start_click(self):
+        if self._dedup_only_running:
+            return
+        self._dedup_only_running = True
+        self.dedup_only_start_btn.configure(state=tk.DISABLED)
+        self.dedup_only_stop_btn.configure(state=tk.NORMAL)
+        if self._on_dedup_only_start:
+            self._on_dedup_only_start(source=self.dedup_only_src_var.get())
+
+    def _on_dedup_only_stop_click(self):
+        if self._on_dedup_only_stop:
+            self._on_dedup_only_stop()
+        self.append_log("Dedup-only stop requested.", "WARNING")
 
     def _on_start_click(self):
         if self._running:
@@ -714,6 +932,97 @@ class CorpusForgeApp:
         if len(display) > 60:
             display = "..." + display[-57:]
         self._stat_labels["current_file"].configure(text=display)
+
+    def update_transfer_stats(self, stats: dict):
+        """Update the transfer panel from a TransferStats dict."""
+        total = stats.get("total_files", 0)
+        done = stats.get("files_copied", 0) + stats.get("files_skipped", 0) + stats.get("files_failed", 0)
+
+        if total > 0:
+            pct = min(100.0, (done / total) * 100.0)
+            self.transfer_progress_var.set(pct)
+
+        self._transfer_stat_labels["files"].configure(
+            text=f"{done}/{total} ({stats.get('files_copied', 0)} new, {stats.get('files_skipped', 0)} skip)"
+        )
+
+        # Bytes
+        bt = stats.get("bytes_transferred", 0)
+        bt_total = stats.get("bytes_total", 0)
+        self._transfer_stat_labels["bytes"].configure(
+            text=f"{bt / 1024**2:.0f} / {bt_total / 1024**2:.0f} MB"
+        )
+
+        # Speed + ETA
+        elapsed = stats.get("elapsed_seconds", 0)
+        if elapsed > 0 and done > 0:
+            speed_mb = bt / elapsed / 1024**2
+            self._transfer_stat_labels["speed"].configure(text=f"{speed_mb:.1f} MB/s")
+            remaining = total - done
+            rate = done / elapsed
+            if rate > 0 and remaining > 0:
+                eta = _format_elapsed(remaining / rate)
+                self._transfer_stat_labels["eta"].configure(text=eta)
+            else:
+                self._transfer_stat_labels["eta"].configure(text="--")
+        current = stats.get("current_file", "")
+        if len(current) > 35:
+            current = "..." + current[-32:]
+        self._transfer_stat_labels["current"].configure(text=current or "--")
+
+        self.transfer_status_label.configure(text=f"{done}/{total}")
+
+    def transfer_finished(self, stats: dict, message: str = ""):
+        """Called when bulk transfer completes."""
+        self.update_transfer_stats(stats)
+        self._transfer_running = False
+        self.transfer_start_btn.configure(state=tk.NORMAL)
+        self.transfer_stop_btn.configure(state=tk.DISABLED)
+        self.transfer_progress_var.set(100.0)
+        self.transfer_status_label.configure(text="Done")
+        if message:
+            self.append_log(message, "INFO")
+
+    def update_dedup_only_stats(self, stats: dict):
+        """Update the dedup-only panel from a stats dict."""
+        total = stats.get("total_files", 0)
+        scanned = stats.get("files_scanned", 0)
+        dupes = stats.get("duplicates_found", 0)
+        current = stats.get("current_file", "")
+
+        if total > 0:
+            pct = min(100.0, (scanned / total) * 100.0)
+            self.dedup_only_progress_var.set(pct)
+
+        self._dedup_only_stat_labels["scanned"].configure(text=f"{scanned}/{total}")
+        self._dedup_only_stat_labels["duplicates"].configure(text=str(dupes))
+
+        if len(current) > 35:
+            current = "..." + current[-32:]
+        self._dedup_only_stat_labels["current"].configure(text=current or "--")
+
+        elapsed = stats.get("elapsed_seconds", 0)
+        self._dedup_only_stat_labels["elapsed"].configure(text=_format_elapsed(elapsed))
+
+        if elapsed > 0 and scanned > 0 and total > scanned:
+            rate = scanned / elapsed
+            remaining = total - scanned
+            self._dedup_only_stat_labels["eta"].configure(text=_format_elapsed(remaining / rate))
+        else:
+            self._dedup_only_stat_labels["eta"].configure(text="--")
+
+        self.dedup_only_status_label.configure(text=f"{scanned}/{total}")
+
+    def dedup_only_finished(self, stats: dict, message: str = ""):
+        """Called when dedup-only pass completes."""
+        self.update_dedup_only_stats(stats)
+        self._dedup_only_running = False
+        self.dedup_only_start_btn.configure(state=tk.NORMAL)
+        self.dedup_only_stop_btn.configure(state=tk.DISABLED)
+        self.dedup_only_progress_var.set(100.0)
+        self.dedup_only_status_label.configure(text="Done")
+        if message:
+            self.append_log(message, "INFO")
 
     def append_log(self, message: str, level: str = "INFO"):
         """Append a line to the log panel with color coding."""

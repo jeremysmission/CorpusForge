@@ -1,0 +1,211 @@
+"""Tests for the Deduplicator — _N suffix and content-hash dedup."""
+
+import os
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from src.download.hasher import Hasher
+from src.download.deduplicator import Deduplicator
+
+
+@pytest.fixture
+def dedup_env(tmp_path):
+    """Create a test environment with hasher and dedup instance."""
+    db = str(tmp_path / "test_state.sqlite3")
+    hasher = Hasher(db)
+    dedup = Deduplicator(hasher)
+    yield tmp_path, hasher, dedup
+    hasher.close()
+
+
+class TestSuffixDuplicate:
+    """Test _1 suffix detection."""
+
+    def test_basic_suffix_1(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        original = tmp / "Report.docx"
+        dup = tmp / "Report_1.docx"
+        original.write_text("hello world")
+        dup.write_text("hello world")
+
+        result = dedup.filter_new_and_changed([original, dup])
+        assert len(result) == 1
+        assert result[0].name == "Report.docx"
+        assert dedup.skipped_duplicate == 1
+
+    def test_suffix_2(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        original = tmp / "Manual.pdf"
+        dup2 = tmp / "Manual_2.pdf"
+        original.write_text("content")
+        dup2.write_text("content")
+
+        result = dedup.filter_new_and_changed([original, dup2])
+        assert len(result) == 1
+        assert result[0].name == "Manual.pdf"
+
+    def test_suffix_different_content_kept(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        original = tmp / "Data.csv"
+        different = tmp / "Data_1.csv"
+        original.write_text("version A")
+        different.write_text("version B, actually different")
+
+        result = dedup.filter_new_and_changed([original, different])
+        assert len(result) == 2
+
+    def test_suffix_no_original_kept(self, dedup_env):
+        """_1 file without matching original should not be skipped."""
+        tmp, hasher, dedup = dedup_env
+        orphan = tmp / "Orphan_1.txt"
+        orphan.write_text("no original exists")
+
+        result = dedup.filter_new_and_changed([orphan])
+        assert len(result) == 1
+
+
+class TestContentHashDedup:
+    """Test content-hash based duplicate detection."""
+
+    def test_identical_files(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        a = tmp / "alpha.txt"
+        b = tmp / "beta.txt"
+        a.write_text("identical")
+        b.write_text("identical")
+
+        result = dedup.filter_new_and_changed([a, b])
+        assert len(result) == 1
+        assert dedup.skipped_duplicate == 1
+
+    def test_different_files_kept(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        a = tmp / "one.txt"
+        b = tmp / "two.txt"
+        a.write_text("content A")
+        b.write_text("content B")
+
+        result = dedup.filter_new_and_changed([a, b])
+        assert len(result) == 2
+        assert dedup.skipped_duplicate == 0
+
+    def test_three_copies_one_kept(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        files = []
+        for name in ["copy1.txt", "copy2.txt", "copy3.txt"]:
+            f = tmp / name
+            f.write_text("same same same")
+            files.append(f)
+
+        result = dedup.filter_new_and_changed(files)
+        assert len(result) == 1
+        assert dedup.skipped_duplicate == 2
+
+
+class TestIncrementalDedup:
+    """Test incremental processing (second run skips indexed files)."""
+
+    def test_second_run_skips_indexed(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        f = tmp / "stable.txt"
+        f.write_text("stable content")
+
+        result1 = dedup.filter_new_and_changed([f])
+        assert len(result1) == 1
+        dedup.mark_indexed(result1)
+
+        # Second run, same file
+        dedup2 = Deduplicator(hasher)
+        result2 = dedup2.filter_new_and_changed([f])
+        assert len(result2) == 0
+        assert dedup2.skipped_unchanged == 1
+
+    def test_modified_file_reprocessed(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        f = tmp / "changing.txt"
+        f.write_text("version 1")
+
+        result1 = dedup.filter_new_and_changed([f])
+        dedup.mark_indexed(result1)
+
+        # Modify the file (touch mtime and change content)
+        import time
+        time.sleep(0.1)
+        f.write_text("version 2 - changed!")
+
+        dedup2 = Deduplicator(hasher)
+        result2 = dedup2.filter_new_and_changed([f])
+        assert len(result2) == 1
+
+    def test_duplicate_remembered_across_runs(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        a = tmp / "orig.txt"
+        b = tmp / "orig_1.txt"
+        a.write_text("same")
+        b.write_text("same")
+
+        dedup.filter_new_and_changed([a, b])
+
+        # Second run: b should still be skipped (status=duplicate)
+        dedup2 = Deduplicator(hasher)
+        result2 = dedup2.filter_new_and_changed([a, b])
+        # a was not marked as indexed (filter only, no mark_indexed call)
+        # but b was marked as duplicate, so it should be skipped
+        assert dedup2.skipped_duplicate >= 1
+
+
+class TestProgressCallback:
+    """Test that on_progress callback is invoked."""
+
+    def test_callback_called(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        f = tmp / "file.txt"
+        f.write_text("data")
+
+        calls = []
+        def on_progress(scanned, total, current, dupes):
+            calls.append((scanned, total, current, dupes))
+
+        dedup.filter_new_and_changed([f], on_progress=on_progress)
+        # Should get at least initial + final callback
+        assert len(calls) >= 2
+
+    def test_callback_reports_total(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        files = []
+        for i in range(5):
+            f = tmp / f"file_{i}.txt"
+            f.write_text(f"unique content {i}")
+            files.append(f)
+
+        calls = []
+        def on_progress(scanned, total, current, dupes):
+            calls.append((scanned, total))
+
+        dedup.filter_new_and_changed(files, on_progress=on_progress)
+        # Final callback should show total == 5
+        assert calls[-1] == (5, 5)
+
+
+class TestEdgeCases:
+    """Edge cases: missing files, empty files, special names."""
+
+    def test_missing_file_skipped(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        missing = tmp / "ghost.txt"
+        result = dedup.filter_new_and_changed([missing])
+        assert len(result) == 0
+
+    def test_empty_file(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        f = tmp / "empty.txt"
+        f.write_text("")
+        result = dedup.filter_new_and_changed([f])
+        assert len(result) == 1
+
+    def test_empty_list(self, dedup_env):
+        _, _, dedup = dedup_env
+        result = dedup.filter_new_and_changed([])
+        assert result == []

@@ -1,6 +1,6 @@
 # Unified Sprint Plan — CorpusForge + HybridRAG V2
 
-**Last Updated:** 2026-04-08 | **Updated By:** Agent 1 (Forge Coder) — Forge S5 all slices DONE, READY FOR QA
+**Last Updated:** 2026-04-08 | **Updated By:** Agent 3 (QA) — Added emergency Sprint 6 (P0 blockers for production ingest)
 **Demo Target:** 2026-05-02
 **Update Rule:** Every agent updates ALL 3 copies at end of sprint session (review board + both repos)
 
@@ -124,7 +124,7 @@
 | Slice | Repo | Priority | What | Status | Owner |
 |-------|------|----------|------|--------|-------|
 | 14.1 | V2 | P0 | Entity extraction at scale on full rebuilt corpus | DONE | Agent 2 |
-| 14.2 | V2 | P0 | Entity normalization + controlled vocabulary matching (25 IGS sites) | DONE (label mapping) | Agent 2 |
+| 14.2 | V2 | P0 | Entity normalization + controlled vocabulary matching (25 enterprise program sites) | DONE (label mapping) | Agent 2 |
 | 14.3 | V2 | P0 | Relationship graph population from extracted entities | DONE (existing) | Agent 2 |
 | 14.4 | V2 | P1 | Table extraction integration (if Docling waiver approved) | DEFERRED | Agent 2 |
 | 14.5 | V2 | P1 | Query router tuning: verify AGGREGATION, ENTITY_LOOKUP, RELATIONSHIP paths work on real data | DONE (25/25) | Agent 2 |
@@ -173,6 +173,84 @@
 | QA-15 | V2 | P0 | QA golden eval results, V1 vs V2 comparison review | TODO |
 | IC-4 | Both | P0 | Demo dry run: 10 demo queries through full Forge→V2 pipeline | TODO |
 | SMASH | Both | P0 | Button smash both GUIs (full 12-scenario deck each) | TODO |
+
+---
+
+## EMERGENCY: Sprint 6 (Forge) + Sprint 16 (V2) — Production Ingest Blockers
+
+**Added:** 2026-04-08 | **Why:** Four P0 blockers discovered that prevent production 700GB corpus ingest
+
+### Forge Sprint 6: Production Ingest Enablement (P0 — START IMMEDIATELY)
+
+| Slice | Repo | Priority | What | Status | Owner |
+|-------|------|----------|------|--------|-------|
+| 6.1 | Forge | P0 | Bulk transfer syncer + GUI Transfer panel + CLI run_transfer.py | DONE (2026-04-08) | Agent 1 |
+| 6.2 | Forge | P0 | Deduplicator fixed: mtime tolerance, _N suffix, progress callback, 15 tests | DONE (2026-04-08) | Agent 1 |
+| 6.3 | Forge | P0 | GUI progress: all stages emit on_stage_progress every 5s, CLI heartbeat | DONE (2026-04-08) | Agent 1 |
+| 6.4 | Forge | P0 | Sanitizer: 6 patterns added, .gitignore updated, 126 files clean. V2 needs Agent 2 | DONE (Forge, 2026-04-08) | Agent 1 |
+| 6.5 | Forge | P0 | Dedup-only GUI panel with scanned/dupes/current/elapsed/ETA | DONE (2026-04-08) | Agent 1 |
+| 6.6 | Forge | P0 | Production corpus ingest (blocked on QA of 6.1-6.5) | TODO | Agent 1 |
+
+**Exit Criteria:** Operator can transfer 700GB, dedup it, see live progress at every stage, and produce clean exports for V2. Zero program-specific terms on remote.
+
+### V2 Sprint 16: Clean Import + Sanitization
+
+| Slice | Repo | Priority | What | Status | Owner |
+|-------|------|----------|------|--------|-------|
+| 16.1 | V2 | P0 | Sanitizer fix — same patterns as Forge 6.4. Run --apply on 30+ tracked files. Push clean. | TODO | Agent 2 |
+| 16.2 | V2 | P0 | Add CoPilot+.md to .gitignore — never push agent instruction files to remote | TODO | Agent 2 |
+| 16.3 | V2 | P0 | Import fresh Forge Sprint 6 export — wipe entity store, clean rebuild | TODO (blocked on Forge 6.6) | Agent 2 |
+| 16.4 | V2 | P0 | Run tiered extraction on production corpus — Tier 1 regex + Tier 2 GLiNER on GPU 1 | TODO (blocked on 16.3) | Agent 2 |
+| 16.5 | V2 | P0 | Golden eval on production data — target 20/25 | TODO (blocked on 16.4) | Agent 2 |
+
+**Exit Criteria:** Zero program-specific terms on remote. Clean V2 store from production corpus. 20/25 golden eval on real data.
+
+---
+
+## Sprint 7 (Forge): Production Data Analysis + Recovery Strategy (NEW)
+
+**Added:** 2026-04-08 | **Data:** 90GB production source at `C:\CorpusForge\ProductionSource`
+**Agent:** Agent 4 (new, parallel to Agent 1 Sprint 6) — works in clone repo `C:\CorpusForge_Dev`
+**Purpose:** Use real production data to refine dedup strategy, extraction patterns, enrichment quality, and chunking parameters before the full 700GB ingest.
+
+| Slice | Repo | Priority | What | Status | Owner |
+|-------|------|----------|------|--------|-------|
+| 7.1 | Forge_Dev | P0 | Dedup analysis on 90GB — run dedup on ProductionSource, report: total files, unique files, duplicate families, format distribution, volume reduction %, duplicate patterns (suffix _1, cross-format .doc/.docx/.pdf). Preserve hash state for incremental skip continuity. | TODO | Agent 4 |
+| 7.2 | Forge_Dev | P0 | Format coverage audit — what formats actually appear in production data? Which parsers succeed/fail? Which produce quality chunks vs garbage? Report per-format: file count, parse success rate, avg chunks per file, quality score distribution. | TODO | Agent 4 |
+| 7.3 | Forge_Dev | P1 | Chunking quality analysis — are 1200/200 settings optimal for these document types? Sample 500 chunks, review: are boundaries sensible? Do headings get preserved? Are tables split badly? Recommend tuning. | TODO | Agent 4 |
+| 7.4 | Forge_Dev | P1 | Tier 1 regex pattern refinement — run regex extraction on 1000 real chunks. What entities appear? Which patterns hit? Which miss? What new patterns needed for production data? Report entity yield by type and pattern. | TODO | Agent 4 |
+| 7.5 | Forge_Dev | P1 | Tier 2 GLiNER vs regex comparison — run both on same 1000 chunks. Compare: entity count, type coverage, unique entities found by GLiNER that regex missed, confidence distribution. Quantify the value-add of GLiNER over regex-only. | TODO | Agent 4 |
+| 7.6 | Forge_Dev | P1 | Sample enrichment quality — enrich 100 real chunks with phi4:14B. Review preambles: are they accurate? Do they improve retrievability? Compare enriched vs non-enriched retrieval on 10 test queries. | TODO | Agent 4 |
+| 7.7 | Forge_Dev | P0 | Full pipeline proof on 1000-file subset — parse + dedup + chunk + embed + extract (no enrich for speed). End-to-end validation on real data. Report all metrics. | TODO | Agent 4 |
+| 7.8 | Forge_Dev | P0 | V2 import test — export the 1000-file subset, import into V2_Dev clone, run golden eval. Does real production data produce usable query results? | TODO | Agent 4 |
+| 7.9 | Forge_Dev | P1 | Recovery strategy recommendation — based on all findings, document: optimal dedup approach, recommended extraction tiers, chunking params, enrichment value, estimated time for full 700GB pipeline. Feed into Sprint 6 decisions. | TODO | Agent 4 |
+
+**Exit Criteria:** Data-driven understanding of production corpus characteristics. Dedup strategy proven on 90GB. Extraction patterns refined on real data. Chunking/enrichment quality validated. Recovery strategy documented with real numbers.
+
+**Hash continuity rule:** Whatever dedup approach is used, hash-based incremental skip must survive. When the remaining 610GB arrives or we reconnect to production source, already-processed files must be recognized and skipped by hash.
+
+---
+
+## Sprint 8 (Infra): Clone Repo Setup for Parallel Development (NEW)
+
+**Added:** 2026-04-08 | **Agent:** Agent 5 (new, infrastructure)
+**Purpose:** Set up clone repos so multiple agents can work in parallel without file conflicts.
+
+| Slice | Repo | Priority | What | Status | Owner |
+|-------|------|----------|------|--------|-------|
+| 8.1 | Beast | P0 | Clone CorpusForge: `git clone C:\CorpusForge C:\CorpusForge_Dev`. Rebuild venv from scratch (`python -m venv .venv && pip install -r requirements.txt`). Do NOT copy .venv. Verify CUDA: `python -c "import torch; print(torch.cuda.is_available())"`. | TODO | Agent 5 |
+| 8.2 | Beast | P0 | Clone HybridRAG V2: `git clone C:\HybridRAG_V2 C:\HybridRAG_V2_Dev`. Rebuild venv from scratch. Verify CUDA + all imports work. | TODO | Agent 5 |
+| 8.3 | Beast | P0 | Create config.local.yaml for each clone: separate output_dir (avoid conflicts with main repo), separate GPU assignment (clone gets GPU 1, main gets GPU 0). Point Forge_Dev source_dirs at `C:\CorpusForge\ProductionSource`. | TODO | Agent 5 |
+| 8.4 | Beast | P0 | Verify clone isolation: run pipeline in Forge_Dev, confirm output goes to clone's output dir, confirm main repo is untouched. Run pytest in both clones. | TODO | Agent 5 |
+| 8.5 | Beast | P1 | Document clone workflow: how to pull updates from main, how to sync findings back, rules (never push from clone, code changes in main only). | TODO | Agent 5 |
+
+**Exit Criteria:** Both clone repos functional with independent venvs, configs, and output dirs. Main repos untouched by clone activity.
+
+**Rules for clones:**
+- Clones are for testing/development ONLY — never push from a clone
+- All code changes happen in main repo, then `git pull` into clone
+- Each clone gets its own config.local.yaml (different output dirs, GPU assignment)
+- Venv MUST be rebuilt from scratch — copied venvs break on Windows (hardcoded paths)
 
 ---
 

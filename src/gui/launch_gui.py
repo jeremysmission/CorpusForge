@@ -61,6 +61,185 @@ class GUILogHandler(logging.Handler):
             pass
 
 
+class TransferRunner:
+    """Runs BulkSyncer in a background thread with GUI progress."""
+
+    def __init__(self, app, config):
+        self.app = app
+        self.config = config
+        self._thread = None
+        self._stop_event = threading.Event()
+
+    def start(self, source: str, dest: str):
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run, args=(source, dest),
+            name="CorpusForge-Transfer", daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def _run(self, source: str, dest: str):
+        from src.download.syncer import BulkSyncer
+        try:
+            source_path = Path(source).resolve()
+            dest_path = Path(dest).resolve()
+            if not source_path.exists():
+                safe_after(self.app.root, 0, self.app.transfer_finished,
+                           {}, f"Transfer error: source not found: {source_path}")
+                return
+
+            safe_after(self.app.root, 0, self.app.append_log,
+                       f"Transfer: {source_path} -> {dest_path}", "INFO")
+
+            def on_progress(stats):
+                safe_after(self.app.root, 0, self.app.update_transfer_stats, stats.to_dict())
+
+            syncer = BulkSyncer(
+                source_dir=source_path,
+                dest_dir=dest_path,
+                workers=self.config.pipeline.workers,
+                on_progress=on_progress,
+                should_stop=self._stop_event.is_set,
+            )
+            result = syncer.run()
+            msg = (
+                f"Transfer complete: {result.files_copied} copied, "
+                f"{result.files_skipped} skipped, {result.files_failed} failed "
+                f"in {result.elapsed_seconds:.1f}s"
+            )
+            safe_after(self.app.root, 0, self.app.transfer_finished,
+                       result.to_dict(), msg)
+        except Exception as exc:
+            logger.error("Transfer crashed: %s", exc, exc_info=True)
+            safe_after(self.app.root, 0, self.app.transfer_finished,
+                       {}, f"Transfer error: {exc}")
+
+    @property
+    def is_alive(self):
+        return self._thread is not None and self._thread.is_alive()
+
+
+class DedupOnlyRunner:
+    """Runs dedup-only pass in a background thread with GUI progress."""
+
+    def __init__(self, app, config):
+        self.app = app
+        self.config = config
+        self._thread = None
+        self._stop_event = threading.Event()
+
+    def start(self, source: str):
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._run, args=(source,),
+            name="CorpusForge-DedupOnly", daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+
+    def _run(self, source: str):
+        import time as _time
+        from src.download.hasher import Hasher
+        from src.download.deduplicator import Deduplicator
+        try:
+            source_path = Path(source).resolve()
+            if not source_path.exists():
+                safe_after(self.app.root, 0, self.app.dedup_only_finished,
+                           {}, f"Dedup error: source not found: {source_path}")
+                return
+
+            safe_after(self.app.root, 0, self.app.append_log,
+                       f"Dedup-only scan: {source_path}", "INFO")
+
+            # Discover all files
+            all_files = sorted(f for f in source_path.rglob("*") if f.is_file())
+            total = len(all_files)
+            safe_after(self.app.root, 0, self.app.append_log,
+                       f"Found {total} files to scan for duplicates.", "INFO")
+
+            hasher = Hasher(self.config.paths.state_db)
+            deduplicator = Deduplicator(hasher)
+
+            start = _time.time()
+            last_update = start
+            scanned = 0
+            duplicates = 0
+            seen_hashes = {}
+
+            for fp in all_files:
+                if self._stop_event.is_set():
+                    break
+                if not fp.exists() or not fp.is_file():
+                    scanned += 1
+                    continue
+
+                content_hash = hasher.hash_file(fp)
+                is_dup = False
+
+                # _1 suffix check
+                if fp.stem.endswith("_1"):
+                    original = fp.with_stem(fp.stem[:-2])
+                    if original.exists():
+                        orig_hash = hasher.hash_file(original)
+                        if orig_hash == content_hash:
+                            is_dup = True
+
+                # Content-hash check
+                if not is_dup and content_hash in seen_hashes:
+                    is_dup = True
+
+                if is_dup:
+                    duplicates += 1
+                    hasher.update_hash(fp, content_hash, status="duplicate")
+                else:
+                    seen_hashes[content_hash] = fp
+
+                scanned += 1
+                now = _time.time()
+                if now - last_update >= 5.0:
+                    stats = {
+                        "total_files": total,
+                        "files_scanned": scanned,
+                        "duplicates_found": duplicates,
+                        "current_file": fp.name,
+                        "elapsed_seconds": now - start,
+                    }
+                    safe_after(self.app.root, 0, self.app.update_dedup_only_stats, stats)
+                    last_update = now
+
+            elapsed = _time.time() - start
+            final_stats = {
+                "total_files": total,
+                "files_scanned": scanned,
+                "duplicates_found": duplicates,
+                "current_file": "",
+                "elapsed_seconds": elapsed,
+            }
+            msg = (
+                f"Dedup complete: {scanned} scanned, {duplicates} duplicates found "
+                f"in {elapsed:.1f}s"
+            )
+            hasher.close()
+            safe_after(self.app.root, 0, self.app.dedup_only_finished, final_stats, msg)
+        except Exception as exc:
+            logger.error("Dedup-only crashed: %s", exc, exc_info=True)
+            safe_after(self.app.root, 0, self.app.dedup_only_finished,
+                       {}, f"Dedup error: {exc}")
+
+    @property
+    def is_alive(self):
+        return self._thread is not None and self._thread.is_alive()
+
+
 class PipelineRunner:
     """Manages pipeline execution in a background thread."""
 
@@ -187,7 +366,19 @@ class PipelineRunner:
                 "files_parsed": file_index,
             })
 
-        stats = pipeline.run(files, on_file_start=on_file_start)
+        def on_stage_progress(stage, current, total, detail):
+            msg = f"[{stage}] {current}/{total}"
+            if detail:
+                msg += f" — {detail}"
+            safe_after(self.app.root, 0, self.app.append_log, msg, "INFO")
+            safe_after(self.app.root, 0, self.app.update_current_file,
+                       f"[{stage}] {detail[:50]}" if detail else f"[{stage}]")
+
+        stats = pipeline.run(
+            files,
+            on_file_start=on_file_start,
+            on_stage_progress=on_stage_progress,
+        )
         safe_after(self.app.root, 0, self.app.pipeline_finished, stats.to_dict())
 
     @property
@@ -228,6 +419,8 @@ def main():
     skip_count = _count_skip_list(config)
     root = tk.Tk()
     runner = [None]
+    transfer_runner = [None]
+    dedup_only_runner = [None]
 
     def on_start(source, output):
         if runner[0] is None or not runner[0].is_alive:
@@ -237,6 +430,24 @@ def main():
     def on_stop():
         if runner[0]:
             runner[0].stop()
+
+    def on_transfer_start(source, dest):
+        if transfer_runner[0] is None or not transfer_runner[0].is_alive:
+            transfer_runner[0] = TransferRunner(app, config)
+        transfer_runner[0].start(source, dest)
+
+    def on_transfer_stop():
+        if transfer_runner[0]:
+            transfer_runner[0].stop()
+
+    def on_dedup_only_start(source):
+        if dedup_only_runner[0] is None or not dedup_only_runner[0].is_alive:
+            dedup_only_runner[0] = DedupOnlyRunner(app, config)
+        dedup_only_runner[0].start(source)
+
+    def on_dedup_only_stop():
+        if dedup_only_runner[0]:
+            dedup_only_runner[0].stop()
 
     def on_save_settings(settings):
         """Write GUI settings back to config.yaml and update live config."""
@@ -272,6 +483,10 @@ def main():
         enrichment_enabled=config.enrich.enabled,
         on_start=on_start, on_stop=on_stop,
         on_save_settings=on_save_settings,
+        on_transfer_start=on_transfer_start,
+        on_transfer_stop=on_transfer_stop,
+        on_dedup_only_start=on_dedup_only_start,
+        on_dedup_only_stop=on_dedup_only_stop,
     )
     gui_handler = GUILogHandler(app)
     gui_handler.setFormatter(logging.Formatter(
@@ -286,6 +501,10 @@ def main():
     def on_close():
         if runner[0]:
             runner[0].stop()
+        if transfer_runner[0]:
+            transfer_runner[0].stop()
+        if dedup_only_runner[0]:
+            dedup_only_runner[0].stop()
         root.destroy()
     root.protocol("WM_DELETE_WINDOW", on_close)
 
