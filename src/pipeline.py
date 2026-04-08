@@ -52,9 +52,11 @@ class RunStats:
     chunks_created: int = 0
     chunks_enriched: int = 0
     vectors_created: int = 0
+    entities_extracted: int = 0
     elapsed_seconds: float = 0.0
     skip_reasons: str = ""
     errors: list[dict] = field(default_factory=list)
+    format_coverage: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -68,9 +70,11 @@ class RunStats:
             "chunks_created": self.chunks_created,
             "chunks_enriched": self.chunks_enriched,
             "vectors_created": self.vectors_created,
+            "entities_extracted": self.entities_extracted,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
             "error_count": len(self.errors),
             "skip_reasons": self.skip_reasons,
+            "format_coverage": self.format_coverage,
         }
 
 
@@ -278,6 +282,7 @@ class Pipeline:
         if self.config.extract.enabled:
             extractor = self._get_extractor()
             entities = extractor.extract_entities(all_chunks)
+            stats.entities_extracted = len(entities)
         else:
             logger.info("Entity extraction disabled — skipping.")
 
@@ -309,7 +314,61 @@ class Pipeline:
             stats.chunks_created, rate, stats.skip_reasons or "none",
         )
 
+        # Write run report (slice 3.3)
+        self._write_run_report(export_dir, stats)
+
         return stats
+
+    def _write_run_report(self, export_dir: Path, stats: RunStats) -> None:
+        """Write a human-readable run report alongside the export."""
+        report_path = export_dir / "run_report.txt"
+        lines = [
+            "=" * 60,
+            "  CorpusForge Run Report",
+            "=" * 60,
+            "",
+            "Files",
+            f"  Found:          {stats.files_found}",
+            f"  After dedup:    {stats.files_after_dedup}",
+            f"  Parsed:         {stats.files_parsed}",
+            f"  Skipped:        {stats.files_skipped}",
+            f"  Failed:         {stats.files_failed}",
+            "",
+            "Output",
+            f"  Chunks:         {stats.chunks_created}",
+            f"  Enriched:       {stats.chunks_enriched}",
+            f"  Vectors:        {stats.vectors_created}",
+            f"  Entities:       {stats.entities_extracted}",
+            "",
+            "Performance",
+            f"  Elapsed:        {stats.elapsed_seconds:.1f}s",
+            f"  Chunks/sec:     {stats.chunks_created / max(stats.elapsed_seconds, 0.01):.1f}",
+            "",
+        ]
+        if stats.format_coverage:
+            lines.append("Format Coverage")
+            for ext, count in sorted(stats.format_coverage.items(), key=lambda x: -x[1]):
+                lines.append(f"  {ext:12s}  {count}")
+            lines.append("")
+
+        if stats.skip_reasons:
+            lines.append("Skip Reasons")
+            lines.append(f"  {stats.skip_reasons}")
+            lines.append("")
+
+        if stats.errors:
+            lines.append(f"Errors ({len(stats.errors)})")
+            for err in stats.errors[:20]:
+                lines.append(f"  {err['file']}: {err['error']}")
+            if len(stats.errors) > 20:
+                lines.append(f"  ... and {len(stats.errors) - 20} more")
+            lines.append("")
+
+        lines.append("=" * 60)
+
+        with open(report_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(lines) + "\n")
+        logger.info("Run report written to: %s", report_path)
 
     # ------------------------------------------------------------------
     # Parallel parse pipeline (ported from V1 indexer.py)
@@ -398,6 +457,8 @@ class Pipeline:
                             chunks = self._chunk_single_doc(doc)
                             all_chunks.extend(chunks)
                             stats.files_parsed += 1
+                            ext = fp_done.suffix.lower() or "(no ext)"
+                            stats.format_coverage[ext] = stats.format_coverage.get(ext, 0) + 1
                         else:
                             logger.warning("Empty parse: %s", fp_done.name)
                             stats.files_failed += 1

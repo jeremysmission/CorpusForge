@@ -122,6 +122,11 @@ def main() -> int:
         action="store_true",
         help="Process all files, not just new/changed (ignores dedup state).",
     )
+    parser.add_argument(
+        "--strip-enrichment",
+        action="store_true",
+        help="Export raw text only — strip enrichment preambles from chunks.jsonl.",
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -149,6 +154,9 @@ def main() -> int:
 
     if args.full_reindex:
         config.pipeline.full_reindex = True
+    if args.strip_enrichment:
+        config.enrich.enabled = False
+        logger.info("--strip-enrichment: enrichment disabled, raw text only in export.")
 
     supported = get_supported_extensions(config.paths.skip_list)
     deferred = load_deferred_extension_map(config.paths.skip_list)
@@ -218,6 +226,7 @@ def main() -> int:
         f"  Chunks created:  {stats.chunks_created}\n"
         f"  Chunks enriched: {stats.chunks_enriched}\n"
         f"  Vectors created: {stats.vectors_created}\n"
+        f"  Entities found:  {stats.entities_extracted}\n"
         f"  Elapsed:         {stats.elapsed_seconds:.1f}s\n"
     )
     if stats.errors:
