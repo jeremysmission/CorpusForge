@@ -88,6 +88,7 @@ class SkipManager:
         if not path.exists():
             logger.warning("Skip list not found at %s — no skip rules loaded.", path)
             self._deferred_exts: dict[str, str] = {}
+            self._sidecar_suffixes: list[str] = []
             self._conditions: dict = {}
             if extra_deferred_exts:
                 self._deferred_exts.update(extra_deferred_exts)
@@ -100,6 +101,13 @@ class SkipManager:
         self._deferred_exts = load_deferred_extension_map(path)
         if extra_deferred_exts:
             self._deferred_exts.update(extra_deferred_exts)
+
+        # OCR sidecar suffixes — V1 lesson: 55.6% of corpus was junk from these
+        self._sidecar_suffixes = [
+            s.lower() for s in raw.get("ocr_sidecar_suffixes", [])
+        ]
+        if self._sidecar_suffixes:
+            logger.info("Loaded %d OCR sidecar suffix filters", len(self._sidecar_suffixes))
 
         self._conditions = raw.get("skip_conditions", {})
 
@@ -135,11 +143,17 @@ class SkipManager:
         if over_mb and file_size > over_mb * 1_048_576:
             return True, f"over size limit ({over_mb} MB)"
 
-        # 5. Deferred format
+        # 5. OCR sidecar suffix (V1 lesson: 55.6% of corpus was sidecar junk)
+        name_lower = name.lower()
+        for suffix in self._sidecar_suffixes:
+            if name_lower.endswith(suffix):
+                return True, f"OCR sidecar artifact ({suffix})"
+
+        # 6. Deferred format
         if ext in self._deferred_exts:
             return True, self._deferred_exts[ext]
 
-        # 6. Encrypted detection
+        # 7. Encrypted detection
         if self._conditions.get("encrypted") and file_path.exists():
             if self._is_encrypted(file_path, ext):
                 return True, "encrypted file detected"
