@@ -24,7 +24,7 @@ parse:
     - ".stp"
     - ".step"
     - ".ste"
-    - ".enterprise program"
+    - ".igs"
     - ".iges"
     - ".stl"
     - ".vsdx"

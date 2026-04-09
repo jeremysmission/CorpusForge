@@ -134,7 +134,7 @@ def _build_parser_map(skip_list_path: str = "config/skip_list.yaml") -> dict:
         # CAD / 3D
         ".dxf": dxf,
         ".stp": step, ".step": step, ".ste": step,
-        ".enterprise program": iges, ".iges": iges,
+        ".igs": iges, ".iges": iges,
         ".stl": stl,
         # Databases / layered images
         ".accdb": access, ".mdb": access,

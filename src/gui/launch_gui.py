@@ -160,7 +160,6 @@ class DedupOnlyRunner:
             safe_after(self.app.root, 0, self.app.append_log,
                        f"Dedup-only scan: {source_path}", "INFO")
 
-            # Discover all files
             all_files = sorted(f for f in source_path.rglob("*") if f.is_file())
             total = len(all_files)
             safe_after(self.app.root, 0, self.app.append_log,
@@ -168,65 +167,35 @@ class DedupOnlyRunner:
 
             hasher = Hasher(self.config.paths.state_db)
             deduplicator = Deduplicator(hasher)
-
             start = _time.time()
-            last_update = start
-            scanned = 0
-            duplicates = 0
-            seen_hashes = {}
 
-            for fp in all_files:
+            def on_progress(scanned, total_files, current_file, dupes):
                 if self._stop_event.is_set():
-                    break
-                if not fp.exists() or not fp.is_file():
-                    scanned += 1
-                    continue
+                    return
+                stats = {
+                    "total_files": total_files,
+                    "files_scanned": scanned,
+                    "duplicates_found": dupes,
+                    "current_file": current_file,
+                    "elapsed_seconds": _time.time() - start,
+                }
+                safe_after(self.app.root, 0, self.app.update_dedup_only_stats, stats)
 
-                content_hash = hasher.hash_file(fp)
-                is_dup = False
-
-                # _1 suffix check
-                if fp.stem.endswith("_1"):
-                    original = fp.with_stem(fp.stem[:-2])
-                    if original.exists():
-                        orig_hash = hasher.hash_file(original)
-                        if orig_hash == content_hash:
-                            is_dup = True
-
-                # Content-hash check
-                if not is_dup and content_hash in seen_hashes:
-                    is_dup = True
-
-                if is_dup:
-                    duplicates += 1
-                    hasher.update_hash(fp, content_hash, status="duplicate")
-                else:
-                    seen_hashes[content_hash] = fp
-
-                scanned += 1
-                now = _time.time()
-                if now - last_update >= 5.0:
-                    stats = {
-                        "total_files": total,
-                        "files_scanned": scanned,
-                        "duplicates_found": duplicates,
-                        "current_file": fp.name,
-                        "elapsed_seconds": now - start,
-                    }
-                    safe_after(self.app.root, 0, self.app.update_dedup_only_stats, stats)
-                    last_update = now
-
+            unique_files = deduplicator.filter_new_and_changed(
+                all_files, on_progress=on_progress,
+            )
+            duplicates = deduplicator.skipped_duplicate
             elapsed = _time.time() - start
             final_stats = {
                 "total_files": total,
-                "files_scanned": scanned,
+                "files_scanned": total,
                 "duplicates_found": duplicates,
                 "current_file": "",
                 "elapsed_seconds": elapsed,
             }
             msg = (
-                f"Dedup complete: {scanned} scanned, {duplicates} duplicates found "
-                f"in {elapsed:.1f}s"
+                f"Dedup complete: {total} scanned, {duplicates} duplicates found, "
+                f"{len(unique_files)} unique in {elapsed:.1f}s"
             )
             hasher.close()
             safe_after(self.app.root, 0, self.app.dedup_only_finished, final_stats, msg)

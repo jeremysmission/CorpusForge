@@ -100,6 +100,6 @@ deprecation==2.1.0               # Apache 2.0 — vsdx dep
 # SECTION 3: NEW WAIVER REQUIRED — Awaiting approval
 # ============================================================
 
-# gliner                         # Apache 2.0, France (NATO) — zero-shot NER, 205M params
+gliner==0.2.26                   # Apache 2.0, France (NATO) — zero-shot NER, 205M params
                                  # Shared waiver with HybridRAG V2
-                                 # Fallback: skip first-pass, V2 uses GPT-4o for all extraction
+                                 # Status: NEW waiver requested in HybridRAG_V2/docs/Requested_Waivers_2026-04-04.md

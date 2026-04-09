@@ -164,6 +164,10 @@ class Pipeline:
         )
         self.packager = Packager(output_dir=config.paths.output_dir)
 
+        # Callbacks — set in run(), but _emit_stage() may be called from helpers
+        self._on_file_start = None
+        self._on_stage_progress = None
+
         # Lazy-loaded models — only initialized when their stage runs
         self._embedder: Embedder | None = None
         self._enricher: ContextualEnricher | None = None
@@ -337,9 +341,7 @@ class Pipeline:
 
         # Stage 6: Embed (GPU batch with token-budget packing + OOM backoff) — skipped if disabled
         if self.config.embed.enabled:
-            self._emit_stage("embed", 0, len(all_chunks), "Loading embedder...")
             vectors = self._embed_chunks(all_chunks, stats)
-            self._emit_stage("embed", stats.vectors_created, len(all_chunks), "Done")
         else:
             logger.info("Embedding disabled — chunk-only export.")
             vectors = np.empty((0, 768), dtype=np.float16)

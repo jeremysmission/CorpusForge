@@ -36,7 +36,7 @@ Representative families with real parser coverage:
   - `.cer`, `.crt`, `.pem`
   - `.dxf`
   - `.stp`, `.step`, `.ste`
-  - `.enterprise program`, `.iges`
+  - `.igs`, `.iges`
   - `.stl`
   - `.evtx`
   - `.pcap`, `.pcapng`
@@ -76,7 +76,7 @@ It hash-skips these for faster restart-safe rebuild prep:
 
 - `.dwg`, `.dwt`, `.dxf`
 - `.stp`, `.step`, `.ste`
-- `.enterprise program`, `.iges`
+- `.igs`, `.iges`
 - `.stl`
 - `.vsdx`, `.drawio`, `.svg`, `.dia`
 - `.psd`

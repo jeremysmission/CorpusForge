@@ -69,7 +69,7 @@ class StepParser:
 
 
 class IgesParser:
-    """Extract metadata from IGES (.enterprise program/.iges) CAD files."""
+    """Extract metadata from IGES (.igs/.iges) CAD files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
         path = Path(file_path)

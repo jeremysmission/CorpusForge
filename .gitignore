@@ -38,6 +38,7 @@ config/config.local.yaml
 
 # CoPilot+ instruction file — never push to remote
 CLAUDE.md
+CoPilot+.md
 
 # Production source data — never push to remote
 ProductionSource/

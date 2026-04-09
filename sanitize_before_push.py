@@ -66,7 +66,7 @@ TEXT_REPLACEMENTS = [
     (r"\bdebate session\b", "review session"),
 
     # Program-specific terms -> generic
-    (r"\b" + _w("I","GS") + r"\b", "enterprise program"),
+    (r"(?<!\.)\b" + _w("I","GS") + r"\b", "enterprise program"),
     (r"\b" + _w("NEX","ION") + r"\b", "monitoring system"),
     (r"\b" + _w("iono","sonde") + r"s?\b", "sensor system"),
     (r"\b" + _w("iono","spheric") + r"\b", "atmospheric"),
@@ -163,6 +163,12 @@ SKIP_FILENAMES = frozenset({
     ".gitignore",
 })
 
+# Filenames that must NEVER be tracked/pushed — block at scan time
+BANNED_FILENAME_PATTERNS = [
+    re.compile(r"(?i)^claude"),   # No agentic tool names in filenames
+    re.compile(r"(?i)anthropic"),
+]
+
 
 def sanitize_text(text):
     """Apply all text replacements."""
@@ -251,6 +257,7 @@ def main():
     clean = 0
     archived = 0
     changed_files = []
+    banned_files = []
 
     for rel_path in tracked:
         path = repo_root / rel_path
@@ -266,6 +273,11 @@ def main():
 
         if basename in SKIP_FILENAMES:
             skipped_name += 1
+            continue
+
+        if any(p.search(basename) for p in BANNED_FILENAME_PATTERNS):
+            banned_files.append(rel_path)
+            print(f"  [BANNED FILENAME] {rel_path}")
             continue
 
         scanned += 1
@@ -304,6 +316,15 @@ def main():
     if apply and archive_root is not None:
         print(f"  Archived:       {archived}")
     print()
+
+    if banned_files:
+        print(f"  BLOCKED: {len(banned_files)} file(s) have banned filenames:")
+        for bf in banned_files:
+            print(f"    - {bf}  (run: git rm --cached \"{bf}\")")
+        print()
+        print(f"  Remove these from git tracking before pushing.")
+        print()
+        return 2
 
     if changed_files and not apply:
         print(f"  {len(changed_files)} file(s) need sanitization.")
