@@ -2,6 +2,10 @@
 
 **One page. Exact commands. Copy-paste ready.**
 
+For the current workstation morning path, see:
+
+- `docs/MORNING_OPERATOR_QUICKSTART_2026-04-09.md`
+
 For the workstation large-ingest GUI path, see:
 
 - `docs/OPERATOR_700GB_INGEST_RUNBOOK_2026-04-09.md`
