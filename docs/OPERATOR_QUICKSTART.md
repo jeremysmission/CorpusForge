@@ -2,6 +2,10 @@
 
 **One page. Exact commands. Copy-paste ready.**
 
+For the workstation large-ingest GUI path, see:
+
+- `docs/OPERATOR_700GB_INGEST_RUNBOOK_2026-04-09.md`
+
 ## Run from Scratch (First Time)
 
 ```bash
@@ -38,6 +42,10 @@ python scripts/run_pipeline.py --input-list canonical_files.txt --strict-input-l
 
 # Full pipeline with enrichment + extraction
 python scripts/run_pipeline.py --input data/source/ --full-reindex --log-file logs/full.log
+
+# Optional Docling dev test lane (only if installed)
+set HYBRIDRAG_DOCLING_MODE=fallback
+python scripts/run_pipeline.py --input data/source/ --full-reindex --log-file logs/docling.log
 ```
 
 ## Schedule Nightly Run (Windows Task Scheduler)
@@ -92,11 +100,43 @@ data/output/export_YYYYMMDD_HHMM/
   skip_manifest.json  # Files skipped with reasons
 ```
 
+## Inspect Export Before Import
+
+```bash
+# Quick trust check on a specific export
+python tools/inspect_export_quality.py --export-dir "C:\CorpusForge\data\output\latest"
+
+# Production example with extra red-flag checks
+python tools/inspect_export_quality.py --export-dir "C:\CorpusForge\data\production_output\export_20260409_0720" --source-glob "*.zip" --text-marker "word/document.xml"
+
+# Canonical leak gate: command exits PASS only if both leak counts are zero
+python tools/inspect_export_quality.py --export-dir "C:\CorpusForge\data\output\latest" --require-zero-source-glob "*.SAO.zip" --require-zero-source-glob "*.RSF.zip"
+```
+
+What this tool checks:
+
+- `chunks.jsonl` is valid JSON line-by-line
+- required keys exist: `chunk_id`, `text`, `source_path`
+- `text_length` matches real text length when present
+- top source extensions by chunk count
+- suspicious `source_path` patterns such as `*.SAO.zip` and `*.RSF.zip`
+- suspicious text markers such as `[Content_Types].xml` and `_rels/.rels`
+- a small sample of suspicious chunks for manual review
+
+What to look for:
+
+- unexpected chunk volume from a format that was supposed to be deferred
+- archive-heavy exports dominated by `*.zip` paths
+- chunk previews that show container metadata instead of document text
+- numeric dump text where you expected human-readable prose
+- surprisingly high `parse_quality` on obvious junk
+- gate output that ends with `RESULT: PASS` and proof lines showing `matched_chunks=0` for the forbidden patterns
+
 ## Feed Export to HybridRAG V2
 
 ```bash
 # From HybridRAG V2 repo:
-python scripts/run_pipeline.py --input-list "C:\CorpusForge\data\output\latest\chunks.jsonl"
+python scripts/import_embedengine.py --source "C:\CorpusForge\data\output\latest"
 ```
 
 ## Config Files
@@ -104,5 +144,17 @@ python scripts/run_pipeline.py --input-list "C:\CorpusForge\data\output\latest\c
 | File | What | Committed |
 |------|------|-----------|
 | `config/config.yaml` | Base config (all settings) | Yes |
-| `config/config.local.yaml` | Machine overrides (workers, GPU, batch sizes) | No (gitignored) |
+| `config/config.local.yaml` | Machine overrides (`pipeline.workers`, GPU, batch sizes, optional `parse.docling_mode`). Workers use logical CPU threads: desktop `32`, laptop `20`. GUI **Save Settings** writes overrides here. | No (gitignored) |
 | `config/skip_list.yaml` | Format skip rules | Yes |
+
+## Parser Env Vars
+
+- `TESSERACT_CMD` — path to `tesseract.exe` if not already on PATH
+- `HYBRIDRAG_POPPLER_BIN` — directory containing `pdftoppm.exe`
+- `HYBRIDRAG_DOCLING_MODE` — optional override: `off` | `fallback` | `prefer`
+- `CORPUSFORGE_INSTALL_DOCLING=1` — installer flag for the optional Docling dev dependency
+
+Preferred control path:
+
+- use `config/config.local.yaml` for stable workstation behavior
+- use env vars only for temporary overrides or side-by-side parser testing

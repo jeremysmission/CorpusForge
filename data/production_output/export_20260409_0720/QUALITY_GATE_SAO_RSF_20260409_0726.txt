@@ -1,0 +1,69 @@
+Export dir: C:\CorpusForge\data\production_output\export_20260409_0720
+Chunks file: C:\CorpusForge\data\production_output\export_20260409_0720\chunks.jsonl
+
+Schema health:
+  total_chunks: 242650
+  invalid_json_lines: 0
+  missing_required_keys: 0
+  empty_text_chunks: 0
+  text_length_mismatches: 0
+
+Top source extensions:
+     .xlsx    189862   78.2%
+      .jpg     14623    6.0%
+      .pdf     14324    5.9%
+      .txt     11201    4.6%
+      .rtf      5194    2.1%
+      .doc      2549    1.1%
+     .docx      2251    0.9%
+      .zip      1307    0.5%
+      .png       331    0.1%
+     .jpeg       281    0.1%
+      .ppt       178    0.1%
+      .ini       177    0.1%
+      .msg       170    0.1%
+      .xls       109    0.0%
+     .pptx        48    0.0%
+
+Suspicious source-path globs:
+  *.sao.zip: 0
+  *.rsf.zip: 0
+
+Suspicious text markers:
+  [content_types].xml: 165
+  _rels/.rels: 165
+  numeric_dump_heuristic: 5273
+  suspicious_chunks_with_quality>=0.6: 4660
+
+Suspicious sample chunks:
+  line 5: ProductionSource\verified\source\verified\enterprise program\! Site Visits\(01) Sites\Alpena\2013-06-09 thru 06-14 (NEXION_Site Selection)(Brukardt)\1_Site Selection\Briefings\monitoring system Michigan Site Selection Update.ppt
+    reasons: text_marker=[content_types].xml,_rels/.rels; parse_quality=0.7
+    preview: Title: AFSPC Briefing Template Author: bushv [Content_Types].xml _rels/.rels tableStyles.xml [Content_Types].xmlPK _rels/.relsPK tableSty...
+  line 6: ProductionSource\verified\source\verified\enterprise program\! Site Visits\(01) Sites\Alpena\2013-06-09 thru 06-14 (NEXION_Site Selection)(Brukardt)\1_Site Selection\Briefings\monitoring system Michigan Site Selection Update.ppt
+    reasons: text_marker=[content_types].xml,_rels/.rels; parse_quality=0.7
+    preview: nt_Types].xml| _rels/.rels drs/slideLayouts/slideLayout1.xml [Content_Types].xmlPK _rels/.relsPK drs/slideLayouts/slideLayout1.xmlPK [Con...
+  line 7: ProductionSource\verified\source\verified\enterprise program\! Site Visits\(01) Sites\Alpena\2013-06-09 thru 06-14 (NEXION_Site Selection)(Brukardt)\1_Site Selection\Briefings\monitoring system Michigan Site Selection Update.ppt
+    reasons: text_marker=[content_types].xml,_rels/.rels; parse_quality=0.7
+    preview: eLayouts/slideLayout1.xmlPK [Content_Types].xml| _rels/.rels drs/slideLayouts/slideLayout1.xml [Content_Types].xmlPK _rels/.relsPK drs/sl...
+  line 8: ProductionSource\verified\source\verified\enterprise program\! Site Visits\(01) Sites\Alpena\2013-06-09 thru 06-14 (NEXION_Site Selection)(Brukardt)\1_Site Selection\Briefings\monitoring system Michigan Site Selection Update.ppt
+    reasons: text_marker=[content_types].xml,_rels/.rels; parse_quality=0.7
+    preview: ster1.xmlPK [Content_Types].xml _rels/.rels drs/shapexml.xml drs/downrev.xmlD [Content_Types].xmlPK _rels/.relsPK drs/shapexml.xmlPK drs/...
+  line 9: ProductionSource\verified\source\verified\enterprise program\! Site Visits\(01) Sites\Alpena\2013-06-09 thru 06-14 (NEXION_Site Selection)(Brukardt)\1_Site Selection\Briefings\monitoring system Michigan Site Selection Update.ppt
+    reasons: text_marker=[content_types].xml,_rels/.rels; parse_quality=0.7
+    preview: xml.rels [Content_Types].xmlPK _rels/.relsPK theme/theme/themeManager.xmlPK theme/theme/theme1.xmlPK theme/theme/_rels/themeManager.xml.r...
+  line 10: ProductionSource\verified\source\verified\enterprise program\! Site Visits\(01) Sites\Alpena\2013-06-09 thru 06-14 (NEXION_Site Selection)(Brukardt)\1_Site Selection\Briefings\monitoring system Michigan Site Selection Update.ppt
+    reasons: text_marker=[content_types].xml,_rels/.rels; parse_quality=0.7
+    preview: _rels/.relsPK drs/shapexml.xmlPK drs/downrev.xmlPK Click to edit Master text styles Second level Third level Fourth level Fifth level [Co...
+  line 11: ProductionSource\verified\source\verified\enterprise program\! Site Visits\(01) Sites\Alpena\2013-06-09 thru 06-14 (NEXION_Site Selection)(Brukardt)\1_Site Selection\Briefings\monitoring system Michigan Site Selection Update.ppt
+    reasons: text_marker=[content_types].xml,_rels/.rels; parse_quality=0.7
+    preview: ent_Types].xml| _rels/.rels drs/slideMasters/slideMaster1.xml [Content_Types].xmlPK _rels/.relsPK drs/slideMasters/slideMaster1.xmlPK [Co...
+  line 12: ProductionSource\verified\source\verified\enterprise program\! Site Visits\(01) Sites\Alpena\2013-06-09 thru 06-14 (NEXION_Site Selection)(Brukardt)\1_Site Selection\Briefings\monitoring system Michigan Site Selection Update.ppt
+    reasons: text_marker=[content_types].xml,_rels/.rels; parse_quality=0.7
+    preview: xml.rels [Content_Types].xmlPK _rels/.relsPK theme/theme/themeManager.xmlPK theme/theme/theme1.xmlPK theme/theme/_rels/themeManager.xml.r...
+
+Gate checks:
+  PASS: *.SAO.zip
+    proof: matched_chunks=0
+  PASS: *.RSF.zip
+    proof: matched_chunks=0
+RESULT: PASS

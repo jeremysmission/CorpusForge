@@ -68,6 +68,10 @@ class ParseConfig(BaseModel):
         default="auto",
         description="OCR mode: 'skip' | 'auto' | 'force'. 'auto' detects scanned PDFs.",
     )
+    docling_mode: str = Field(
+        default="off",
+        description="Optional Docling parser lane: 'off' | 'fallback' | 'prefer'.",
+    )
     max_chars_per_file: int = Field(default=5_000_000, ge=1000, description="Clamp file text to this length.")
     defer_extensions: list[str] = Field(
         default_factory=list,
@@ -80,6 +84,14 @@ class ParseConfig(BaseModel):
         allowed = {"skip", "auto", "force"}
         if v not in allowed:
             raise ValueError(f"ocr_mode must be one of {allowed}, got '{v}'")
+        return v
+
+    @field_validator("docling_mode")
+    @classmethod
+    def validate_docling_mode(cls, v: str) -> str:
+        allowed = {"off", "fallback", "prefer"}
+        if v not in allowed:
+            raise ValueError(f"docling_mode must be one of {allowed}, got '{v}'")
         return v
 
     @field_validator("defer_extensions")
@@ -189,7 +201,15 @@ class PipelineConfig(BaseModel):
     full_reindex: bool = Field(default=False, description="Process all files, not just new/changed.")
     max_files: Optional[int] = Field(default=None, ge=1, description="Limit files processed per run (for testing).")
     log_level: str = Field(default="INFO", description="Logging level.")
-    workers: int = Field(default=8, ge=1, le=32, description="Parallel parser threads. GPU embed runs on main thread.")
+    workers: int = Field(
+        default=8,
+        ge=1,
+        le=32,
+        description=(
+            "Parallel parser workers, sized by logical CPU threads rather than physical cores. "
+            "Common values: desktop 32, laptop 20, Beast 16."
+        ),
+    )
     stale_future_timeout: int = Field(default=120, ge=30, description="Seconds before watchdog kills a hung parser.")
     embed_flush_batch: int = Field(default=512, ge=32, description="Chunks accumulated before flushing to GPU embed.")
 

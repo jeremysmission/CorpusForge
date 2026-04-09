@@ -17,7 +17,7 @@ import pytest
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-os.environ["HYBRIDRAG_HEADLESS"] = "1"
+os.environ["CORPUSFORGE_HEADLESS"] = "1"
 
 
 @pytest.fixture(scope="module")
@@ -50,8 +50,9 @@ class TestWidgetDiscovery:
     def test_discovers_buttons(self, engine):
         buttons = engine.discover_buttons()
         labels = [b.cget("text") for b in buttons if hasattr(b, "cget")]
-        assert len(buttons) >= 3, f"Expected at least 3 buttons, found {len(buttons)}"
+        assert len(buttons) >= 4, f"Expected at least 4 buttons, found {len(buttons)}"
         assert "Start Pipeline" in labels
+        assert "Run Precheck" in labels
         assert "Save Settings" in labels
 
     def test_discovers_spinboxes(self, engine):

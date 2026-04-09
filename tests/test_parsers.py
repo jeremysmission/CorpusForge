@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from src.parse.dispatcher import ParseDispatcher
+from src.parse.parsers.pdf_parser import PdfParser
 
 
 @pytest.fixture
@@ -106,3 +107,21 @@ def test_placeholder_dwg(dispatcher, tmp_path):
     doc = dispatcher.parse(f)
     assert "AutoCAD" in doc.text or "PLACEHOLDER" in doc.text
     assert doc.parse_quality < 0.5  # Low quality — placeholder only
+
+
+def test_parse_pdf_docling_fallback_uses_docling_when_native_extractors_are_empty(tmp_path, monkeypatch):
+    f = tmp_path / "scan.pdf"
+    f.write_bytes(b"%PDF-1.4\n%fake\n")
+
+    monkeypatch.setenv("HYBRIDRAG_DOCLING_MODE", "fallback")
+    monkeypatch.setattr(PdfParser, "_try_pypdf", lambda self, path: "")
+    monkeypatch.setattr(PdfParser, "_try_pdfplumber", lambda self, path: "")
+    monkeypatch.setattr(PdfParser, "_try_ocr", lambda self, path: "")
+    monkeypatch.setattr(
+        "src.parse.parsers.pdf_parser.extract_with_docling",
+        lambda path: "# Converted by Docling\n\nProgram status report",
+    )
+
+    doc = PdfParser().parse(f)
+    assert "Converted by Docling" in doc.text
+    assert doc.parse_quality > 0

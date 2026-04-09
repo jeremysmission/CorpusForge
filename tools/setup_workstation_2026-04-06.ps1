@@ -473,6 +473,25 @@ if ($ok) {
 }
 
 # ============================================================
+# 7.5 Optional Docling dev lane
+# ============================================================
+$doclingReqFile = Join-Path $ProjectRoot "requirements.docling.txt"
+$installDocling = ($env:CORPUSFORGE_INSTALL_DOCLING -eq "1")
+if ($installDocling -and (Test-Path $doclingReqFile)) {
+    Write-Step "Installing optional Docling dev dependency"
+    $doclingOk = Invoke-WithRetry -Label "pip install -r requirements.docling.txt" -Action {
+        & $VenvPip install -r $doclingReqFile @TrustedHosts --quiet 2>&1 | Out-Null
+    }
+    if ($doclingOk) {
+        Write-Ok "Optional Docling installed"
+    } else {
+        Write-Warn "Optional Docling install failed — CorpusForge still works without it"
+    }
+} elseif (Test-Path $doclingReqFile) {
+    Write-Info "Optional Docling skipped (set CORPUSFORGE_INSTALL_DOCLING=1 for dev-only install)"
+}
+
+# ============================================================
 # 8. Verify CUDA torch
 # ============================================================
 Write-Step "Verifying CUDA torch"
@@ -541,6 +560,15 @@ if ($LASTEXITCODE -eq 0) {
     }
 }
 Remove-TempFileQuietly -Path $importPy
+
+if (Test-Path $doclingReqFile) {
+    $doclingCheck = & $VenvPython -c "import importlib.util; print(importlib.util.find_spec('docling') is not None)" 2>&1
+    if ($LASTEXITCODE -eq 0 -and (($doclingCheck | Out-String).Trim()) -eq "True") {
+        Write-Ok "Optional Docling import available"
+    } else {
+        Write-Info "Optional Docling not installed (expected unless CORPUSFORGE_INSTALL_DOCLING=1)"
+    }
+}
 
 # ============================================================
 # 10. Check Ollama

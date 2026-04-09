@@ -65,6 +65,20 @@ def test_chunk_only_produces_chunks(config_chunk_only):
     assert len(stats.errors) == 0
 
 
+def test_pipeline_emits_live_stats_updates(config_chunk_only):
+    p = Pipeline(config_chunk_only)
+    files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
+    files = [f for f in files if f.is_file()]
+    snapshots = []
+
+    stats = p.run(files, on_stats_update=lambda snapshot: snapshots.append(dict(snapshot)))
+
+    assert len(snapshots) >= 2
+    assert snapshots[0]["files_found"] == len(files)
+    assert snapshots[-1]["files_parsed"] == stats.files_parsed
+    assert snapshots[-1]["chunks_created"] == stats.chunks_created
+
+
 def test_chunk_only_writes_jsonl(config_chunk_only):
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
@@ -165,3 +179,15 @@ def test_pipeline_ok_enrichment_disabled(config_chunk_only):
     config_chunk_only.enrich.enabled = False
     p = Pipeline(config_chunk_only)  # Should not raise
     assert p is not None
+
+
+def test_pipeline_env_overrides_parser_modes(config_chunk_only, monkeypatch):
+    monkeypatch.setenv("HYBRIDRAG_DOCLING_MODE", "prefer")
+    monkeypatch.setenv("HYBRIDRAG_OCR_MODE", "skip")
+    config_chunk_only.parse.docling_mode = "off"
+    config_chunk_only.parse.ocr_mode = "auto"
+
+    Pipeline(config_chunk_only)
+
+    assert config_chunk_only.parse.docling_mode == "prefer"
+    assert config_chunk_only.parse.ocr_mode == "skip"

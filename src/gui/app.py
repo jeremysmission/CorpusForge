@@ -42,6 +42,7 @@ class CorpusForgeApp:
         on_start=None,
         on_stop=None,
         on_save_settings=None,
+        on_precheck=None,
         on_transfer_start=None,
         on_transfer_stop=None,
         on_dedup_only_start=None,
@@ -56,11 +57,13 @@ class CorpusForgeApp:
         self._on_start = on_start
         self._on_stop = on_stop
         self._on_save_settings = on_save_settings
+        self._on_precheck = on_precheck
         self._on_transfer_start = on_transfer_start
         self._on_transfer_stop = on_transfer_stop
         self._on_dedup_only_start = on_dedup_only_start
         self._on_dedup_only_stop = on_dedup_only_stop
         self._running = False
+        self._mousewheel_bound = False
 
         self._setup_window()
         apply_ttk_styles(DARK)
@@ -134,9 +137,36 @@ class CorpusForgeApp:
     def _build_ui(self):
         t = current_theme()
 
-        # Main container
-        main = ttk.Frame(self.root, padding=10)
-        main.pack(fill=tk.BOTH, expand=True)
+        shell = ttk.Frame(self.root)
+        shell.pack(fill=tk.BOTH, expand=True)
+
+        content_shell = ttk.Frame(shell)
+        content_shell.pack(fill=tk.BOTH, expand=True)
+
+        self._scroll_canvas = tk.Canvas(
+            content_shell,
+            bg=t["bg"],
+            highlightthickness=0,
+            bd=0,
+        )
+        self._scroll_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self._scrollbar = ttk.Scrollbar(
+            content_shell,
+            orient=tk.VERTICAL,
+            command=self._scroll_canvas.yview,
+        )
+        self._scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._scroll_canvas.configure(yscrollcommand=self._scrollbar.set)
+
+        main = ttk.Frame(self._scroll_canvas, padding=10)
+        self._scroll_window = self._scroll_canvas.create_window(
+            (0, 0), window=main, anchor=tk.NW
+        )
+        main.bind("<Configure>", self._on_scroll_content_configure)
+        self._scroll_canvas.bind("<Configure>", self._on_scroll_canvas_configure)
+        self._scroll_canvas.bind("<Enter>", self._bind_mousewheel)
+        self._scroll_canvas.bind("<Leave>", self._unbind_mousewheel)
 
         # Title
         title_lbl = tk.Label(
@@ -182,6 +212,7 @@ class CorpusForgeApp:
             on_dedup_only_start=self._on_dedup_only_start,
             on_dedup_only_stop=self._on_dedup_only_stop,
             append_log=self.append_log,
+            default_output=self._config.paths.output_dir if self._config is not None else "data/output",
         )
 
         # -- Live Stats Panel --
@@ -201,7 +232,7 @@ class CorpusForgeApp:
         self._build_log_panel(log_frame, t)
 
         # -- Status Bar --
-        self._build_status_bar(main, t)
+        self._build_status_bar(shell, t)
 
     def _build_control_panel(self, parent, t):
         """Source/output paths, start/stop buttons, progress bar."""
@@ -254,6 +285,12 @@ class CorpusForgeApp:
             command=self._on_start_click,
         )
         self.start_btn.pack(side=tk.LEFT, padx=(0, 6))
+
+        self.precheck_btn = ttk.Button(
+            row2, text="Run Precheck", style="Tertiary.TButton",
+            command=self._on_precheck_click,
+        )
+        self.precheck_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.stop_btn = ttk.Button(
             row2, text="Stop", style="Tertiary.TButton",
@@ -310,6 +347,7 @@ class CorpusForgeApp:
             ("config", f"Config: {self.config_path}"),
             ("formats", f"Formats: {self.supported_formats}"),
             ("skip", f"Skip list: {self.skip_list_count} deferred"),
+            ("workers", f"Pipeline workers: {self._current_worker_count()} logical threads"),
             ("enrich", f"Enrichment: {'enabled' if self.enrichment_enabled else 'disabled'}"),
         ]
         for key, text in items:
@@ -395,6 +433,33 @@ class CorpusForgeApp:
             self._on_stop()
         self.append_log("Pipeline stop requested by user.", "WARNING")
 
+    def _on_precheck_click(self):
+        if self._on_precheck:
+            self._on_precheck(
+                source=self.source_var.get(),
+                output=self.output_var.get(),
+                settings=self._collect_current_settings(),
+            )
+
+    def _on_scroll_content_configure(self, _event=None):
+        self._scroll_canvas.configure(scrollregion=self._scroll_canvas.bbox("all"))
+
+    def _on_scroll_canvas_configure(self, event):
+        self._scroll_canvas.itemconfigure(self._scroll_window, width=event.width)
+
+    def _bind_mousewheel(self, _event=None):
+        if not self._mousewheel_bound:
+            self.root.bind_all("<MouseWheel>", self._on_mousewheel, add="+")
+            self._mousewheel_bound = True
+
+    def _unbind_mousewheel(self, _event=None):
+        if self._mousewheel_bound:
+            self.root.unbind_all("<MouseWheel>")
+            self._mousewheel_bound = False
+
+    def _on_mousewheel(self, event):
+        self._scroll_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
     # ------------------------------------------------------------------
     # State management
     # ------------------------------------------------------------------
@@ -403,6 +468,7 @@ class CorpusForgeApp:
         self._running = running
         if running:
             self.start_btn.configure(state=tk.DISABLED)
+            self.precheck_btn.configure(state=tk.DISABLED)
             self.stop_btn.configure(state=tk.NORMAL)
             self.browse_src_btn.configure(state=tk.DISABLED)
             self.browse_out_btn.configure(state=tk.DISABLED)
@@ -411,6 +477,7 @@ class CorpusForgeApp:
             self._stats_panel.start_timer()
         else:
             self.start_btn.configure(state=tk.NORMAL)
+            self.precheck_btn.configure(state=tk.NORMAL)
             self.stop_btn.configure(state=tk.DISABLED)
             self.browse_src_btn.configure(state=tk.NORMAL)
             self.browse_out_btn.configure(state=tk.NORMAL)
@@ -424,6 +491,9 @@ class CorpusForgeApp:
 
     def update_stats(self, stats: dict):
         self._stats_panel.update_stats(stats)
+
+    def update_stage_progress(self, stage: str, current: int, total: int, detail: str = ""):
+        self._stats_panel.update_stage_progress(stage, current, total, detail)
 
     def update_current_file(self, filename: str):
         self._stats_panel.update_current_file(filename)
@@ -485,6 +555,9 @@ class CorpusForgeApp:
         self._status_labels["skip"].configure(
             text=f"Skip list: {self.skip_list_count} deferred",
         )
+        self._status_labels["workers"].configure(
+            text=f"Pipeline workers: {self._current_worker_count()} logical threads",
+        )
         self._status_labels["enrich"].configure(
             text=f"Enrichment: {enrich_text}", fg=enrich_fg,
         )
@@ -502,4 +575,28 @@ class CorpusForgeApp:
             text=f"Enrichment: {status}", fg=fg,
         )
 
+    def update_worker_status(self, workers: int | None = None):
+        """Refresh the worker indicator after a settings change."""
+        if workers is not None and self._config is not None:
+            self._config.pipeline.workers = workers
+        self._update_status_bar()
 
+    def _current_worker_count(self) -> int:
+        if hasattr(self, "_settings_panel"):
+            try:
+                return int(self._settings_panel.workers_var.get())
+            except Exception:
+                pass
+        if self._config is not None:
+            return int(self._config.pipeline.workers)
+        return 0
+
+    def _collect_current_settings(self) -> dict:
+        return {
+            "pipeline": {"workers": int(self.workers_var.get())},
+            "parse": {"ocr_mode": str(self.ocr_var.get())},
+            "embed": {"enabled": bool(self.embed_var.get())},
+            "enrich": {"enabled": bool(self.enrich_var.get())},
+            "extract": {"enabled": bool(self.extract_var.get())},
+            "hardware": {"embed_batch_size": int(self.embed_batch_var.get())},
+        }

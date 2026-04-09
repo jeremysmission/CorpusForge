@@ -22,11 +22,18 @@ logger = logging.getLogger(__name__)
 _PARSER_MAP: dict | None = None
 
 
-def _build_parser_map(skip_list_path: str = "config/skip_list.yaml") -> dict:
+def _build_parser_map(
+    skip_list_path: str = "config/skip_list.yaml",
+    extra_deferred_exts: set[str] | None = None,
+) -> dict:
     """Build extension → parser instance map. Called once on first use.
 
     Placeholder formats are loaded from config/skip_list.yaml — not hardcoded.
     To change which formats get placeholder treatment, edit the YAML file.
+
+    ``extra_deferred_exts`` are merged with the ``deferred_formats`` list
+    from the skip list and applied to the archive parser, so deferred
+    extensions inside ZIP/TAR archives are skipped at extract time.
     """
     from src.parse.parsers.txt_parser import TxtParser
     from src.parse.parsers.pdf_parser import PdfParser
@@ -58,7 +65,21 @@ def _build_parser_map(skip_list_path: str = "config/skip_list.yaml") -> dict:
     from src.parse.parsers.psd_parser import PsdParser
     from src.parse.parsers.step_iges_parser import StepParser, IgesParser
     from src.parse.parsers.placeholder_parser import PlaceholderParser
-    from src.skip.skip_manager import load_placeholder_format_map
+    from src.skip.skip_manager import (
+        load_placeholder_format_map,
+        load_deferred_extension_map,
+    )
+
+    # Combine YAML-driven deferred_formats with any extras from config
+    # (e.g., parse.defer_extensions). Both apply to archive members.
+    archive_deferred: set[str] = set(
+        load_deferred_extension_map(skip_list_path).keys()
+    )
+    for ext in extra_deferred_exts or ():
+        ext = ext.lower()
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        archive_deferred.add(ext)
 
     txt = TxtParser()
     pdf = PdfParser()
@@ -76,7 +97,7 @@ def _build_parser_map(skip_list_path: str = "config/skip_list.yaml") -> dict:
     xls = XlsParser()
     doc = DocParser()
     ppt = PptParser()
-    archive = ArchiveParser()
+    archive = ArchiveParser(deferred_exts=archive_deferred)
     image = ImageParser()
     epub = EpubParser()
     odt = OpenDocumentParser()
@@ -164,14 +185,22 @@ def get_supported_extensions(skip_list_path: str = "config/skip_list.yaml") -> s
     return set(_PARSER_MAP.keys())
 
 
+def reset_parser_map() -> None:
+    """Drop the cached parser map. Used by tests that change defer policy."""
+    global _PARSER_MAP
+    _PARSER_MAP = None
+
+
 class ParseDispatcher:
     """Routes files to the appropriate parser based on extension."""
 
     def __init__(self, timeout_seconds: int = 60, max_chars: int = 5_000_000,
-                 skip_list_path: str = "config/skip_list.yaml"):
+                 skip_list_path: str = "config/skip_list.yaml",
+                 extra_deferred_exts: set[str] | None = None):
         self.timeout = timeout_seconds
         self.max_chars = max_chars
         self._skip_list_path = skip_list_path
+        self._extra_deferred_exts = set(extra_deferred_exts or ())
 
     def parse(self, file_path: Path) -> ParsedDocument:
         """
@@ -181,7 +210,9 @@ class ParseDispatcher:
         """
         global _PARSER_MAP
         if _PARSER_MAP is None:
-            _PARSER_MAP = _build_parser_map(self._skip_list_path)
+            _PARSER_MAP = _build_parser_map(
+                self._skip_list_path, self._extra_deferred_exts
+            )
 
         ext = file_path.suffix.lower()
         parser = _PARSER_MAP.get(ext)

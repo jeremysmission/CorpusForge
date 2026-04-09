@@ -21,11 +21,12 @@ class DedupOnlyPanel:
 
     def __init__(self, parent: ttk.LabelFrame, root: tk.Tk,
                  on_dedup_only_start=None, on_dedup_only_stop=None,
-                 append_log=None):
+                 append_log=None, default_output: str = "data/output"):
         self.root = root
         self._on_dedup_only_start = on_dedup_only_start
         self._on_dedup_only_stop = on_dedup_only_stop
         self._append_log = append_log
+        self._default_output = default_output
         self._running = False
         self._build(parent)
 
@@ -53,48 +54,82 @@ class DedupOnlyPanel:
         self.browse_dedup_only_btn.pack(side=tk.RIGHT)
 
         row1 = ttk.Frame(parent)
-        row1.pack(fill=tk.X, pady=(6, 2))
+        row1.pack(fill=tk.X, pady=2)
+
+        tk.Label(row1, text="Output:", font=FONT, bg=t["panel_bg"],
+                 fg=t["label_fg"], width=8, anchor=tk.W).pack(side=tk.LEFT)
+
+        self.dedup_only_out_var = tk.StringVar(value=self._default_output)
+        self.dedup_only_out_entry = tk.Entry(
+            row1, textvariable=self.dedup_only_out_var, font=FONT,
+            bg=t["input_bg"], fg=t["input_fg"], insertbackground=t["fg"],
+            relief=tk.FLAT, bd=2,
+        )
+        self.dedup_only_out_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(4, 4))
+
+        self.browse_dedup_only_out_btn = ttk.Button(
+            row1, text="Browse",
+            command=lambda: self._browse_into(self.dedup_only_out_var, "Select Dedup Output Folder"),
+        )
+        self.browse_dedup_only_out_btn.pack(side=tk.RIGHT)
+
+        row2 = ttk.Frame(parent)
+        row2.pack(fill=tk.X, pady=(6, 2))
 
         self.dedup_only_start_btn = ttk.Button(
-            row1, text="Run Dedup Only", style="Accent.TButton",
+            row2, text="Run Dedup Only", style="Accent.TButton",
             command=self._on_start_click,
         )
         self.dedup_only_start_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.dedup_only_stop_btn = ttk.Button(
-            row1, text="Stop", style="Tertiary.TButton",
+            row2, text="Stop", style="Tertiary.TButton",
             command=self._on_stop_click, state=tk.DISABLED,
         )
         self.dedup_only_stop_btn.pack(side=tk.LEFT, padx=(0, 12))
 
         self.dedup_only_progress_var = tk.DoubleVar(value=0.0)
         self.dedup_only_progress_bar = ttk.Progressbar(
-            row1, variable=self.dedup_only_progress_var, maximum=100,
+            row2, variable=self.dedup_only_progress_var, maximum=100,
             mode="determinate", length=250,
         )
         self.dedup_only_progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
 
         self.dedup_only_status_label = tk.Label(
-            row1, text="Idle", font=FONT_SMALL,
+            row2, text="Idle", font=FONT_SMALL,
             bg=t["panel_bg"], fg=t["label_fg"],
         )
         self.dedup_only_status_label.pack(side=tk.RIGHT)
 
         # Dedup stats row
-        row2 = ttk.Frame(parent)
-        row2.pack(fill=tk.X, pady=2)
+        row3 = ttk.Frame(parent)
+        row3.pack(fill=tk.X, pady=2)
 
         self._dedup_only_stat_labels = {}
         for key, label_text in [
             ("scanned", "Scanned:"), ("duplicates", "Duplicates:"),
-            ("current", "Current:"), ("elapsed", "Elapsed:"), ("eta", "ETA:"),
+            ("unique", "Unique:"), ("current", "Current:"),
+            ("elapsed", "Elapsed:"), ("eta", "ETA:"),
         ]:
-            tk.Label(row2, text=label_text, font=FONT_SMALL, bg=t["panel_bg"],
+            tk.Label(row3, text=label_text, font=FONT_SMALL, bg=t["panel_bg"],
                      fg=t["label_fg"]).pack(side=tk.LEFT, padx=(0, 2))
-            val = tk.Label(row2, text="--", font=FONT_SMALL, bg=t["panel_bg"],
+            val = tk.Label(row3, text="--", font=FONT_SMALL, bg=t["panel_bg"],
                            fg=t["fg"])
             val.pack(side=tk.LEFT, padx=(0, 10))
             self._dedup_only_stat_labels[key] = val
+
+        row4 = ttk.Frame(parent)
+        row4.pack(fill=tk.X, pady=(2, 0))
+        self.dedup_only_artifact_label = tk.Label(
+            row4,
+            text="Artifacts: canonical_files.txt, dedup_report.json, run_report.txt",
+            font=FONT_SMALL,
+            bg=t["panel_bg"],
+            fg=t["label_fg"],
+            anchor=tk.W,
+            wraplength=760,
+        )
+        self.dedup_only_artifact_label.pack(fill=tk.X)
 
     def _browse_into(self, var, title):
         path = filedialog.askdirectory(title=title)
@@ -107,8 +142,12 @@ class DedupOnlyPanel:
         self._running = True
         self.dedup_only_start_btn.configure(state=tk.DISABLED)
         self.dedup_only_stop_btn.configure(state=tk.NORMAL)
+        self.dedup_only_status_label.configure(text="Starting...")
         if self._on_dedup_only_start:
-            self._on_dedup_only_start(source=self.dedup_only_src_var.get())
+            self._on_dedup_only_start(
+                source=self.dedup_only_src_var.get(),
+                output=self.dedup_only_out_var.get(),
+            )
 
     def _on_stop_click(self):
         if self._on_dedup_only_stop:
@@ -121,6 +160,7 @@ class DedupOnlyPanel:
         total = stats.get("total_files", 0)
         scanned = stats.get("files_scanned", 0)
         dupes = stats.get("duplicates_found", 0)
+        unique = stats.get("unique_files")
         current = stats.get("current_file", "")
 
         if total > 0:
@@ -129,6 +169,9 @@ class DedupOnlyPanel:
 
         self._dedup_only_stat_labels["scanned"].configure(text=f"{scanned}/{total}")
         self._dedup_only_stat_labels["duplicates"].configure(text=str(dupes))
+        self._dedup_only_stat_labels["unique"].configure(
+            text=str(unique) if unique is not None else "--"
+        )
 
         if len(current) > 35:
             current = "..." + current[-32:]
@@ -144,7 +187,13 @@ class DedupOnlyPanel:
         else:
             self._dedup_only_stat_labels["eta"].configure(text="--")
 
-        self.dedup_only_status_label.configure(text=f"{scanned}/{total}")
+        status_text = stats.get("status_text", f"{scanned}/{total}" if total else "Idle")
+        self.dedup_only_status_label.configure(text=status_text)
+        output_dir = stats.get("output_dir")
+        if output_dir:
+            self.dedup_only_artifact_label.configure(
+                text=f"Output: {output_dir} | Artifacts: canonical_files.txt, dedup_report.json, run_report.txt"
+            )
 
     def dedup_only_finished(self, stats: dict, message: str = ""):
         """Called when dedup-only pass completes."""
@@ -152,7 +201,10 @@ class DedupOnlyPanel:
         self._running = False
         self.dedup_only_start_btn.configure(state=tk.NORMAL)
         self.dedup_only_stop_btn.configure(state=tk.DISABLED)
-        self.dedup_only_progress_var.set(100.0)
-        self.dedup_only_status_label.configure(text="Done")
+        total = stats.get("total_files", 0)
+        scanned = stats.get("files_scanned", 0)
+        if total > 0:
+            self.dedup_only_progress_var.set(min(100.0, (scanned / total) * 100.0))
+        self.dedup_only_status_label.configure(text=stats.get("status_text", "Done"))
         if message and self._append_log:
             self._append_log(message, "INFO")

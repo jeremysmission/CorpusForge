@@ -1,0 +1,53 @@
+# Sprint 6.6 archive-defer fix — short proof sample config (2026-04-09)
+# Used to verify the archive-member defer fix on a tiny targeted sample
+# before launching the full production rerun. Mechanism check only.
+
+paths:
+  source_dirs:
+    - "data/proof_sample_input"
+  output_dir: "data/proof_sample_output"
+  state_db: "data/proof_sample_state.sqlite3"
+  landing_zone: "data/proof_sample_input"
+  skip_list: "config/skip_list.yaml"
+
+chunk:
+  size: 1200
+  overlap: 200
+  max_heading_len: 160
+
+parse:
+  timeout_seconds: 60
+  ocr_mode: "skip"
+  max_chars_per_file: 5000000
+  defer_extensions:
+    - ".sao"
+    - ".rsf"
+
+embed:
+  enabled: true
+  model_name: "nomic-ai/nomic-embed-text-v1.5"
+  dim: 768
+  device: "cuda"
+  max_batch_tokens: 49152
+  dtype: "float16"
+
+enrich:
+  enabled: false
+
+extract:
+  enabled: false
+  model_name: "urchade/gliner_multi-v2.1"
+  entity_types:
+    - PART_NUMBER
+  min_confidence: 0.5
+  batch_size: 16
+  max_concurrent: 4
+
+pipeline:
+  full_reindex: true
+  log_level: "INFO"
+  workers: 2
+
+hardware:
+  gpu_index: 0
+  embed_batch_size: 256

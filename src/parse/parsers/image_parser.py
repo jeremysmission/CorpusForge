@@ -13,6 +13,7 @@ import logging
 import os
 from pathlib import Path
 
+from src.parse.parsers.docling_bridge import extract_with_docling, get_docling_mode
 from src.parse.parsers.txt_parser import ParsedDocument
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,19 @@ class ImageParser:
         path = Path(file_path)
         text = ""
         quality = 0.0
+        docling_mode = get_docling_mode()
+
+        if docling_mode == "prefer":
+            text = extract_with_docling(path)
+            if text:
+                quality = self._score_quality(text)
+                return ParsedDocument(
+                    source_path=str(path),
+                    text=text,
+                    parse_quality=quality,
+                    file_ext=path.suffix.lower(),
+                    file_size=path.stat().st_size if path.exists() else 0,
+                )
 
         # Check dependencies
         try:
@@ -67,14 +81,23 @@ class ImageParser:
             if text:
                 quality = self._score_quality(text)
             else:
-                # OCR returned nothing -- fall back to metadata
-                text = self._metadata_fallback(path)
-                quality = 0.1 if text else 0.0
+                if docling_mode == "fallback":
+                    text = extract_with_docling(path)
+                if text:
+                    quality = self._score_quality(text)
+                else:
+                    text = self._metadata_fallback(path)
+                    quality = 0.1 if text else 0.0
 
         except Exception as e:
             logger.error("Image OCR failed for %s: %s", path.name, e)
-            text = self._metadata_fallback(path)
-            quality = 0.1 if text else 0.0
+            if docling_mode in {"fallback", "prefer"}:
+                text = extract_with_docling(path)
+            if text:
+                quality = self._score_quality(text)
+            else:
+                text = self._metadata_fallback(path)
+                quality = 0.1 if text else 0.0
 
         return ParsedDocument(
             source_path=str(path),

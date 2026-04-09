@@ -11,17 +11,33 @@ import logging
 import os
 from pathlib import Path
 
+from src.parse.parsers.docling_bridge import extract_with_docling, get_docling_mode
 from src.parse.parsers.txt_parser import ParsedDocument
 
 logger = logging.getLogger(__name__)
 
-# OCR config from environment
-_OCR_MODE = os.getenv("HYBRIDRAG_OCR_MODE", "auto")  # auto | skip
-_OCR_TRIGGER_MIN_CHARS = int(os.getenv("HYBRIDRAG_OCR_TRIGGER_MIN_CHARS", "20"))
-_OCR_MAX_PAGES = int(os.getenv("HYBRIDRAG_OCR_MAX_PAGES", "200"))
-_OCR_DPI = int(os.getenv("HYBRIDRAG_OCR_DPI", "200"))
-_OCR_TIMEOUT_S = int(os.getenv("HYBRIDRAG_OCR_TIMEOUT_S", "20"))
-_OCR_LANG = os.getenv("HYBRIDRAG_OCR_LANG", "eng")
+def _ocr_mode() -> str:
+    return os.getenv("HYBRIDRAG_OCR_MODE", "auto")
+
+
+def _ocr_trigger_min_chars() -> int:
+    return int(os.getenv("HYBRIDRAG_OCR_TRIGGER_MIN_CHARS", "20"))
+
+
+def _ocr_max_pages() -> int:
+    return int(os.getenv("HYBRIDRAG_OCR_MAX_PAGES", "200"))
+
+
+def _ocr_dpi() -> int:
+    return int(os.getenv("HYBRIDRAG_OCR_DPI", "200"))
+
+
+def _ocr_timeout_s() -> int:
+    return int(os.getenv("HYBRIDRAG_OCR_TIMEOUT_S", "20"))
+
+
+def _ocr_lang() -> str:
+    return os.getenv("HYBRIDRAG_OCR_LANG", "eng")
 
 
 class PdfParser:
@@ -31,18 +47,31 @@ class PdfParser:
         path = Path(file_path)
         text = ""
         quality = 0.0
+        trigger_min_chars = _ocr_trigger_min_chars()
+        docling_mode = get_docling_mode()
+
+        if docling_mode == "prefer":
+            text = extract_with_docling(path)
 
         # Stage 1: Try pypdf (fastest)
-        text = self._try_pypdf(path)
+        if len(text.strip()) < trigger_min_chars:
+            pypdf_text = self._try_pypdf(path)
+            if len(pypdf_text) > len(text):
+                text = pypdf_text
 
         # Stage 2: Try pdfplumber if pypdf got nothing
-        if len(text.strip()) < _OCR_TRIGGER_MIN_CHARS:
+        if len(text.strip()) < trigger_min_chars:
             plumber_text = self._try_pdfplumber(path)
             if len(plumber_text) > len(text):
                 text = plumber_text
 
+        if len(text.strip()) < trigger_min_chars and docling_mode in {"fallback", "prefer"}:
+            docling_text = extract_with_docling(path)
+            if len(docling_text) > len(text):
+                text = docling_text
+
         # Stage 3: OCR fallback for scanned PDFs
-        if len(text.strip()) < _OCR_TRIGGER_MIN_CHARS and _OCR_MODE != "skip":
+        if len(text.strip()) < trigger_min_chars and _ocr_mode() != "skip":
             ocr_text = self._try_ocr(path)
             if len(ocr_text) > len(text):
                 text = ocr_text
@@ -63,7 +92,7 @@ class PdfParser:
             from pypdf import PdfReader
             reader = PdfReader(str(path))
             pages = []
-            for page in reader.pages[:_OCR_MAX_PAGES]:
+            for page in reader.pages[:_ocr_max_pages()]:
                 try:
                     text = page.extract_text() or ""
                     if text.strip():
@@ -81,7 +110,7 @@ class PdfParser:
             import pdfplumber
             pages = []
             with pdfplumber.open(str(path)) as pdf:
-                for page in pdf.pages[:_OCR_MAX_PAGES]:
+                for page in pdf.pages[:_ocr_max_pages()]:
                     try:
                         text = page.extract_text() or ""
                         if text.strip():
@@ -100,18 +129,18 @@ class PdfParser:
             import pytesseract
 
             poppler_bin = os.getenv("HYBRIDRAG_POPPLER_BIN", "")
-            kwargs = {"dpi": _OCR_DPI}
+            kwargs = {"dpi": _ocr_dpi()}
             if poppler_bin:
                 kwargs["poppler_path"] = poppler_bin
 
             images = convert_from_path(str(path), **kwargs)
             pages = []
-            for i, img in enumerate(images[:_OCR_MAX_PAGES]):
+            for i, img in enumerate(images[:_ocr_max_pages()]):
                 try:
                     text = pytesseract.image_to_string(
-                        img, lang=_OCR_LANG,
+                        img, lang=_ocr_lang(),
                         config="--oem 1 --psm 3",
-                        timeout=_OCR_TIMEOUT_S,
+                        timeout=_ocr_timeout_s(),
                     )
                     if text.strip():
                         pages.append(f"[OCR_PAGE={i+1}]\n{text}")

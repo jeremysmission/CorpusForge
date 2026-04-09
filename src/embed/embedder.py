@@ -94,7 +94,16 @@ class Embedder:
 
             from sentence_transformers import SentenceTransformer
 
-            gpu_index = int(os.getenv("CUDA_VISIBLE_DEVICES", "0").split(",")[0])
+            # When CUDA_VISIBLE_DEVICES is set, PyTorch remaps the selected GPU
+            # to cuda:0. We always use cuda:0 here — gpu selection is handled by
+            # CUDA_VISIBLE_DEVICES env var set in gpu_selector.py.
+            cvd = os.getenv("CUDA_VISIBLE_DEVICES")
+            if cvd is not None:
+                gpu_index = 0  # remapped by CUDA_VISIBLE_DEVICES
+                physical_gpu = int(cvd.split(",")[0])
+            else:
+                gpu_index = 0
+                physical_gpu = 0
             device_str = f"cuda:{gpu_index}"
 
             model_path = os.getenv("HYBRIDRAG_EMBED_MODEL_PATH", self.model_name)
@@ -121,8 +130,8 @@ class Embedder:
             total_mem = torch.cuda.get_device_properties(gpu_index).total_memory / (1024**3)
             self._mode = "cuda"
             logger.info(
-                "Embedder ready: CUDA on GPU %d (%.1f GB), dim=%d, dtype=%s",
-                gpu_index, total_mem, self.dim, self.dtype,
+                "Embedder ready: CUDA on physical GPU %d (logical cuda:%d, %.1f GB), dim=%d, dtype=%s",
+                physical_gpu, gpu_index, total_mem, self.dim, self.dtype,
             )
             return True
 

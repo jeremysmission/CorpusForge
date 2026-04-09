@@ -31,7 +31,53 @@ _SKIP_EXTENSIONS = {".zip", ".7z", ".rar", ".tar", ".tgz", ".gz", ".bz2", ".xz"}
 
 
 class ArchiveParser:
-    """Extract text from files inside ZIP, TAR, and GZ archives."""
+    """Extract text from files inside ZIP, TAR, and GZ archives.
+
+    Defer policy (Sprint 6.6 fix):
+        Both the archive's own basename and each extracted member's
+        original basename are checked against ``deferred_exts``. Matching
+        is segment-based: the lowercased basename is split on ``.`` and
+        any segment equal to a deferred token (without the leading dot)
+        causes the entry to be deferred.
+
+        Production examples this catches:
+            * archive ``AS00Q_2015309093000.SAO.zip``  → token ``sao`` is
+              a dot-segment → entire archive is deferred, no extraction.
+            * member ``AS00Q_2015309093000.SAO.XML``   → token ``sao`` is
+              a dot-segment → member is dropped at extract time.
+
+        Lookalikes that must NOT match:
+            * ``report_sao.log``  → segments ['report_sao','log']
+            * ``bigsao.txt``      → segments ['bigsao','txt']
+    """
+
+    def __init__(self, deferred_exts: set[str] | None = None) -> None:
+        # Normalize: store both the dotted form (e.g. ".sao") and the
+        # bare token form (e.g. "sao") so segment matching is cheap.
+        normalized: set[str] = set()
+        tokens: set[str] = set()
+        for ext in deferred_exts or ():
+            ext = ext.lower()
+            if not ext.startswith("."):
+                ext = f".{ext}"
+            normalized.add(ext)
+            tokens.add(ext.lstrip("."))
+        self._deferred_exts = normalized
+        self._deferred_tokens = tokens
+
+    def _is_name_deferred(self, name: str) -> bool:
+        """Return True if any dot-segment of the basename is a deferred token.
+
+        Used for both the archive's own name and each member's name.
+        Segment-based on purpose: ``foo.SAO.XML`` matches ``sao`` but
+        ``report_sao.log`` does not (because ``report_sao`` is a single
+        segment, not equal to ``sao``).
+        """
+        if not self._deferred_tokens:
+            return False
+        base = Path(name).name.lower()
+        segments = base.split(".")
+        return any(seg in self._deferred_tokens for seg in segments)
 
     def parse(self, file_path: Path) -> ParsedDocument:
         path = Path(file_path)
@@ -41,6 +87,22 @@ class ArchiveParser:
         ext = path.suffix.lower()
         if path.name.lower().endswith((".tar.gz", ".tar.bz2", ".tar.xz")):
             ext = ".tar" + ext
+
+        # Whole-archive defer: if the archive's own basename contains a
+        # deferred dot-segment (e.g. ``AS00Q_2015309093000.SAO.zip``),
+        # do not extract anything. Returning an empty doc with quality 0
+        # mirrors how a deferred top-level file would look downstream.
+        if self._is_name_deferred(path.name):
+            logger.debug(
+                "Whole archive deferred by name policy: %s", path.name,
+            )
+            return ParsedDocument(
+                source_path=str(path),
+                text="",
+                parse_quality=0.0,
+                file_ext=ext,
+                file_size=path.stat().st_size if path.exists() else 0,
+            )
 
         tmp_dir = None
         try:
@@ -77,9 +139,8 @@ class ArchiveParser:
             file_size=path.stat().st_size if path.exists() else 0,
         )
 
-    @staticmethod
     def _extract_zip(
-        archive_path: str, tmp_dir: str
+        self, archive_path: str, tmp_dir: str
     ) -> List[Tuple[str, str]]:
         """Extract ZIP contents. Returns list of (member_name, extracted_path)."""
         members = []
@@ -93,6 +154,13 @@ class ArchiveParser:
                     continue
                 member_ext = Path(entry.filename).suffix.lower()
                 if member_ext in _SKIP_EXTENSIONS:
+                    continue
+                # Honor configured defer policy for archive members.
+                if self._is_name_deferred(entry.filename):
+                    logger.debug(
+                        "Archive member deferred by policy: %s (in %s)",
+                        entry.filename, archive_path,
+                    )
                     continue
 
                 safe_name = Path(entry.filename).name
@@ -108,9 +176,8 @@ class ArchiveParser:
                     continue
         return members
 
-    @staticmethod
     def _extract_tar(
-        archive_path: str, tmp_dir: str
+        self, archive_path: str, tmp_dir: str
     ) -> List[Tuple[str, str]]:
         """Extract TAR/TGZ/TBZ2/TXZ contents."""
         members = []
@@ -124,6 +191,13 @@ class ArchiveParser:
                     continue
                 member_ext = Path(entry.name).suffix.lower()
                 if member_ext in _SKIP_EXTENSIONS:
+                    continue
+                # Honor configured defer policy for archive members.
+                if self._is_name_deferred(entry.name):
+                    logger.debug(
+                        "Archive member deferred by policy: %s (in %s)",
+                        entry.name, archive_path,
+                    )
                     continue
 
                 safe_name = Path(entry.name).name

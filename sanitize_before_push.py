@@ -56,7 +56,7 @@ TEXT_REPLACEMENTS = [
     (r"\b" + _w("co","dex") + r"\b", "CoPilot+"),
 
     # Agent references -> team review
-    (r"\bAgent[1-6]\b", "reviewer"),
+    (r"\bAgent\s*[1-6]\b", "reviewer"),
     (r"\b6-agent debate\b", "design review"),
     (r"\bagent debate\b", "design review"),
     (r"\bwar room\b", "review board"),

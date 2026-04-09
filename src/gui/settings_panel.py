@@ -10,7 +10,7 @@ from .theme import FONT, current_theme
 
 
 class SettingsPanel:
-    """Pipeline settings: workers, toggles, chunk params. Changes saved to config."""
+    """Pipeline settings: workers, toggles, chunk params. Changes save as local overrides."""
 
     def __init__(self, parent: ttk.LabelFrame, root: tk.Tk, config=None,
                  config_path: str = "", on_save_settings=None,
@@ -26,11 +26,11 @@ class SettingsPanel:
     def _build(self, parent):
         t = current_theme()
 
-        # Row 0: Workers + OCR mode
+        # Row 0: Pipeline workers + OCR mode
         row0 = ttk.Frame(parent)
         row0.pack(fill=tk.X, pady=2)
 
-        tk.Label(row0, text="Workers:", font=FONT, bg=t["panel_bg"],
+        tk.Label(row0, text="Pipeline workers:", font=FONT, bg=t["panel_bg"],
                  fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
 
         workers_default = 8
@@ -44,6 +44,15 @@ class SettingsPanel:
             buttonbackground=t["panel_bg"],
         )
         self.workers_spin.pack(side=tk.LEFT, padx=(4, 16))
+
+        tk.Label(
+            row0,
+            text="logical CPU threads",
+            font=FONT,
+            bg=t["panel_bg"],
+            fg=t["label_fg"],
+            anchor=tk.W,
+        ).pack(side=tk.LEFT, padx=(0, 16))
 
         tk.Label(row0, text="OCR:", font=FONT, bg=t["panel_bg"],
                  fg=t["label_fg"], anchor=tk.W).pack(side=tk.LEFT)
@@ -230,7 +239,7 @@ class SettingsPanel:
             self._on_save_settings(settings)
         if self._append_log:
             self._append_log(
-                f"Settings saved: workers={settings['pipeline']['workers']}, "
+                f"Settings saved to config.local.yaml overrides: workers={settings['pipeline']['workers']}, "
                 f"OCR={settings['parse']['ocr_mode']}, "
                 f"chunk={settings['chunk']['size']}/{settings['chunk']['overlap']}, "
                 f"embed={'ON' if settings['embed']['enabled'] else 'OFF'}, "
@@ -246,7 +255,7 @@ class SettingsPanel:
             "Reset to Defaults",
             "Reset all settings to config.yaml defaults?\n\n"
             "This does not change config files — only resets the GUI controls.\n"
-            "Click Save Settings after to persist.",
+            "Click Save Settings after to write config.local.yaml overrides.",
         ):
             return
 
@@ -271,7 +280,7 @@ class SettingsPanel:
             self.embed_batch_var.set(raw.get("hardware", {}).get("embed_batch_size", 256))
 
             if self._append_log:
-                self._append_log("Settings reset to config.yaml defaults. Click Save to persist.", "INFO")
+                self._append_log("Settings reset to config.yaml defaults. Click Save to write config.local.yaml overrides.", "INFO")
         except Exception as exc:
             if self._append_log:
                 self._append_log(f"Failed to reset defaults: {exc}", "ERROR")

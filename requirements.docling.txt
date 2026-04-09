@@ -1,0 +1,8 @@
+# CorpusForge optional Docling lane
+# Dev-only install. Not required for a working CorpusForge workstation.
+# Safe runtime contract:
+#   - program must still work when Docling is absent
+#   - docling_mode=off keeps the current parser path
+#   - docling_mode=fallback/prefer only matters if the package is installed
+
+docling==2.68.0

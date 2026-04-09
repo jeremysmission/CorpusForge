@@ -18,6 +18,7 @@ chunk:
 parse:
   timeout_seconds: 60
   ocr_mode: "auto"
+  docling_mode: "off"           # Optional parser lane: off | fallback | prefer. Safe default is off.
   max_chars_per_file: 5000000
 
 embed:
@@ -53,7 +54,7 @@ extract:
 pipeline:
   full_reindex: false
   log_level: "INFO"
-  workers: 8                     # Parallel parse threads. Override per-machine in config.local.yaml (Beast: 16)
+  workers: 8                     # Parallel parser workers. Use logical CPU threads, not physical cores. Desktop: 32, laptop: 20, Beast: 16.
 
 hardware:
   gpu_index: 0       # GPU 0 = compute, GPU 1 = display

@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 # Mtime tolerance for float comparison (2 seconds covers FAT32/NTFS precision)
 _MTIME_TOLERANCE = 2.0
+_PROGRESS_INTERVAL_SECONDS = 1.0
+_PROGRESS_INTERVAL_FILES = 25
 
 # Pattern matching _1, _2, _3 etc. at end of stem
 _SUFFIX_RE = re.compile(r"^(.+?)_(\d+)$")
@@ -34,12 +36,14 @@ class Deduplicator:
         self.hasher = hasher
         self.skipped_unchanged = 0
         self.skipped_duplicate = 0
+        self.files_scanned = 0
         self._pending_hashes: dict[str, str] = {}
 
     def filter_new_and_changed(
         self,
         files: list[Path],
         on_progress: Optional[Callable[[int, int, str, int], None]] = None,
+        should_stop: Optional[Callable[[], bool]] = None,
     ) -> list[Path]:
         """
         Return only files that are new or changed since last run.
@@ -56,17 +60,30 @@ class Deduplicator:
         work_list = []
         seen_hashes: dict[str, Path] = {}
         total = len(files)
+        self.files_scanned = 0
         last_progress = time.time()
+        last_progress_count = 0
 
         for i, path in enumerate(files):
+            if should_stop and should_stop():
+                logger.info("Dedup scan stopped after %d/%d files", self.files_scanned, total)
+                break
             if not path.exists() or not path.is_file():
                 continue
 
-            # Emit progress every 5 seconds
+            scanned_count = i + 1
+            self.files_scanned = scanned_count
+
+            # Emit progress on startup, then every second or every N files.
             now = time.time()
-            if on_progress and (now - last_progress >= 5.0 or i == 0):
-                on_progress(i, total, path.name, self.skipped_duplicate)
+            if on_progress and (
+                i == 0
+                or (now - last_progress) >= _PROGRESS_INTERVAL_SECONDS
+                or (scanned_count - last_progress_count) >= _PROGRESS_INTERVAL_FILES
+            ):
+                on_progress(scanned_count, total, path.name, self.skipped_duplicate)
                 last_progress = now
+                last_progress_count = scanned_count
 
             state = self.hasher.get_state(path)
 
@@ -119,7 +136,7 @@ class Deduplicator:
 
         # Final progress
         if on_progress:
-            on_progress(total, total, "", self.skipped_duplicate)
+            on_progress(self.files_scanned, total, "", self.skipped_duplicate)
 
         logger.info(
             "Dedup: %d files to process, %d unchanged, %d duplicates",

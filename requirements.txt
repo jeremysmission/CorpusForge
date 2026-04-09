@@ -103,3 +103,8 @@ deprecation==2.1.0               # Apache 2.0 — vsdx dep
 gliner==0.2.26                   # Apache 2.0, France (NATO) — zero-shot NER, 205M params
                                  # Shared waiver with HybridRAG V2
                                  # Status: NEW waiver requested in HybridRAG_V2/docs/Requested_Waivers_2026-04-04.md
+
+# docling==2.68.0                # MIT, IBM/USA — optional higher-fidelity document parser
+#                                # Dev-only install path lives in requirements.docling.txt
+#                                # Runtime is guarded by parse.docling_mode = off|fallback|prefer
+#                                # Program must continue to work when Docling is absent

@@ -1,8 +1,4 @@
-"""Tests for the Deduplicator — _N suffix and content-hash dedup."""
-
-import os
-import tempfile
-from pathlib import Path
+"""Tests for the Deduplicator."""
 
 import pytest
 
@@ -116,7 +112,6 @@ class TestIncrementalDedup:
         assert len(result1) == 1
         dedup.mark_indexed(result1)
 
-        # Second run, same file
         dedup2 = Deduplicator(hasher)
         result2 = dedup2.filter_new_and_changed([f])
         assert len(result2) == 0
@@ -130,7 +125,6 @@ class TestIncrementalDedup:
         result1 = dedup.filter_new_and_changed([f])
         dedup.mark_indexed(result1)
 
-        # Modify the file (touch mtime and change content)
         import time
         time.sleep(0.1)
         f.write_text("version 2 - changed!")
@@ -148,11 +142,8 @@ class TestIncrementalDedup:
 
         dedup.filter_new_and_changed([a, b])
 
-        # Second run: b should still be skipped (status=duplicate)
         dedup2 = Deduplicator(hasher)
-        result2 = dedup2.filter_new_and_changed([a, b])
-        # a was not marked as indexed (filter only, no mark_indexed call)
-        # but b was marked as duplicate, so it should be skipped
+        dedup2.filter_new_and_changed([a, b])
         assert dedup2.skipped_duplicate >= 1
 
 
@@ -165,11 +156,11 @@ class TestProgressCallback:
         f.write_text("data")
 
         calls = []
+
         def on_progress(scanned, total, current, dupes):
             calls.append((scanned, total, current, dupes))
 
         dedup.filter_new_and_changed([f], on_progress=on_progress)
-        # Should get at least initial + final callback
         assert len(calls) >= 2
 
     def test_callback_reports_total(self, dedup_env):
@@ -181,12 +172,50 @@ class TestProgressCallback:
             files.append(f)
 
         calls = []
+
         def on_progress(scanned, total, current, dupes):
             calls.append((scanned, total))
 
         dedup.filter_new_and_changed(files, on_progress=on_progress)
-        # Final callback should show total == 5
         assert calls[-1] == (5, 5)
+
+    def test_final_progress_counts_tail_duplicate(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        original = tmp / "report.txt"
+        duplicate = tmp / "report_1.txt"
+        original.write_text("same")
+        duplicate.write_text("same")
+
+        calls = []
+
+        def on_progress(scanned, total, current, dupes):
+            calls.append((scanned, total, current, dupes))
+
+        dedup.filter_new_and_changed([original, duplicate], on_progress=on_progress)
+
+        assert dedup.files_scanned == 2
+        assert calls[-1][:2] == (2, 2)
+
+    def test_final_progress_counts_tail_unchanged(self, dedup_env):
+        tmp, hasher, dedup = dedup_env
+        original = tmp / "stable.txt"
+        original.write_text("stable")
+
+        first_pass = dedup.filter_new_and_changed([original])
+        dedup.mark_indexed(first_pass)
+
+        new_file = tmp / "new.txt"
+        new_file.write_text("new")
+        dedup2 = Deduplicator(hasher)
+        calls = []
+
+        def on_progress(scanned, total, current, dupes):
+            calls.append((scanned, total, current, dupes))
+
+        dedup2.filter_new_and_changed([new_file, original], on_progress=on_progress)
+
+        assert dedup2.files_scanned == 2
+        assert calls[-1][:2] == (2, 2)
 
 
 class TestEdgeCases:

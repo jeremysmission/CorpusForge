@@ -1,0 +1,603 @@
+# Sprint 6.6 Run 5 — Failure List
+
+Total failures: 534
+
+## Summary by extension
+
+### .xml (314 files)
+Likely cause: ionogram BIT (Built-In Test) XML sensor files. XmlParser runs but extracts no text content (schema-specific elements not handled).
+
+Sample (first 5):
+  - AL945_2014110125150_BIT.XML
+  - AL945_2014110130650_BIT.XML
+  - AL945_2014110132150_BIT.XML
+  - AL945_2014110133650_BIT.XML
+  - AL945_2014110135150_BIT_1.XML
+  ... and 309 more
+
+### .pdf (145 files)
+Likely cause: scanned PDFs with no embedded text layer. pdfplumber returns empty text. Poppler not installed on Beast — would have enabled image-based fallback.
+
+Sample (first 5):
+  - DCS (14-0001)_Trip Report (CDRL A045B)_Alpena Allied Support Verification Trip (15-18 Dec 13).pdf
+  - COS-037_DCS(14-0019)_InstallationSummaryDocumentation_Alpena_Combined_(CDRL A045B and A012).pdf
+  - Cover Letter_AES_(14-0019)_InstallationSummaryDocs_Alpena_ (CDRL A045B and A012)_Signed.pdf
+  - Cover Letter_SMC_(14-0019)_InstallationSummaryDocs_Alpena_(CDRL A045B and A012)_Signed.pdf
+  - Additional Inventory.pdf
+  ... and 140 more
+
+### .docx (60 files)
+Likely cause: empty or corrupted DOCX files, or files with no body text (only images/embedded objects).
+
+Sample (first 5):
+  - PackingList_AlpenaSitePrepVerification_outbound.docx
+  - Fall Arrest Inspection Sheet - Pitts - Template.docx
+  - Climb Gear Inspection Form (Seagren).docx
+  - Climb Gear Inspection Form (Vinh).docx
+  - Climb Gear Inspection Form (Womelsdorff).docx
+  ... and 55 more
+
+### .pptx (12 files)
+Likely cause: PPTX files with text only inside shapes/images that the parser does not extract.
+
+Sample (first 5):
+  - 22W East Patch Antenna Rcvr Site.pptx
+  - 29E East Patch Antenna Rcvr Site Asc Island.pptx
+  - 22W West Patch Antenna Rcvr Site.pptx
+  - Satellite 22W Nighttime West Antenna Test Rcvr Site Ascension.pptx
+  - Satellite 22W West Test location Rcvr Site Ascension.pptx
+  ... and 7 more
+
+### .xlsx (2 files)
+Likely cause: empty XLSX or formula-only sheets.
+
+Sample (first 5):
+  - PRE-MANIFEST 28 SEP 21 COF-ASI.XLSX
+  - PRE-MANIFEST 28 SEP 21 COF-ASI (Meal JWD).XLSX
+
+### .zip (1 files)
+Likely cause: empty or password-protected archive.
+
+Sample (first 5):
+  - AL945_2015070123650.zip
+
+## Full file list
+
+See raw log entries below (one per line).
+
+---
+
+[xml] Empty parse: AL945_2014110125150_BIT.XML
+[xml] Empty parse: AL945_2014110130650_BIT.XML
+[xml] Empty parse: AL945_2014110132150_BIT.XML
+[xml] Empty parse: AL945_2014110133650_BIT.XML
+[xml] Empty parse: AL945_2014110135150_BIT_1.XML
+[xml] Empty parse: AL945_2014110140650_BIT.XML
+[xml] Empty parse: AL945_2014110142150_BIT.XML
+[xml] Empty parse: AL945_2014110143650_BIT.XML
+[xml] Empty parse: AL945_2014110145150_BIT.XML
+[xml] Empty parse: AL945_2014110150650_BIT.XML
+[xml] Empty parse: AL945_2014110152150_BIT.XML
+[xml] Empty parse: AL945_2014110153650_BIT.XML
+[xml] Empty parse: AL945_2014110155150_BIT.XML
+[xml] Empty parse: AL945_2014110160650_BIT.XML
+[xml] Empty parse: AL945_2014110162150_BIT.XML
+[xml] Empty parse: AL945_2014110163650_BIT.XML
+[xml] Empty parse: AL945_2014110165150_BIT.XML
+[xml] Empty parse: AL945_2014110170650_BIT.XML
+[xml] Empty parse: AL945_2014110172150_BIT.XML
+[xml] Empty parse: AL945_2014110173650_BIT.XML
+[xml] Empty parse: AL945_2014110175150_BIT.XML
+[xml] Empty parse: AL945_2014110182150_BIT.XML
+[xml] Empty parse: AL945_2014110180650_BIT.XML
+[xml] Empty parse: AL945_2014110183650_BIT.XML
+[xml] Empty parse: AL945_2014110185150_BIT.XML
+[xml] Empty parse: AL945_2014110190650_BIT.XML
+[xml] Empty parse: AL945_2014110192150_BIT.XML
+[xml] Empty parse: AL945_2014110193650_BIT.XML
+[xml] Empty parse: AL945_2014110195150_BIT.XML
+[xml] Empty parse: AL945_2014110200650_BIT.XML
+[xml] Empty parse: AL945_2014110202150_BIT.XML
+[xml] Empty parse: AL945_2014110203650_BIT.XML
+[xml] Empty parse: AL945_2014110205150_BIT.XML
+[xml] Empty parse: AL945_2014110210650_BIT.XML
+[xml] Empty parse: AL945_2014110212150_BIT.XML
+[xml] Empty parse: AL945_2014110213650_BIT.XML
+[xml] Empty parse: AL945_2014110215150_BIT.XML
+[xml] Empty parse: AL945_2014110220650_BIT.XML
+[xml] Empty parse: AL945_2014110222150_BIT.XML
+[xml] Empty parse: AL945_2014110223650_BIT.XML
+[xml] Empty parse: AL945_2014110225150_BIT.XML
+[xml] Empty parse: AL945_2014110230650_BIT.XML
+[xml] Empty parse: AL945_2014110232150_BIT.XML
+[xml] Empty parse: AL945_2014110233650_BIT.XML
+[xml] Empty parse: AL945_2014110235150_BIT.XML
+[xml] Empty parse: AL945_2014111000650_BIT.XML
+[xml] Empty parse: AL945_2014111002150_BIT.XML
+[xml] Empty parse: AL945_2014111003650_BIT.XML
+[xml] Empty parse: AL945_2014111005150_BIT_1.XML
+[xml] Empty parse: AL945_2014111010650_BIT.XML
+[xml] Empty parse: AL945_2014111012150_BIT.XML
+[xml] Empty parse: AL945_2014111013650_BIT.XML
+[xml] Empty parse: AL945_2014111015150_BIT.XML
+[xml] Empty parse: AL945_2014111020650_BIT.XML
+[xml] Empty parse: AL945_2014111022150_BIT.XML
+[xml] Empty parse: AL945_2014111023650_BIT.XML
+[xml] Empty parse: AL945_2014111025250_BIT.XML
+[xml] Empty parse: AL945_2014111030750_BIT.XML
+[xml] Empty parse: AL945_2014111032250_BIT.XML
+[xml] Empty parse: AL945_2014111033750_BIT.XML
+[xml] Empty parse: AL945_2014111035250_BIT.XML
+[xml] Empty parse: AL945_2014111040750_BIT.XML
+[xml] Empty parse: AL945_2014111042250_BIT.XML
+[xml] Empty parse: AL945_2014111043750_BIT.XML
+[xml] Empty parse: AL945_2014111045250_BIT.XML
+[xml] Empty parse: AL945_2014111050750_BIT.XML
+[xml] Empty parse: AL945_2014111052250_BIT.XML
+[xml] Empty parse: AL945_2014111053750_BIT.XML
+[xml] Empty parse: AL945_2014111060750_BIT.XML
+[xml] Empty parse: AL945_2014111055250_BIT.XML
+[xml] Empty parse: AL945_2014111062250_BIT.XML
+[xml] Empty parse: AL945_2014111063750_BIT.XML
+[xml] Empty parse: AL945_2014111065250_BIT.XML
+[xml] Empty parse: AL945_2014111070750_BIT.XML
+[xml] Empty parse: AL945_2014111072250_BIT.XML
+[xml] Empty parse: AL945_2014111073750_BIT.XML
+[xml] Empty parse: AL945_2014111075250_BIT.XML
+[xml] Empty parse: AL945_2014111080750_BIT.XML
+[xml] Empty parse: AL945_2014111082250_BIT.XML
+[xml] Empty parse: AL945_2014111083750_BIT.XML
+[xml] Empty parse: AL945_2014111085150_BIT.XML
+[xml] Empty parse: AL945_2014111090650_BIT.XML
+[xml] Empty parse: AL945_2014111092150_BIT.XML
+[xml] Empty parse: AL945_2014111093650_BIT.XML
+[xml] Empty parse: AL945_2014111095150_BIT.XML
+[xml] Empty parse: AL945_2014111100650_BIT.XML
+[xml] Empty parse: AL945_2014111102150_BIT.XML
+[xml] Empty parse: AL945_2014111103650_BIT.XML
+[xml] Empty parse: AL945_2014111105150_BIT.XML
+[xml] Empty parse: AL945_2014111110650_BIT.XML
+[xml] Empty parse: AL945_2014111112150_BIT.XML
+[xml] Empty parse: AL945_2014111113650_BIT.XML
+[xml] Empty parse: AL945_2014111115150_BIT.XML
+[xml] Empty parse: AL945_2014111120650_BIT.XML
+[xml] Empty parse: AL945_2014111122150_BIT.XML
+[xml] Empty parse: AL945_2014111123650_BIT.XML
+[xml] Empty parse: AL945_2014111125150_BIT.XML
+[xml] Empty parse: AL945_2014111130650_BIT.XML
+[xml] Empty parse: AL945_2014111132150_BIT.XML
+[xml] Empty parse: AL945_2014111133650_BIT.XML
+[xml] Empty parse: AL945_2014111135150_BIT.XML
+[xml] Empty parse: AL945_2014111140650_BIT.XML
+[xml] Empty parse: AL945_2014111142150_BIT.XML
+[xml] Empty parse: AL945_2014111143650_BIT.XML
+[xml] Empty parse: AL945_2014111145150_BIT.XML
+[xml] Empty parse: AL945_2014111150650_BIT.XML
+[xml] Empty parse: AL945_2014111152150_BIT.XML
+[xml] Empty parse: AL945_2014111153650_BIT.XML
+[xml] Empty parse: AL945_2014111155150_BIT.XML
+[xml] Empty parse: AL945_2014111160650_BIT.XML
+[xml] Empty parse: AL945_2014111162150_BIT.XML
+[xml] Empty parse: AL945_2014111163650_BIT.XML
+[xml] Empty parse: AL945_2014111165150_BIT.XML
+[xml] Empty parse: AL945_2014111172150_BIT.XML
+[xml] Empty parse: AL945_2014111173650_BIT.XML
+[xml] Empty parse: AL945_2014111170650_BIT.XML
+[xml] Empty parse: AL945_2014111175150_BIT.XML
+[xml] Empty parse: AL945_2014111180650_BIT.XML
+[xml] Empty parse: AL945_2014111182150_BIT.XML
+[xml] Empty parse: AL945_2014111183650_BIT.XML
+[xml] Empty parse: AL945_2014111185150_BIT.XML
+[xml] Empty parse: AL945_2014111190650_BIT.XML
+[xml] Empty parse: AL945_2014111190707_BIT.XML
+[xml] Empty parse: AL945_2014111192150_BIT.XML
+[xml] Empty parse: AL945_2014111193650_BIT.XML
+[xml] Empty parse: AL945_2014111195150_BIT.XML
+[xml] Empty parse: AL945_2014111200650_BIT.XML
+[xml] Empty parse: AL945_2014111205150_BIT.XML
+[xml] Empty parse: AL945_2014111210650_BIT.XML
+[xml] Empty parse: AL945_2014111212150_BIT.XML
+[xml] Empty parse: AL945_2014111213650_BIT.XML
+[xml] Empty parse: AL945_2014111215150_BIT.XML
+[xml] Empty parse: AL945_2014111220650_BIT.XML
+[xml] Empty parse: AL945_2014111222150_BIT.XML
+[xml] Empty parse: AL945_2014111223650_BIT.XML
+[xml] Empty parse: AL945_2014111225150_BIT.XML
+[xml] Empty parse: AL945_2014111230650_BIT.XML
+[xml] Empty parse: AL945_2014111232150_BIT.XML
+[xml] Empty parse: AL945_2014111233650_BIT.XML
+[xml] Empty parse: AL945_2014111235150_BIT.XML
+[xml] Empty parse: AL945_2014112000650_BIT_1.XML
+[xml] Empty parse: AL945_2014112002150_BIT.XML
+[xml] Empty parse: AL945_2014112003650_BIT.XML
+[xml] Empty parse: AL945_2014112005150_BIT.XML
+[xml] Empty parse: AL945_2014112010650_BIT.XML
+[xml] Empty parse: AL945_2014112012150_BIT.XML
+[xml] Empty parse: AL945_2014112013650_BIT.XML
+[xml] Empty parse: AL945_2014112015150_BIT.XML
+[xml] Empty parse: AL945_2014112020650_BIT.XML
+[xml] Empty parse: AL945_2014112023650_BIT.XML
+[xml] Empty parse: AL945_2014112025330_BIT.XML
+[xml] Empty parse: AL945_2014112022150_BIT.XML
+[xml] Empty parse: AL945_2014112030830_BIT.XML
+[xml] Empty parse: AL945_2014112032330_BIT.XML
+[xml] Empty parse: AL945_2014112033830_BIT.XML
+[xml] Empty parse: AL945_2014112035330_BIT.XML
+[xml] Empty parse: AL945_2014112040830_BIT.XML
+[xml] Empty parse: AL945_2014112042330_BIT.XML
+[xml] Empty parse: AL945_2014112043830_BIT.XML
+[xml] Empty parse: AL945_2014112045330_BIT.XML
+[xml] Empty parse: AL945_2014112050830_BIT.XML
+[xml] Empty parse: AL945_2014112052330_BIT.XML
+[xml] Empty parse: AL945_2014112053830_BIT.XML
+[xml] Empty parse: AL945_2014112060830_BIT.XML
+[xml] Empty parse: AL945_2014112062330_BIT.XML
+[xml] Empty parse: AL945_2014112063830_BIT.XML
+[xml] Empty parse: AL945_2014112065330_BIT.XML
+[xml] Empty parse: AL945_2014112072330_BIT.XML
+[xml] Empty parse: AL945_2014112073830_BIT.XML
+[xml] Empty parse: AL945_2014112075330_BIT.XML
+[xml] Empty parse: AL945_2014112080830_BIT.XML
+[xml] Empty parse: AL945_2014112082330_BIT.XML
+[xml] Empty parse: AL945_2014112085150_BIT.XML
+[xml] Empty parse: AL945_2014112090650_BIT.XML
+[xml] Empty parse: AL945_2014112092150_BIT.XML
+[xml] Empty parse: AL945_2014112093650_BIT.XML
+[xml] Empty parse: AL945_2014112095150_BIT.XML
+[xml] Empty parse: AL945_2014112100650_BIT.XML
+[xml] Empty parse: AL945_2014112102150_BIT.XML
+[xml] Empty parse: AL945_2014112103650_BIT.XML
+[xml] Empty parse: AL945_2014112105150_BIT.XML
+[xml] Empty parse: AL945_2014112110650_BIT.XML
+[xml] Empty parse: AL945_2014112112150_BIT.XML
+[xml] Empty parse: AL945_2014112113650_BIT.XML
+[xml] Empty parse: AL945_2014112115150_BIT.XML
+[xml] Empty parse: AL945_2014112120650_BIT.XML
+[xml] Empty parse: AL945_2014112122150_BIT.XML
+[xml] Empty parse: AL945_2014112123650_BIT.XML
+[xml] Empty parse: AL945_2014112125150_BIT.XML
+[xml] Empty parse: AL945_2014112130650_BIT.XML
+[xml] Empty parse: AL945_2014112132150_BIT.XML
+[xml] Empty parse: AL945_2014112133650_BIT.XML
+[xml] Empty parse: AL945_2014112135150_BIT.XML
+[xml] Empty parse: AL945_2014112140650_BIT.XML
+[xml] Empty parse: AL945_2014112142150_BIT.XML
+[xml] Empty parse: AL945_2014112143650_BIT.XML
+[xml] Empty parse: AL945_2014112145150_BIT.XML
+[xml] Empty parse: AL945_2014112151102_BIT.XML
+[xml] Empty parse: AL945_2014112152616_BIT.XML
+[xml] Empty parse: AL945_2014112153650_BIT.XML
+[xml] Empty parse: AL945_2014112155150_BIT.XML
+[xml] Empty parse: AL945_2014112160650_BIT.XML
+[xml] Empty parse: AL945_2014112162150_BIT.XML
+[xml] Empty parse: AL945_2014112165150_BIT.XML
+[xml] Empty parse: AL945_2014112170650_BIT.XML
+[xml] Empty parse: AL945_2014112163650_BIT.XML
+[xml] Empty parse: AL945_2014112172150_BIT.XML
+[xml] Empty parse: AL945_2014112173650_BIT.XML
+[xml] Empty parse: AL945_2014112174448_BIT.XML
+[xml] Empty parse: AL945_2014112175150_BIT.XML
+[xml] Empty parse: AL945_2014112180650_BIT.XML
+[xml] Empty parse: AL945_2014112182150_BIT.XML
+[xml] Empty parse: AL945_2014112183650_BIT.XML
+[xml] Empty parse: AL945_2014112185150_BIT.XML
+[xml] Empty parse: AL945_2014112190650_BIT.XML
+[xml] Empty parse: AL945_2014112192150_BIT.XML
+[xml] Empty parse: AL945_2014112193650_BIT.XML
+[xml] Empty parse: AL945_2014112195150_BIT.XML
+[xml] Empty parse: AL945_2014112200650_BIT.XML
+[xml] Empty parse: AL945_2014112202150_BIT.XML
+[xml] Empty parse: AL945_2014112203650_BIT.XML
+[xml] Empty parse: AL945_2014112205150_BIT.XML
+[xml] Empty parse: AL945_2014112210650_BIT.XML
+[xml] Empty parse: AL945_2014112212150_BIT.XML
+[xml] Empty parse: AL945_2014112213650_BIT.XML
+[xml] Empty parse: AL945_2014112215150_BIT.XML
+[xml] Empty parse: AL945_2014112220650_BIT.XML
+[xml] Empty parse: AL945_2014112222150_BIT.XML
+[xml] Empty parse: AL945_2014112223650_BIT.XML
+[xml] Empty parse: AL945_2014112225150_BIT.XML
+[xml] Empty parse: AL945_2014112230650_BIT.XML
+[xml] Empty parse: AL945_2014112232150_BIT.XML
+[xml] Empty parse: AL945_2014112233650_BIT.XML
+[xml] Empty parse: AL945_2014112235150_BIT.XML
+[xml] Empty parse: AL945_2014113000650_BIT.XML
+[xml] Empty parse: AL945_2014113002150_BIT.XML
+[xml] Empty parse: AL945_2014113003650_BIT.XML
+[xml] Empty parse: AL945_2014113005150_BIT.XML
+[xml] Empty parse: AL945_2014113012150_BIT.XML
+[xml] Empty parse: AL945_2014113010650_BIT.XML
+[xml] Empty parse: AL945_2014113013650_BIT.XML
+[xml] Empty parse: AL945_2014113015150_BIT.XML
+[xml] Empty parse: AL945_2014113020650_BIT.XML
+[xml] Empty parse: AL945_2014113022150_BIT.XML
+[xml] Empty parse: AL945_2014113023650_BIT.XML
+[xml] Empty parse: AL945_2014113025330_BIT.XML
+[xml] Empty parse: AL945_2014113030830_BIT.XML
+[xml] Empty parse: AL945_2014113032330_BIT.XML
+[xml] Empty parse: AL945_2014113122150_BIT.XML
+[xml] Empty parse: AL945_2014113123650_BIT.XML
+[pdf] Empty parse: DCS (14-0001)_Trip Report (CDRL A045B)_Alpena Allied Support Verification Trip (15-18 Dec 13).pdf
+[pdf] Empty parse: COS-037_DCS(14-0019)_InstallationSummaryDocumentation_Alpena_Combined_(CDRL A045B and A012).pdf
+[pdf] Empty parse: Cover Letter_AES_(14-0019)_InstallationSummaryDocs_Alpena_ (CDRL A045B and A012)_Signed.pdf
+[pdf] Empty parse: Cover Letter_SMC_(14-0019)_InstallationSummaryDocs_Alpena_(CDRL A045B and A012)_Signed.pdf
+[pdf] Empty parse: Additional Inventory.pdf
+[pdf] Empty parse: Drawing Redlines (2014-04-28).pdf
+[pdf] Empty parse: FAA Notice to Construct_Crane Use Approval_Alpena MI (10Apr14)_1.pdf
+[pdf] Empty parse: FAADetermination.pdf
+[pdf] Empty parse: monitoring system Signage Request.pdf
+[docx] Empty parse: PackingList_AlpenaSitePrepVerification_outbound.docx
+[pdf] Empty parse: SMC-WML Signed Approval Memo_PSA_NEXION_Alpena CRTC (22Aug13).pdf
+[pdf] Empty parse: SMC-WML Signed pg5_PSA_NEXION_Alpena CRTC (22Aug13).pdf
+[xml] Empty parse: AL945_2014114050830_BIT.XML
+[xml] Empty parse: AL945_2014113125150_BIT.XML
+[xml] Empty parse: AL945_2014113130650_BIT.XML
+[xml] Empty parse: AL945_2014113132150_BIT.XML
+[xml] Empty parse: AL945_2014113133650_BIT.XML
+[xml] Empty parse: AL945_2014113135150_BIT.XML
+[xml] Empty parse: AL945_2014113140650_BIT.XML
+[xml] Empty parse: AL945_2014113150650_BIT.XML
+[xml] Empty parse: AL945_2014113152150_BIT.XML
+[xml] Empty parse: AL945_2014113153650_BIT.XML
+[xml] Empty parse: AL945_2014113155150_BIT.XML
+[xml] Empty parse: AL945_2014113160650_BIT.XML
+[xml] Empty parse: AL945_2014113162150_BIT.XML
+[xml] Empty parse: AL945_2014113163650_BIT.XML
+[xml] Empty parse: AL945_2014113165150_BIT.XML
+[xml] Empty parse: AL945_2014113170650_BIT.XML
+[xml] Empty parse: AL945_2014113172150_BIT.XML
+[xml] Empty parse: AL945_2014113173650_BIT.XML
+[xml] Empty parse: AL945_2014113175150_BIT.XML
+[xml] Empty parse: AL945_2014113180650_BIT.XML
+[xml] Empty parse: AL945_2014113182150_BIT.XML
+[xml] Empty parse: AL945_2014113183650_BIT.XML
+[xml] Empty parse: AL945_2014113185150_BIT.XML
+[xml] Empty parse: AL945_2014113190650_BIT.XML
+[xml] Empty parse: AL945_2014113192150_BIT.XML
+[xml] Empty parse: AL945_2014113193650_BIT.XML
+[xml] Empty parse: AL945_2014113195150_BIT.XML
+[xml] Empty parse: AL945_2014113200650_BIT.XML
+[xml] Empty parse: AL945_2014113202150_BIT.XML
+[xml] Empty parse: AL945_2014113203650_BIT.XML
+[xml] Empty parse: AL945_2014113212150_BIT.XML
+[xml] Empty parse: AL945_2014113213650_BIT.XML
+[xml] Empty parse: AL945_2014113215150_BIT.XML
+[xml] Empty parse: AL945_2014113220650_BIT.XML
+[xml] Empty parse: AL945_2014113222150_BIT.XML
+[xml] Empty parse: AL945_2014113223650_BIT.XML
+[xml] Empty parse: AL945_2014113225150_BIT.XML
+[xml] Empty parse: AL945_2014113230650_BIT.XML
+[xml] Empty parse: AL945_2014113232150_BIT.XML
+[xml] Empty parse: AL945_2014113233650_BIT.XML
+[xml] Empty parse: AL945_2014113235150_BIT.XML
+[xml] Empty parse: AL945_2014114000650_BIT.XML
+[xml] Empty parse: AL945_2014114002150_BIT.XML
+[xml] Empty parse: AL945_2014114003650_BIT.XML
+[xml] Empty parse: AL945_2014114005150_BIT.XML
+[xml] Empty parse: AL945_2014114010650_BIT.XML
+[xml] Empty parse: AL945_2014114012150_BIT.XML
+[xml] Empty parse: AL945_2014114013650_BIT.XML
+[xml] Empty parse: AL945_2014114015150_BIT.XML
+[xml] Empty parse: AL945_2014114020650_BIT.XML
+[xml] Empty parse: AL945_2014114022150_BIT.XML
+[xml] Empty parse: AL945_2014114023650_BIT.XML
+[xml] Empty parse: AL945_2014114025330_BIT.XML
+[xml] Empty parse: AL945_2014114030830_BIT.XML
+[xml] Empty parse: AL945_2014114032330_BIT.XML
+[xml] Empty parse: AL945_2014114033830_BIT.XML
+[xml] Empty parse: AL945_2014114035330_BIT.XML
+[xml] Empty parse: AL945_2014114040830_BIT.XML
+[xml] Empty parse: AL945_2014114042330_BIT.XML
+[xml] Empty parse: AL945_2014114043830_BIT.XML
+[xml] Empty parse: AL945_2014114045330_BIT.XML
+[pdf] Empty parse: Quality Assurance Test (SMX2200RMLV2U - SN IS1125007088).pdf
+[xml] Empty parse: AL945_2015069172150_BIT.XML
+[zip] Empty parse: AL945_2015070123650.zip
+[docx] Empty parse: Fall Arrest Inspection Sheet - Pitts - Template.docx
+[docx] Empty parse: Climb Gear Inspection Form (Seagren).docx
+[docx] Empty parse: Climb Gear Inspection Form (Vinh).docx
+[docx] Empty parse: Climb Gear Inspection Form (Womelsdorff).docx
+[docx] Empty parse: Climb Gear Inspection Form (Vinh).docx
+[docx] Empty parse: Climb Gear Inspection Form (Womelsdorff).docx
+[docx] Empty parse: Esigned Climb Gear Inspection Form (Randall).docx
+[docx] Empty parse: LOI (Alpena)(2025-June).docx
+[pdf] Empty parse: Claire Fuierer.pdf
+[pdf] Empty parse: Lorenzia Pitts.pdf
+[docx] Empty parse: American Samoa Test Plan and procedures Addendum.docx
+[pdf] Empty parse: BBC Broadcast Schedule_Attachment 3.pdf
+[pdf] Empty parse: Trip Report_Delivery Letter_Ascension Island.pdf
+[pdf] Empty parse: Cover Letter_12 Dec 11.pdf
+[pdf] Empty parse: Site 5 Binder Information (2016-04-05).pdf
+[pdf] Empty parse: Site 5 Binder Information (Landscape) (2017-09-08)_1.pdf
+[docx] Empty parse: Ascension Island Site Survey Checklist.docx
+[pptx] Empty parse: 22W East Patch Antenna Rcvr Site.pptx
+[pptx] Empty parse: 29E East Patch Antenna Rcvr Site Asc Island.pptx
+[pptx] Empty parse: 22W West Patch Antenna Rcvr Site.pptx
+[pptx] Empty parse: Satellite 22W Nighttime West Antenna Test Rcvr Site Ascension.pptx
+[pptx] Empty parse: Satellite 22W West Test location Rcvr Site Ascension.pptx
+[pptx] Empty parse: Satellite 29E West Test Location Rcvr Site Asc.pptx
+[pptx] Empty parse: Satellite 29W Nighttime West Antenna Test Rcvr Site Ascension (v2).pptx
+[pptx] Empty parse: Satellite 29W Nighttime West Antenna Test Rcvr Site Ascension.pptx
+[pdf] Empty parse: Ascension install cable continuity test cards.pdf
+[pdf] Empty parse: Ascension Island_Installation QC Checklist.pdf
+[pdf] Empty parse: Ascension install test cards.pdf
+[pdf] Empty parse: Cover Letter_0024_COS 201690_6_Installation Summary Documetns_Ascension Island.pdf
+[pdf] Empty parse: Ascension install checklist.pdf
+[pdf] Empty parse: DCS_0024_COS 201690_6_Installation summary Documents_Ascension Island.pdf
+[pdf] Empty parse: Cover Letter.pdf
+[pdf] Empty parse: Site_5_Predeployment_test_cards.pdf
+[pdf] Empty parse: Test Data Sheets.pdf
+[pdf] Empty parse: IMG_0895.pdf
+[pdf] Empty parse: 15-0056_Cover Letter_Trip Report (CDRL A045B)_Ascension Restoral-Maintenance_(25Oct-5Nov15).pdf
+[pdf] Empty parse: USAFRICOM_GENERAL_ORDER_NUMBER_1.pdf
+[pdf] Empty parse: DD Form 1149 1of1 TCN FB25008127X501XXX (2018-05-07) (FIB-NG2-Initials Signed).pdf
+[pdf] Empty parse: Receipt_Weekly Internet Access Fee.pdf
+[docx] Empty parse: Vaccinations.docx
+[pdf] Empty parse: Receipt_Ascension Lodging-Meals.pdf
+[pdf] Empty parse: Receipt_COS Airport Parking(13-31Oct).pdf
+[pdf] Empty parse: Car Rental_Avis(30-31Oct).pdf
+[pdf] Empty parse: 200811010 monitoring system SOW Drawings Ascension (SHT 2A) .pdf
+[pdf] Empty parse: 200811010 monitoring system SOW Drawings Ascension (SHT 3A) .pdf
+[pdf] Empty parse: 200811010 monitoring system SOW Drawings Ascension (SHT1) .pdf
+[pdf] Empty parse: Ascension Island ETP (signed).pdf
+[pdf] Empty parse: 200811010 monitoring system SOW Drawings Ascension (SHT 4B) .pdf
+[docx] Empty parse: Fall Arrest Inspection Sheet CF final.docx
+[pdf] Empty parse: 200811010 monitoring system SOW Drawings Ascension (SHT 4A) .pdf
+[pdf] Empty parse: Approved APACS.pdf
+[pdf] Empty parse: Ascension Lodging Receipt (14-29 Apr 2021).pdf
+[pdf] Empty parse: Avis Car Rental (29-30 Apr 21).pdf
+[xlsx] Empty parse: PRE-MANIFEST 28 SEP 21 COF-ASI.XLSX
+[pdf] Empty parse: Fall_Inspection_Dexter_1.pdf
+[pdf] Empty parse: JHA_ASI_1.pdf
+[docx] Empty parse: Fall Arrest Inspection Sheet (jwd)(2021-07-21).docx
+[pdf] Empty parse: RFN-1006-3I Installation.pdf
+[pdf] Empty parse: ApprovedAPACS_ASI.pdf
+[xlsx] Empty parse: PRE-MANIFEST 28 SEP 21 COF-ASI (Meal JWD).XLSX
+[docx] Empty parse: Climb Gear Inspection Form 2.docx
+[pdf] Empty parse: Dexter.pdf
+[docx] Empty parse: Climb Gear Inspection Form_1.docx
+[pdf] Empty parse: Fuierer.pdf
+[pdf] Empty parse: Approved APACS 2.9.2022.pdf
+[pdf] Empty parse: Approved APACS 1.31.2022.pdf
+[pdf] Empty parse: Approved APACS 4.7.2022.pdf
+[docx] Empty parse: Climb Gear Inspection Herrera Form.docx
+[docx] Empty parse: Climb Gear Inspection Randall Form.docx
+[docx] Empty parse: monitoring system ASV Data Sheet_ASI_Feb-Mar-2026.docx
+[docx] Empty parse: Climb Gear Inspection_Sepp.docx
+[docx] Empty parse: Climb Gear Inspection_Seagren.docx
+[docx] Empty parse: IGSCC LOI_Sepp_Frank_Ascension Island_2026-02.docx
+[pdf] Empty parse: APACS_submitted.pdf
+[pdf] Empty parse: 3932961_APACS_Approved.pdf
+[pdf] Empty parse: ASCENSION ISLAND FCG.pdf
+[pdf] Empty parse: Claire Fuierer (Japan).pdf
+[pdf] Empty parse: Lorenzia Pitts (Japan).pdf
+[pdf] Empty parse: United Excess Bag.pdf
+[docx] Empty parse: Climb Gear Inspection Form_Okinawa_2025-05_Claire.docx
+[docx] Empty parse: Climb Gear Inspection Form_Okinawa_2025-05_Seagren.docx
+[pdf] Empty parse: Kick-off Sign-in Sheet (16 May 2022).pdf
+[pdf] Empty parse: Mag Dec May 2022 to May 2024.pdf
+[pdf] Empty parse: Claire Fuierer.pdf
+[pdf] Empty parse: Lorenzia Pitts.pdf
+[docx] Empty parse: Climb Gear Inspection Form - Copy (2).docx
+[docx] Empty parse: Climb Gear Inspection Form Fuierer.docx
+[docx] Empty parse: Climb Gear Inspection Form Herrera.docx
+[pdf] Empty parse: S Fuierer APACS - submitted.pdf
+[docx] Empty parse: Climb Gear Inspection Form Pitts.docx
+[pdf] Empty parse: S Fuierer APACS - Submitted.pdf
+[docx] Empty parse: Climb Inspection Sheet - Fuierer.docx
+[docx] Empty parse: Climb Inspection Sheet - Fuierer_1_1.docx
+[docx] Empty parse: IGSCC LOI_Traveler_Traveler_(Site)(YYY-MM).docx
+[docx] Empty parse: Climb Inspection Sheet - Randall.docx
+[docx] Empty parse: Climb Inspection Sheet - Randall .docx
+[pdf] Empty parse: S Fuierer APACS - Approved.pdf
+[pdf] Empty parse: BLDGS_512_600_700.pdf
+[pdf] Empty parse: Approved APACS.pdf
+[pdf] Empty parse: POCs_Install.pdf
+[pdf] Empty parse: SCINDA MOA.pdf
+[pdf] Empty parse: Curacao SLA.pdf
+[docx] Empty parse: Curacao SCINDA Site Survey Checklist (1 Jul 13)_Final.docx
+[pdf] Empty parse: ATFP.pdf
+[pdf] Empty parse: ATFP_July_Install.pdf
+[pdf] Empty parse: SC_GO_1_1_Mar_2013.pdf
+[pptx] Empty parse: DHL Pro Forma Import.pptx
+[docx] Empty parse: Curacao Phone Cards.docx
+[pdf] Empty parse: Hotel (Miami) - 23-24 Aug 2018.pdf
+[docx] Empty parse: (Nachbar, 20-23 Aug 2018) TDY Personnel and Aircraft Coordination Checklist (Curacao).docx
+[pdf] Empty parse: 6 Oct 14 MFR on Curacao.pdf
+[pdf] Empty parse: Dettler (Personal Commercial Invoice) (4215_221002111818_001).pdf
+[pdf] Empty parse: EZ-400-NMC-2-D Connector Details.pdf
+[pdf] Empty parse: APACS-Approved.pdf
+[pdf] Empty parse: Receipt_Lodging_2023-11-12 thru 13_InterContinental Miami_160.46 USD.pdf
+[pdf] Empty parse: Receipt_Baggage Fee_2023-11-13_30.00 USD.pdf
+[pptx] Empty parse: Figures for CAP.pptx
+[pdf] Empty parse: APACS Submission for Approval.pdf
+[pdf] Empty parse: APACS Approved.pdf
+[docx] Empty parse: LOI (Curacao)(Womelsdorff).docx
+[pdf] Empty parse: DGAR Business Cards1.pdf
+[pdf] Empty parse: DGAR Business Cards.pdf
+[pdf] Empty parse: DGAR Phone Numbers.pdf
+[pdf] Empty parse: DGar_Task_Order_Agreement (signed_9-17-13).pdf
+[pdf] Empty parse: MOA final Diego Garcia (N61076-20121212-0046).pdf
+[pdf] Empty parse: DGAR Site Brief - Prep.pdf
+[docx] Empty parse: DGar RFBR_SCINDA Site Survey Checklist (24-31 Jul 12).docx
+[pdf] Empty parse: DGAR Downtown Map_1.pdf
+[pdf] Empty parse: DGAR Map.pdf
+[pdf] Empty parse: GDM-12.pdf
+[pdf] Empty parse: GDM-10.pdf
+[pdf] Empty parse: GDM-14.pdf
+[pdf] Empty parse: GDM-15.pdf
+[pdf] Empty parse: GDM-3.pdf
+[pdf] Empty parse: GDM-2.pdf
+[pdf] Empty parse: DGAR Site Map.pdf
+[pdf] Empty parse: GDM-13 (Rotated).pdf
+[pdf] Empty parse: GDM-9.pdf
+[pdf] Empty parse: GDM-13.pdf
+[pdf] Empty parse: GDM-6.pdf
+[pdf] Empty parse: GDM-8.pdf
+[pdf] Empty parse: GDM-1.pdf
+[pdf] Empty parse: GDM-11.pdf
+[pdf] Empty parse: GDM-4 (Rotated).pdf
+[pdf] Empty parse: GDM-5_1.pdf
+[pdf] Empty parse: GDM-4.pdf
+[pdf] Empty parse: GDM-7.pdf
+[pdf] Empty parse: SCINDA - Diego Garcia STE_IAM_sigsheet 28Jan14.pdf
+[pdf] Empty parse: AT Plan for Diego Garcia.pdf
+[pdf] Empty parse: DGAR RFQ.pdf
+[pdf] Empty parse: SKMBT_C36013062813450 original work request Diego Garcia.pdf
+[pdf] Empty parse: DGAR AMC Flight Information.pdf
+[pdf] Empty parse: DGAR AMC Manifest.pdf
+[pdf] Empty parse: DGAR Area authorization.pdf
+[pdf] Empty parse: DGAR Food and Vehicle Expenses.pdf
+[pdf] Empty parse: DGAR Passenger Travel Information.pdf
+[pdf] Empty parse: DGAR Safety Handout.pdf
+[pdf] Empty parse: DGAR Fall Protection and Prevention Plan_1.pdf
+[pdf] Empty parse: DGAR Travel Tracker.pdf
+[pdf] Empty parse: DGAR Billeting Guide.pdf
+[pdf] Empty parse: DGAR Billeting Guidebook.pdf
+[pdf] Empty parse: DGAR SCINDA Logbook.pdf
+[docx] Empty parse: SCINDA Cable Continuity Test Card-Deigo Garcia_1.docx
+[pdf] Empty parse: pre_deployment_diego_v1.0.4_1.pdf
+[pdf] Empty parse: APACS Approved.pdf
+[pdf] Empty parse: DIEGO GARCIA COVID-19 GUIDANCE.pdf
+[docx] Empty parse: Djibouti Travel Draft_1.docx
+[docx] Empty parse: Encl (2) Billeting Reservation Request.docx
+[pdf] Empty parse: Frank Seagren.pdf
+[pdf] Empty parse: James Dettler.pdf
+[docx] Empty parse: Encl (2) Billeting Reservation Request - Dexter.docx
+[docx] Empty parse: Encl (2) Billeting Reservation Request - Pitts.docx
+[pdf] Empty parse: Djibouti_Visa_Application_form.pdf
+[docx] Empty parse: Encl (2) Billeting Reservation Request - Dettler.docx
+[docx] Empty parse: LOI (Djibouti)(2024-10).docx
+[pdf] Empty parse: Taxi_Hotel to Airport (2024-10-07) Used Personal Card (61 QAR_$16.76 US).pdf
+[docx] Empty parse: Taxi_Hotel to Airport_Used Personal Card (XXX QAR_$16.76 US).docx
+[pdf] Empty parse: 2024ApacsApproval_JeremyRandall_JamesDettler.pdf
+[pdf] Empty parse: img-X13121817-0001.pdf
+[pdf] Empty parse: BLDG 110 11x17.pdf
+[pdf] Empty parse: BLDG 110.pdf
+[pdf] Empty parse: RFA_Nexion-Eareckson.pdf
+[pdf] Empty parse: Eareckson site image(4-8-15)-Lower Camp Road.pdf
+[pdf] Empty parse: Eareckson site image(4-8-15)-Old Runway.pdf
+[pdf] Empty parse: Eareckson site images(4-9-15)-Old Runway.pdf
+[docx] Empty parse: monitoring system Site Survey Checklist_Eareckson_Draft_12Nov17.docx
+[pptx] Empty parse: NEXION_Refined.pptx
+[docx] Empty parse: Climb Gear Inspection Form (Eareckson-Eielson)(Seagren).docx
+[docx] Empty parse: Climb Gear Inspection Form Herrera.docx
+[docx] Empty parse: Climb Gear Inspection Form Randall.docx
+[docx] Empty parse: LOI-Eareckson_Herrera_Randall.docx
+[docx] Empty parse: Climb-Gear-Inspection_Randall (Return from Eareckson_Dettler Inspection)(2025-09-08).docx
+[docx] Empty parse: LOI_Eareckson_Seagren-Dettler.docx
+[docx] Empty parse: Climb-Gear-Inspection_Randall.docx
+[docx] Empty parse: Climb-Gear-Inspection_Seagren.docx
+[docx] Empty parse: LOI_Eareckson_Seagren-Randall.docx
+[docx] Empty parse: monitoring system ASV Data Sheet.docx
+[pptx] Empty parse: Figures.pptx
+[pdf] Empty parse: s-280-c_g.pdf
+[pdf] Empty parse: s-280-b-g.pdf
+[pdf] Empty parse: us_dec_11x17.pdf
+[docx] Empty parse: ES-6534.docx
+[docx] Empty parse: PackingList_Eglin2014ASV_1of2_return.docx
+[docx] Empty parse: PackingList_Eglin2014ASV_2of2_return.docx
+[xml] Empty parse: EG931_2015232203130_BIT.XML
+[xml] Empty parse: EG931_2015232205016_BIT.XML
+[pdf] Empty parse: 15-0044_Cover Letter_Trip Report (CDRL A045B)_Trip Report, Eglin Operating System (OS) Upgrade Trip 20-23 Oct 15 _Final.pdf
+[pdf] Empty parse: 15-0035_CoverLetter_AES_Trip Report (CDRL A045B)_Eglin Restoral_Service_(18-22 Aug 15)Signed.pdf

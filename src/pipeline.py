@@ -80,27 +80,31 @@ class RunStats:
 
 
 def _apply_cpu_reservation():
-    """Reserve 2 CPU cores for user interaction — affinity + priority + thread cap.
+    """Reserve 2 logical CPU threads for user interaction.
 
-    Layer 1: CPU affinity — pin this process to cores 2-N, leaving 0-1 for user.
+    Layer 1: CPU affinity — pin this process to logical CPUs 2-N, leaving 0-1 for user.
     Layer 2: Process priority — set to below-normal so user apps win contention.
-    Layer 3: PyTorch threads — cap to N-2 so tensor ops don't saturate all cores.
+    Layer 3: PyTorch threads — cap to N-2 so tensor ops don't saturate all logical CPUs.
     """
-    cpu_count = os.cpu_count() or 8
+    logical_cpu_count = os.cpu_count() or 8
     reserved = 2
-    max_threads = max(cpu_count - reserved, 1)
+    max_threads = max(logical_cpu_count - reserved, 1)
 
     # Layer 1: CPU affinity (strongest guarantee)
     try:
         import psutil
         p = psutil.Process()
-        available_cores = list(range(reserved, cpu_count))
-        if available_cores:
-            p.cpu_affinity(available_cores)
-            logger.info("CPU affinity: pinned to cores %d-%d (cores 0-%d reserved for user)",
-                        reserved, cpu_count - 1, reserved - 1)
+        available_cpus = list(range(reserved, logical_cpu_count))
+        if available_cpus:
+            p.cpu_affinity(available_cpus)
+            logger.info(
+                "CPU affinity: pinned to logical CPUs %d-%d (logical CPUs 0-%d reserved for user)",
+                reserved,
+                logical_cpu_count - 1,
+                reserved - 1,
+            )
     except ImportError:
-        logger.info("psutil not installed — skipping CPU affinity (install for guaranteed core reservation)")
+        logger.info("psutil not installed — skipping CPU affinity (install for guaranteed logical CPU reservation)")
     except Exception as exc:
         logger.warning("CPU affinity failed: %s", exc)
 
@@ -121,7 +125,39 @@ def _apply_cpu_reservation():
         pass
     os.environ.setdefault("OMP_NUM_THREADS", str(max_threads))
     os.environ.setdefault("MKL_NUM_THREADS", str(max_threads))
-    logger.info("CPU threads: %d/%d (2 reserved for user)", max_threads, cpu_count)
+    logger.info("CPU threads: %d/%d logical CPUs (2 reserved for user)", max_threads, logical_cpu_count)
+
+
+def _configure_parser_environment(config: ForgeConfig) -> None:
+    """Resolve parser runtime settings with env vars taking precedence over config."""
+    config.parse.ocr_mode = _resolve_parser_mode(
+        env_var="HYBRIDRAG_OCR_MODE",
+        config_value=config.parse.ocr_mode,
+        allowed={"skip", "auto", "force"},
+    )
+    config.parse.docling_mode = _resolve_parser_mode(
+        env_var="HYBRIDRAG_DOCLING_MODE",
+        config_value=config.parse.docling_mode,
+        allowed={"off", "fallback", "prefer"},
+    )
+    os.environ["HYBRIDRAG_OCR_MODE"] = config.parse.ocr_mode
+    os.environ["HYBRIDRAG_DOCLING_MODE"] = config.parse.docling_mode
+
+
+def _resolve_parser_mode(env_var: str, config_value: str, allowed: set[str]) -> str:
+    """Use a valid env var override when present; otherwise fall back to config."""
+    raw = os.getenv(env_var, "").strip().lower()
+    if raw:
+        if raw in allowed:
+            return raw
+        logger.warning(
+            "Ignoring invalid %s=%r; expected one of %s. Falling back to config value %r.",
+            env_var,
+            raw,
+            sorted(allowed),
+            config_value,
+        )
+    return config_value
 
 
 class Pipeline:
@@ -140,7 +176,9 @@ class Pipeline:
         self.config = config
         self.workers = config.pipeline.workers
 
-        # Reserve 2 CPU cores for user — affinity + priority + thread cap
+        _configure_parser_environment(config)
+
+        # Reserve 2 logical CPU threads for user interaction.
         _apply_cpu_reservation()
         self.stale_timeout = config.pipeline.stale_future_timeout
         self.embed_flush_batch = config.pipeline.embed_flush_batch
@@ -152,10 +190,16 @@ class Pipeline:
         self.hasher = Hasher(config.paths.state_db)
         self.deduplicator = Deduplicator(self.hasher)
         self.skip_manager = SkipManager(config.paths.skip_list, self.hasher, extra_deferred_exts=config_deferred)
+        # Reset the cached parser map so the new defer policy takes effect
+        # for any archive members opened by ArchiveParser. The dispatcher's
+        # ParserMap is module-global and would otherwise carry stale state.
+        from src.parse.dispatcher import reset_parser_map
+        reset_parser_map()
         self.dispatcher = ParseDispatcher(
             timeout_seconds=config.parse.timeout_seconds,
             max_chars=config.parse.max_chars_per_file,
             skip_list_path=config.paths.skip_list,
+            extra_deferred_exts=set(config.parse.defer_extensions),
         )
         self.chunker = Chunker(
             chunk_size=config.chunk.size,
@@ -164,9 +208,10 @@ class Pipeline:
         )
         self.packager = Packager(output_dir=config.paths.output_dir)
 
-        # Callbacks — set in run(), but _emit_stage() may be called from helpers
+        # Callbacks — set in run(), but helper methods may emit updates.
         self._on_file_start = None
         self._on_stage_progress = None
+        self._on_stats_update = None
 
         # Lazy-loaded models — only initialized when their stage runs
         self._embedder: Embedder | None = None
@@ -252,6 +297,7 @@ class Pipeline:
         input_files: list[Path],
         on_file_start: callable | None = None,
         on_stage_progress: callable | None = None,
+        on_stats_update: callable | None = None,
     ) -> RunStats:
         """
         Run the pipeline on a list of input files.
@@ -268,10 +314,12 @@ class Pipeline:
         """
         self._on_file_start = on_file_start
         self._on_stage_progress = on_stage_progress
+        self._on_stats_update = on_stats_update
         stats = RunStats()
         start_time = time.time()
 
         stats.files_found = len(input_files)
+        self._emit_stats(stats)
 
         # Stage 2: Hash & dedup
         self._emit_stage("dedup", 0, len(input_files), "Starting dedup scan...")
@@ -287,10 +335,12 @@ class Pipeline:
             stats.skipped_unchanged = self.deduplicator.skipped_unchanged
             stats.skipped_duplicate = self.deduplicator.skipped_duplicate
         stats.files_after_dedup = len(work_files)
+        self._emit_stats(stats)
 
         if not work_files:
             logger.info("No new or changed files to process.")
             stats.elapsed_seconds = time.time() - start_time
+            self._emit_stats(stats)
             return stats
 
         # Stage 2b: Skip check (hash but don't parse)
@@ -306,11 +356,13 @@ class Pipeline:
                 stats.files_skipped += 1
             else:
                 parse_files.append(fp)
+        self._emit_stats(stats)
 
         if not parse_files:
             logger.info("All files skipped -- nothing to parse.")
             stats.skip_reasons = self.skip_manager.get_reason_summary()
             self._finalize_skip(stats, start_time)
+            self._emit_stats(stats)
             return stats
 
         # Stage 3+4+5+6: Parallel parse → chunk → enrich → embed
@@ -324,6 +376,7 @@ class Pipeline:
         if not all_chunks:
             logger.warning("No chunks produced -- nothing to embed or export.")
             stats.elapsed_seconds = time.time() - start_time
+            self._emit_stats(stats)
             return stats
 
         # Stage 5: Contextual enrichment (phi4:14B via Ollama) — skipped if disabled
@@ -336,6 +389,7 @@ class Pipeline:
                 1 for c in all_chunks if c.get("enriched_text") is not None
             )
             self._emit_stage("enrich", stats.chunks_enriched, len(all_chunks), "Done")
+            self._emit_stats(stats)
         else:
             logger.info("Enrichment disabled — skipping.")
 
@@ -354,6 +408,7 @@ class Pipeline:
             entities = extractor.extract_entities(all_chunks)
             stats.entities_extracted = len(entities)
             self._emit_stage("extract", len(entities), len(all_chunks), "Done")
+            self._emit_stats(stats)
         else:
             logger.info("Entity extraction disabled — skipping.")
 
@@ -390,6 +445,7 @@ class Pipeline:
 
         # Append to run history (slice 4.1)
         self._append_run_history(export_dir, stats)
+        self._emit_stats(stats)
 
         return stats
 
@@ -402,6 +458,14 @@ class Pipeline:
                 pass
         # CLI heartbeat log every call
         logger.info("[%s] %d/%d %s", stage, current, total, detail)
+
+    def _emit_stats(self, stats: RunStats) -> None:
+        """Emit a snapshot of live stats to the GUI/CLI callback."""
+        if self._on_stats_update:
+            try:
+                self._on_stats_update(stats.to_dict())
+            except Exception:
+                pass
 
     def _write_run_report(self, export_dir: Path, stats: RunStats) -> None:
         """Write a human-readable run report alongside the export."""
@@ -537,6 +601,7 @@ class Pipeline:
 
             last_completion = time.time()
             last_stage_update = time.time()
+            last_stats_update = time.time()
 
             while pending:
                 # Drain completed futures
@@ -559,6 +624,7 @@ class Pipeline:
                             "error": f"parser stalled {stall:.0f}s",
                         })
                         last_completion = time.time()
+                        self._emit_stats(stats)
                     else:
                         time.sleep(0.05)  # Brief yield before re-checking
                     continue
@@ -595,6 +661,9 @@ class Pipeline:
                             f"{fp_done.name} ({len(all_chunks)} chunks)",
                         )
                         last_stage_update = now_stage
+                    if now_stage - last_stats_update >= 1.0:
+                        self._emit_stats(stats)
+                        last_stats_update = now_stage
 
                     # Submit next file to keep pool saturated
                     try:
@@ -613,6 +682,13 @@ class Pipeline:
             pool.shutdown(wait=False)
 
         stats.chunks_created = len(all_chunks)
+        self._emit_stage(
+            "parse",
+            stats.files_parsed + stats.files_failed,
+            total,
+            f"Done ({len(all_chunks)} chunks)",
+        )
+        self._emit_stats(stats)
         return all_chunks, all_docs
 
     def _safe_parse_file(self, file_path: Path) -> ParsedDocument | None:
@@ -671,6 +747,7 @@ class Pipeline:
         if self.skip_manager.skip_count > 0:
             self.skip_manager.write_skip_manifest(self.config.paths.output_dir)
         stats.elapsed_seconds = time.time() - start_time
+        self._emit_stats(stats)
         logger.info(
             "Pipeline summary: %d files hashed, %d parsed, %d skipped (reasons: %s)",
             stats.files_after_dedup, stats.files_parsed, stats.files_skipped,
@@ -706,6 +783,13 @@ class Pipeline:
                 logger.error("Parse failed for %s: %s", file_path, e)
                 stats.files_failed += 1
                 stats.errors.append({"file": str(file_path), "error": str(e)})
+            self._emit_stage(
+                "parse",
+                stats.files_parsed + stats.files_failed,
+                len(files),
+                file_path.name,
+            )
+            self._emit_stats(stats)
         return parsed
 
     def _chunk_documents(
@@ -716,23 +800,77 @@ class Pipeline:
         for doc in docs:
             all_chunks.extend(self._chunk_single_doc(doc))
         stats.chunks_created = len(all_chunks)
+        self._emit_stats(stats)
         return all_chunks
 
     def _embed_chunks(
         self, chunks: list[dict], stats: RunStats
     ) -> np.ndarray:
-        """Embed all chunks — GPU batch with token-budget packing + OOM backoff."""
+        """Embed all chunks — GPU batch with token-budget packing + OOM backoff.
+
+        For large corpora (>100K chunks), processes in sub-batches of
+        EMBED_SUB_BATCH chunks and writes vectors to a memory-mapped file
+        to avoid RAM exhaustion from accumulating all vectors in memory.
+        """
         embedder = self._get_embedder()
-        texts = [c.get("enriched_text") or c["text"] for c in chunks]
-        total = len(texts)
+        total = len(chunks)
+        dim = embedder.dim
+        # Sub-batch size for memory-safe embedding of large corpora.
+        # 100K chunks ≈ 300MB GPU vectors + 100MB text — well within RAM.
+        sub_batch_size = 100_000
         self._emit_stage("embed", 0, total, "Starting embedding...")
 
-        # Embed with periodic progress reporting
         embed_start = time.time()
-        vectors = embedder.embed_batch(texts)
+
+        if total <= sub_batch_size:
+            # Small corpus — embed all at once (original path)
+            texts = [c.get("enriched_text") or c["text"] for c in chunks]
+            vectors = embedder.embed_batch(texts)
+        else:
+            # Large corpus — embed in sub-batches, write to mmap file to
+            # avoid OOM from accumulating 2M+ float32 vectors in RAM.
+            import tempfile
+            mmap_path = Path(tempfile.mktemp(suffix=".dat", prefix="embed_"))
+            vectors_mmap = np.memmap(
+                str(mmap_path), dtype=np.float16, mode="w+", shape=(total, dim)
+            )
+
+            offset = 0
+            for batch_start in range(0, total, sub_batch_size):
+                batch_end = min(batch_start + sub_batch_size, total)
+                batch_texts = [
+                    c.get("enriched_text") or c["text"]
+                    for c in chunks[batch_start:batch_end]
+                ]
+                batch_vectors = embedder.embed_batch(batch_texts)
+                batch_count = len(batch_vectors)
+                vectors_mmap[offset:offset + batch_count] = batch_vectors.astype(np.float16)
+                vectors_mmap.flush()
+                offset += batch_count
+
+                elapsed = time.time() - embed_start
+                rate = offset / max(elapsed, 0.01)
+                self._emit_stage(
+                    "embed", offset, total,
+                    f"sub-batch {batch_start//sub_batch_size + 1} done, {rate:.0f} chunks/sec",
+                )
+                logger.info(
+                    "Embed sub-batch %d-%d complete (%d/%d, %.0f chunks/sec)",
+                    batch_start, batch_end, offset, total, rate,
+                )
+
+            # Copy from mmap to regular array for export
+            vectors = np.array(vectors_mmap, dtype=np.float16)
+            del vectors_mmap
+            try:
+                mmap_path.unlink()
+            except OSError:
+                pass
+
         embed_elapsed = time.time() - embed_start
         stats.vectors_created = len(vectors)
 
         rate = stats.vectors_created / max(embed_elapsed, 0.01)
         self._emit_stage("embed", stats.vectors_created, total, f"{rate:.0f} chunks/sec")
+        self._emit_stats(stats)
         return vectors

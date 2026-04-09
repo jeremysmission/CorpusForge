@@ -93,6 +93,11 @@ def test_ocr_mode_rejects_invalid():
         ForgeConfig(parse={"ocr_mode": "banana"})
 
 
+def test_docling_mode_rejects_invalid():
+    with pytest.raises(Exception):
+        ForgeConfig(parse={"docling_mode": "banana"})
+
+
 def test_embed_device_rejects_invalid():
     with pytest.raises(Exception):
         ForgeConfig(embed={"device": "tpu"})
