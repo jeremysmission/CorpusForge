@@ -4,6 +4,11 @@ Repo: `C:\CorpusForge`
 
 Branch: `master`
 
+Landing result:
+
+- committed: `0d7c5ab` (`docs: add Forge config and GUI reference`)
+- pushed: `origin/master`
+
 Task: exhaustive GUI/YAML/operator reference cleanup for Forge.
 
 Files changed:
@@ -39,9 +44,12 @@ git -C C:\CorpusForge push origin master
 Verification / tests run:
 
 - `python C:\CorpusForge\scripts\boot.py --config C:\CorpusForge\config\config.yaml`
-  - purpose: verify the live Forge config still loads cleanly after the doc sweep
+  - result: PASS; live config loaded and printed expected chunk/embed/parse/state values
 - `python C:\CorpusForge\sanitize_before_push.py`
-  - purpose: confirm the new docs are sanitize-clean
+  - result: repo-level dry-run returned nonzero because unrelated existing files were still flagged:
+    - `docs/CORPUS_ADAPTATION_EVIDENCE_2026-04-09.md`
+    - `docs/LANE4_HANDOFF_2026-04-09.md`
+  - lane impact: the new Lane 3 docs were not listed by the sanitizer
 
 Artifacts / output paths:
 
@@ -69,9 +77,7 @@ Next step for QA:
 
 Crash-safety note:
 
-- This lane is doc-only.
-- If the commit or push step does not happen, the crash-sensitive local-only paths are:
-  - `C:\CorpusForge\docs\CONFIG_AND_GUI_REFERENCE_2026-04-09.md`
-  - `C:\CorpusForge\docs\LANE3_CONFIG_GUI_REFERENCE_HANDOFF_2026-04-09.md`
+- This lane is no longer local-only.
+- The reference and handoff note are committed and pushed in `0d7c5ab`.
 
 Signed: Agent 4 | Lane 3
