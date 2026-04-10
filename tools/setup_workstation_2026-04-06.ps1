@@ -484,6 +484,19 @@ if ($installDocling -and (Test-Path $doclingReqFile)) {
     }
     if ($doclingOk) {
         Write-Ok "Optional Docling installed"
+        if ($RequireCuda) {
+            Write-Info "Restoring CUDA torch stack after Docling dependency install"
+            $torchRepairOk = Invoke-WithRetry -Label "pip install torch==2.7.1 torchvision==0.22.1 (cu128 repair)" -Action {
+                & $VenvPip install "torch==2.7.1" "torchvision==0.22.1" --index-url https://download.pytorch.org/whl/cu128 --force-reinstall --no-deps @TrustedHosts --quiet 2>&1 | Out-Null
+            }
+            if ($torchRepairOk) {
+                Write-Ok "CUDA torch stack restored after Docling install"
+            } else {
+                Write-Fail "CUDA torch stack repair failed after Docling install"
+                Write-TorchInstallGuidance -RepoName "CorpusForge" -RuntimeInfo $RuntimeInfo -CudaExpected
+                exit 1
+            }
+        }
     } else {
         Write-Warn "Optional Docling install failed — CorpusForge still works without it"
     }
@@ -564,7 +577,13 @@ Remove-TempFileQuietly -Path $importPy
 if (Test-Path $doclingReqFile) {
     $doclingCheck = & $VenvPython -c "import importlib.util; print(importlib.util.find_spec('docling') is not None)" 2>&1
     if ($LASTEXITCODE -eq 0 -and (($doclingCheck | Out-String).Trim()) -eq "True") {
-        Write-Ok "Optional Docling import available"
+        $doclingImportCheck = & $VenvPython -c "import torch, torchvision; from docling.document_converter import DocumentConverter; print(f'Docling OK | torch={torch.__version__} | torchvision={torchvision.__version__} | CUDA={torch.cuda.is_available()}')" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok (($doclingImportCheck | Out-String).Trim())
+        } else {
+            Write-Fail "Optional Docling import failed: $doclingImportCheck"
+            exit 1
+        }
     } else {
         Write-Info "Optional Docling not installed (expected unless CORPUSFORGE_INSTALL_DOCLING=1)"
     }
