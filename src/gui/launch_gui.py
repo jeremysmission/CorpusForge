@@ -1,6 +1,7 @@
 """CorpusForge GUI entry point -- normal pipeline or recovery dedup GUI."""
 from __future__ import annotations
 
+import argparse
 import logging, subprocess, sys, threading, tkinter as tk
 from collections import Counter
 from pathlib import Path
@@ -48,7 +49,7 @@ def _discover_candidates(files: list[Path], supported: set[str], deferred: dict[
 
 
 def _merge_settings_overrides(existing: dict, overrides: dict) -> dict:
-    """Merge GUI settings into a config-local override document."""
+    """Merge GUI settings into the active config document."""
     merged = dict(existing or {})
     for section, values in overrides.items():
         section_values = dict(merged.get(section) or {})
@@ -58,18 +59,17 @@ def _merge_settings_overrides(existing: dict, overrides: dict) -> dict:
 
 
 def _save_gui_settings_override(config_file: Path, settings: dict) -> Path:
-    """Persist GUI settings into config.local.yaml machine overrides."""
+    """Persist GUI settings into the active config.yaml file."""
     import yaml
 
-    local_file = config_file.parent / "config.local.yaml"
     existing = {}
-    if local_file.exists():
-        with open(local_file, encoding="utf-8-sig") as handle:
+    if config_file.exists():
+        with open(config_file, encoding="utf-8-sig") as handle:
             existing = yaml.safe_load(handle) or {}
     merged = _merge_settings_overrides(existing, settings)
-    with open(local_file, "w", encoding="utf-8") as handle:
+    with open(config_file, "w", encoding="utf-8") as handle:
         yaml.dump(merged, handle, default_flow_style=False, sort_keys=False)
-    return local_file
+    return config_file
 
 
 class GUILogHandler(logging.Handler):
@@ -538,13 +538,23 @@ def _count_skip_list(config):
 
 
 def main():
-    if "--dedup" in sys.argv[1:]:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config", default=_DEFAULT_CONFIG, help="Path to config YAML.")
+    parser.add_argument("--dedup", action="store_true", help="Launch the dedup-only recovery GUI.")
+    args, _unknown = parser.parse_known_args()
+
+    if args.dedup:
         from src.gui.launch_dedup_gui import main as dedup_main
-        sys.argv = [sys.argv[0], *[arg for arg in sys.argv[1:] if arg != "--dedup"]]
+        sys.argv = [
+            sys.argv[0],
+            "--config",
+            args.config,
+            *_unknown,
+        ]
         dedup_main()
         return
 
-    config_path = _DEFAULT_CONFIG
+    config_path = args.config
     config = load_config(config_path)
     logging.basicConfig(
         level=getattr(logging, config.pipeline.log_level, logging.INFO),
@@ -595,7 +605,7 @@ def main():
         precheck_runner[0].start(source, output, settings)
 
     def on_save_settings(settings):
-        """Write GUI settings to config.local.yaml machine overrides and update live config."""
+        """Write GUI settings to the active config file and update live config."""
         config_file = Path(config_path)
         if not config_file.is_absolute():
             config_file = (_PROJECT_ROOT / config_file).resolve()

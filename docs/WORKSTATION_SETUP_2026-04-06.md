@@ -85,12 +85,12 @@ The exact desktop path can differ. CorpusForge resolves its project root from th
 8. Double-click `INSTALL_WORKSTATION.bat`.
 9. After install, double-click `start_corpusforge.bat`.
 
-## Machine-Specific Configuration
+## Machine Configuration
 
-After install, create `config/config.local.yaml` (gitignored) for machine-specific overrides:
+After install, edit `config/config.yaml` directly on that machine:
 
 ```yaml
-# Example config.local.yaml for Beast workstation
+# Example config.yaml for Beast workstation
 parse:
   docling_mode: "off"   # off | fallback | prefer
 
@@ -120,7 +120,7 @@ These are the parser-related environment variables to standardize across worksta
   - set to `1` only when you want the optional Docling dev dependency installed into the repo-local `.venv`
 - `HYBRIDRAG_DOCLING_MODE`
   - optional override for parser testing: `off`, `fallback`, or `prefer`
-  - normal workstation preference is to set `parse.docling_mode` in `config/config.local.yaml` instead of relying on an environment variable
+  - normal workstation preference is to set `parse.docling_mode` in `config/config.yaml` instead of relying on an environment variable
 
 Recommended workstation rule:
 

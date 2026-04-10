@@ -1,5 +1,4 @@
-"""Tests for configuration loading, validation, and local overrides."""
-import tempfile
+"""Tests for configuration loading and validation."""
 from pathlib import Path
 
 import pytest
@@ -58,27 +57,25 @@ def test_load_config_from_yaml(tmp_path):
     assert c.pipeline.workers == 4
 
 
-def test_load_config_local_override(tmp_path):
+def test_load_config_uses_single_explicit_file(tmp_path):
     base = tmp_path / "config.yaml"
     base.write_text(yaml.dump({
-        "pipeline": {"workers": 8, "log_level": "INFO"},
+        "pipeline": {"workers": 12, "log_level": "INFO"},
         "chunk": {"size": 1200},
     }))
-    local = tmp_path / "config.local.yaml"
-    local.write_text(yaml.dump({
-        "pipeline": {"workers": 16},
-    }))
     c = load_config(str(base))
-    assert c.pipeline.workers == 16
+    assert c.pipeline.workers == 12
     assert c.pipeline.log_level == "INFO"
     assert c.chunk.size == 1200
 
 
-def test_load_config_no_local_file(tmp_path):
-    base = tmp_path / "config.yaml"
-    base.write_text(yaml.dump({"pipeline": {"workers": 12}}))
-    c = load_config(str(base))
-    assert c.pipeline.workers == 12
+def test_load_config_normalizes_defer_extensions(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.dump({
+        "parse": {"defer_extensions": [".dwg", "jpg", ".sao", "rsf", ".jpg"]},
+    }))
+    c = load_config(str(cfg))
+    assert c.parse.defer_extensions == [".dwg", ".jpg", ".sao", ".rsf"]
 
 
 # --- validation ---

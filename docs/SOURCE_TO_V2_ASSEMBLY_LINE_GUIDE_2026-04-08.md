@@ -29,7 +29,7 @@ HybridRAG V2 is not fed live during the Forge run. Forge finishes an export pack
 The parser worker count lives here:
 
 ```text
-config/config.local.yaml
+config/config.yaml
   pipeline:
     workers: <number>
 ```
@@ -41,9 +41,7 @@ Current workstation targets:
 - desktop: `32`
 - laptop: `20`
 
-The GUI Save Settings action writes machine-specific overrides to `config/config.local.yaml`.
-
-If `config.local.yaml` is missing, CorpusForge falls back to `config/config.yaml`.
+The GUI Save Settings action writes directly to `config/config.yaml`.
 
 ## The Assembly Line
 
@@ -280,7 +278,7 @@ python scripts/import_embedengine.py --source "C:\CorpusForge\data\output\latest
 
 - verify the source path is correct
 - verify the output path has enough free space
-- verify `config.local.yaml` points at the intended machine-specific paths if you are overriding defaults
+- verify `config/config.yaml` points at the intended machine-specific paths
 - verify Tesseract and Poppler if you need OCR behavior
 - verify Ollama only if enrichment is enabled
 - decide whether you want fast path or controlled reviewed path

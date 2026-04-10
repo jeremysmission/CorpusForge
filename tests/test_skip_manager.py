@@ -163,6 +163,20 @@ def test_load_placeholder_format_map(tmp_path):
     assert ".dwg" in m
 
 
+def test_load_deferred_extension_map_from_config_yaml_skip_section(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text(yaml.dump({
+        "paths": {"skip_list": "config/config.yaml"},
+        "skip": {
+            "deferred_formats": [
+                {"ext": ".sao", "reason": "deferred in config"},
+            ],
+        },
+    }))
+    m = load_deferred_extension_map(str(f))
+    assert m == {".sao": "deferred in config"}
+
+
 def test_load_missing_file():
     m = load_deferred_extension_map("/nonexistent.yaml")
     assert m == {}

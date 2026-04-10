@@ -41,8 +41,8 @@ class PathsConfig(BaseModel):
         description="Local directory where downloaded files are staged.",
     )
     skip_list: str = Field(
-        default="config/skip_list.yaml",
-        description="YAML file defining formats and conditions to skip (hash only).",
+        default="config/config.yaml",
+        description="Runtime config file containing skip/defer rules; normal path is config/config.yaml.",
     )
 
 
@@ -97,15 +97,7 @@ class ParseConfig(BaseModel):
     @field_validator("defer_extensions")
     @classmethod
     def normalize_defer_extensions(cls, values: list[str]) -> list[str]:
-        normalized: list[str] = []
-        for value in values:
-            ext = (value or "").strip().lower()
-            if not ext:
-                continue
-            if not ext.startswith("."):
-                ext = f".{ext}"
-            normalized.append(ext)
-        return list(dict.fromkeys(normalized))
+        return _normalize_extension_list(values)
 
 
 class EmbedConfig(BaseModel):
@@ -156,8 +148,7 @@ class EnrichConfig(BaseModel):
         default=2,
         ge=1, le=8,
         description="Concurrent enrichment requests to Ollama. "
-                    "Higher = faster but needs more GPU VRAM. Beast: 2-3. "
-                    "Set per-machine in config.local.yaml.",
+                    "Higher = faster but needs more GPU VRAM. Beast: 2-3.",
     )
 
 
@@ -185,13 +176,13 @@ class ExtractConfig(BaseModel):
         default=16,
         ge=1, le=128,
         description="Batch size for GLiNER inference. Higher = faster but more RAM. "
-                    "Beast: 16, workstation: 20-32. Set per-machine in config.local.yaml.",
+                    "Beast: 16, workstation: 20-32.",
     )
     max_concurrent: int = Field(
         default=4,
         ge=1, le=32,
         description="Concurrent extraction workers. Each worker processes one batch. "
-                    "Beast: 16. Set per-machine in config.local.yaml.",
+                    "Beast: 16.",
     )
 
 
@@ -259,16 +250,25 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return merged
 
 
+def _normalize_extension_list(values: list[str] | None) -> list[str]:
+    """Normalize extension strings for config merging and validation."""
+    normalized: list[str] = []
+    for value in values or []:
+        ext = (value or "").strip().lower()
+        if not ext:
+            continue
+        if not ext.startswith("."):
+            ext = f".{ext}"
+        normalized.append(ext)
+    return list(dict.fromkeys(normalized))
+
+
 def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
     """
     Load and validate CorpusForge configuration from YAML.
 
     Loading order:
-      1. config.yaml (base, committed to git)
-      2. config.local.yaml (machine-specific overrides, gitignored)
-
-    config.local.yaml is optional and only overrides the keys it defines.
-    Use it for machine-specific settings like workers, GPU index, paths.
+      1. config.yaml (explicit runtime config, committed to git or edited per machine)
 
     Falls back to Pydantic defaults for any missing fields.
     """
@@ -282,15 +282,6 @@ def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
     else:
         print(f"[WARN] Config file not found at {path}, using defaults.", file=sys.stderr)
         raw = {}
-
-    # Apply config.local.yaml overrides if present (gitignored, machine-specific)
-    local_path = path.parent / "config.local.yaml"
-    if local_path.exists():
-        with open(local_path, encoding="utf-8-sig") as f:
-            local_raw = yaml.safe_load(f) or {}
-        if local_raw:
-            raw = _deep_merge(raw, local_raw)
-            print(f"[INFO] Applied local overrides from {local_path}", file=sys.stderr)
 
     paths = raw.setdefault("paths", {})
     path_keys = ("source_dirs", "output_dir", "state_db", "landing_zone", "skip_list")
@@ -312,4 +303,6 @@ def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
         if not entry_path.is_absolute():
             paths[key] = str((PROJECT_ROOT / entry_path).resolve())
 
-    return ForgeConfig(**raw)
+    runtime_raw = dict(raw)
+    runtime_raw.pop("skip", None)
+    return ForgeConfig(**runtime_raw)

@@ -191,6 +191,11 @@ def main() -> int:
         sys.exit(1)
 
     print(f"CorpusForge: processing {len(files)} file(s)...")
+    if config.parse.defer_extensions:
+        print(
+            "Active config defer_extensions: "
+            + ", ".join(config.parse.defer_extensions)
+        )
     if args.input_list and duplicate_entries:
         print(f"Duplicate entries removed from input list: {duplicate_entries}")
     if args.input_list and missing_counts:

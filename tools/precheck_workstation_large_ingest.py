@@ -115,8 +115,6 @@ def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]
     source_path = Path(config.paths.source_dirs[0]).expanduser().resolve()
     output_dir = Path(config.paths.output_dir).expanduser().resolve()
     state_db = Path(config.paths.state_db).expanduser().resolve()
-    local_config = Path(args.config).resolve().parent / "config.local.yaml"
-
     results: list[CheckResult] = []
 
     py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
@@ -125,10 +123,7 @@ def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]
     else:
         results.append(CheckResult("FAIL", "Python version", f"{py_ver} (expected 3.12.x)"))
 
-    if local_config.exists():
-        results.append(CheckResult("PASS", "config.local.yaml", str(local_config)))
-    else:
-        results.append(CheckResult("WARNING", "config.local.yaml", f"missing at {local_config}"))
+    results.append(CheckResult("PASS", "Runtime config", str(Path(args.config).resolve())))
 
     if source_path.exists():
         kind = "directory" if source_path.is_dir() else "file"
@@ -237,6 +232,7 @@ def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]
         "enrich_enabled": config.enrich.enabled,
         "extract_enabled": config.extract.enabled,
         "embed_batch_size": config.hardware.embed_batch_size,
+        "defer_extensions": list(config.parse.defer_extensions),
         "env": env_snapshot,
     }
     return results, summary
@@ -260,6 +256,7 @@ def _render_report(results: list[CheckResult], summary: dict, report_path: Path)
         f"  State DB:       {summary['state_db']}",
         f"  Workers:        {summary['workers']} (logical threads detected: {summary['logical_threads']})",
         f"  OCR mode:       {summary['ocr_mode']}",
+        f"  Defer ext:      {', '.join(summary['defer_extensions']) if summary['defer_extensions'] else '(none)'}",
         f"  Embedding:      {'ON' if summary['embed_enabled'] else 'OFF'}",
         f"  Enrichment:     {'ON' if summary['enrich_enabled'] else 'OFF'}",
         f"  Extraction:     {'ON' if summary['extract_enabled'] else 'OFF'}",

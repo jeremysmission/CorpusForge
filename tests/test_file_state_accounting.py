@@ -85,7 +85,7 @@ def test_deduplicator_records_duplicate_state(tmp_path: Path) -> None:
         hasher.close()
 
 
-def test_deduplicator_does_not_mark_work_item_indexed_before_success(tmp_path: Path) -> None:
+def test_deduplicator_persists_hashed_state_before_success(tmp_path: Path) -> None:
     state_db = tmp_path / "file_state.sqlite3"
     file_path = tmp_path / "report.txt"
     file_path.write_text("fresh content", encoding="utf-8")
@@ -95,7 +95,35 @@ def test_deduplicator_does_not_mark_work_item_indexed_before_success(tmp_path: P
         dedup = Deduplicator(hasher)
         work = dedup.filter_new_and_changed([file_path])
         assert work == [file_path]
-        assert hasher.get_state(file_path) is None
+        row = hasher.get_state(file_path)
+        assert row is not None
+        assert row["status"] == "hashed"
+    finally:
+        hasher.close()
+
+
+def test_deduplicator_reuses_hashed_state_after_interrupted_run(tmp_path: Path) -> None:
+    state_db = tmp_path / "file_state.sqlite3"
+    file_path = tmp_path / "report.txt"
+    file_path.write_text("fresh content", encoding="utf-8")
+
+    hasher = Hasher(str(state_db))
+    try:
+        first = Deduplicator(hasher)
+        work = first.filter_new_and_changed([file_path])
+        assert work == [file_path]
+        row = hasher.get_state(file_path)
+        assert row is not None
+        assert row["status"] == "hashed"
+
+        def _unexpected_rehash(_path: Path) -> str:
+            raise AssertionError("hash_file should not run again for unchanged hashed work item")
+
+        hasher.hash_file = _unexpected_rehash  # type: ignore[assignment]
+
+        second = Deduplicator(hasher)
+        resumed = second.filter_new_and_changed([file_path])
+        assert resumed == [file_path]
     finally:
         hasher.close()
 

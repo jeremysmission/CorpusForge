@@ -70,7 +70,7 @@ The normal CorpusForge GUI has these operator-facing sections:
 The GUI settings are written to:
 
 ```text
-C:\CorpusForge\config\config.local.yaml
+C:\CorpusForge\config\config.yaml
 ```
 
 Before a large run, confirm these settings are what you intend:
@@ -87,7 +87,7 @@ Before a large run, confirm these settings are what you intend:
 Quick PowerShell check:
 
 ```powershell
-Get-Content C:\CorpusForge\config\config.local.yaml
+Get-Content C:\CorpusForge\config\config.yaml
 ```
 
 For the current large-ingest Phase 1 path, the important values are:
@@ -249,7 +249,7 @@ In the `Settings` panel, set these values for the current large-ingest Phase 1 p
 After you set the values:
 
 1. Click `Save Settings`
-2. Confirm the log says settings were saved to `config.local.yaml`
+2. Confirm the log says settings were saved to `config.yaml`
 3. Confirm the bottom status bar shows the worker count you expect
 
 Important:
@@ -257,7 +257,7 @@ Important:
 - GUI `Save Settings` writes machine overrides to:
 
 ```text
-C:\CorpusForge\config\config.local.yaml
+C:\CorpusForge\config\config.yaml
 ```
 
 The settings that matter most before a large run are:
@@ -302,6 +302,7 @@ What is persisted:
 
 Typical statuses recorded in the state DB:
 
+- `hashed`
 - `indexed`
 - `duplicate`
 - `deferred`
@@ -309,12 +310,14 @@ Typical statuses recorded in the state DB:
 
 What survives a restart:
 
+- files already hashed during dedup, even if the run never reached export
 - files already recorded as `duplicate`, `deferred`, or `skipped`
 - files already recorded as `indexed` from a completed prior run
 
 What does not currently behave like a full mid-run checkpoint:
 
 - files processed in the current run are only marked `indexed` after the pipeline completes its normal end-to-end path
+- discovery still re-enumerates the source tree on restart
 - if the machine crashes during parse, chunk, embed, or export, some files from that interrupted run may be reprocessed on restart because they were not yet marked `indexed`
 
 Practical restart rule:
@@ -322,6 +325,7 @@ Practical restart rule:
 - rerun the same command or GUI path
 - do **not** turn on `full_reindex` unless you intentionally want to redo everything
 - expect already tracked unchanged files to be skipped
+- expect already hashed but unfinished work files to reuse their saved hash instead of hashing from scratch again
 - expect some in-flight work from the interrupted run to be redone
 
 So the honest statement is:
@@ -470,7 +474,7 @@ If you are on the workstation desktop, the exact minimum path is:
    - `Entity Extraction: OFF`
    - `Embed batch: 256`
 5. click `Save Settings`
-6. confirm `config.local.yaml` and the relevant env vars look correct
+6. confirm `config/config.yaml` and the relevant env vars look correct
 7. click `Start Pipeline`
 8. when complete, hand off the whole `export_YYYYMMDD_HHMM` folder
 9. import that folder into V2 as the next step

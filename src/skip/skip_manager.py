@@ -1,8 +1,9 @@
 """
 Skip manager — determines which files to hash-only (not parse).
 
-Loads skip_list.yaml at init. Every skipped file is still SHA-256 hashed
-and recorded in the skip manifest for full corpus accounting.
+Loads skip/defer rules from the active config file. Every skipped file is
+still SHA-256 hashed and recorded in the skip manifest for full corpus
+accounting.
 """
 
 from __future__ import annotations
@@ -41,27 +42,30 @@ def _load_format_list(raw: dict, key: str, default_reason: str) -> dict[str, str
     return result
 
 
-def load_deferred_extension_map(skip_list_path: str | Path) -> dict[str, str]:
-    """Load deferred extension -> reason map without constructing a SkipManager."""
-    path = Path(skip_list_path)
-    if not path.exists():
+def _load_skip_source(path: str | Path) -> dict:
+    """Load skip/defer config from either config.yaml or a legacy skip_list.yaml."""
+    source_path = Path(path)
+    if not source_path.exists():
         return {}
 
-    with open(path, encoding="utf-8-sig") as f:
+    with open(source_path, encoding="utf-8-sig") as f:
         raw = yaml.safe_load(f) or {}
 
+    skip_section = raw.get("skip")
+    if isinstance(skip_section, dict):
+        return skip_section
+    return raw
+
+
+def load_deferred_extension_map(skip_list_path: str | Path) -> dict[str, str]:
+    """Load deferred extension -> reason map without constructing a SkipManager."""
+    raw = _load_skip_source(skip_list_path)
     return _load_format_list(raw, "deferred_formats", "deferred format")
 
 
 def load_placeholder_format_map(skip_list_path: str | Path) -> dict[str, str]:
     """Load placeholder extension -> reason map from skip_list.yaml."""
-    path = Path(skip_list_path)
-    if not path.exists():
-        return {}
-
-    with open(path, encoding="utf-8-sig") as f:
-        raw = yaml.safe_load(f) or {}
-
+    raw = _load_skip_source(skip_list_path)
     return _load_format_list(raw, "placeholder_formats", "placeholder format")
 
 
@@ -94,8 +98,7 @@ class SkipManager:
                 self._deferred_exts.update(extra_deferred_exts)
             return
 
-        with open(path, encoding="utf-8-sig") as f:
-            raw = yaml.safe_load(f) or {}
+        raw = _load_skip_source(path)
 
         # Build extension -> reason map (lowercase, with leading dot)
         self._deferred_exts = load_deferred_extension_map(path)

@@ -61,6 +61,7 @@ class Deduplicator:
         seen_hashes: dict[str, Path] = {}
         total = len(files)
         self.files_scanned = 0
+        self._pending_hashes = {}
         last_progress = time.time()
         last_progress_count = 0
 
@@ -86,6 +87,7 @@ class Deduplicator:
                 last_progress_count = scanned_count
 
             state = self.hasher.get_state(path)
+            content_hash: str | None = None
 
             if state:
                 try:
@@ -102,9 +104,11 @@ class Deduplicator:
                     if state["status"] == "duplicate":
                         self.skipped_duplicate += 1
                         continue
+                    content_hash = state["hash"]
 
-            content_hash = self.hasher.hash_file(path)
-            previous_hash = self.hasher.get_stored_hash(path)
+            if content_hash is None:
+                content_hash = self.hasher.hash_file(path)
+            previous_hash = state["hash"] if state else self.hasher.get_stored_hash(path)
 
             # Skip if unchanged since last run (hash matches despite mtime drift)
             if state and state["status"] == "indexed" and content_hash == previous_hash:
@@ -131,6 +135,7 @@ class Deduplicator:
                 continue
 
             seen_hashes[content_hash] = path
+            self.hasher.update_hash(path, content_hash, status="hashed")
             self._pending_hashes[self.hasher._normalize_path(path)] = content_hash
             work_list.append(path)
 

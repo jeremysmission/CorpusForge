@@ -82,7 +82,7 @@ def test_pipeline_finished_progress_label_uses_work_total(root):
     assert app.progress_label.cget("text") == "Done (2/2 work files, 10 discovered)"
 
 
-def test_save_settings_writes_config_local_override(tmp_path):
+def test_save_settings_writes_config_yaml(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text("pipeline:\n  workers: 8\n", encoding="utf-8")
 
@@ -91,8 +91,7 @@ def test_save_settings_writes_config_local_override(tmp_path):
         "hardware": {"embed_batch_size": 256},
     })
 
-    assert saved_path == tmp_path / "config.local.yaml"
-    assert config_file.read_text(encoding="utf-8") == "pipeline:\n  workers: 8\n"
+    assert saved_path == config_file
     saved_text = saved_path.read_text(encoding="utf-8")
     assert "workers: 32" in saved_text
     assert "embed_batch_size: 256" in saved_text

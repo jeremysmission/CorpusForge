@@ -6,7 +6,8 @@ Each parser returns a ParsedDocument. Unsupported formats are skipped.
 Error isolation: single file failure never crashes the pipeline.
 
 Format decisions: All placeholder and deferred formats are loaded from
-config/skip_list.yaml — zero hardcoded format skips in this file.
+the active runtime config (`config/config.yaml`) — zero hardcoded format
+skips in this file.
 """
 
 from __future__ import annotations
@@ -23,13 +24,14 @@ _PARSER_MAP: dict | None = None
 
 
 def _build_parser_map(
-    skip_list_path: str = "config/skip_list.yaml",
+    skip_list_path: str = "config/config.yaml",
     extra_deferred_exts: set[str] | None = None,
 ) -> dict:
     """Build extension → parser instance map. Called once on first use.
 
-    Placeholder formats are loaded from config/skip_list.yaml — not hardcoded.
-    To change which formats get placeholder treatment, edit the YAML file.
+    Placeholder formats are loaded from the active runtime config — not
+    hardcoded. To change which formats get placeholder treatment, edit
+    `config/config.yaml`.
 
     ``extra_deferred_exts`` are merged with the ``deferred_formats`` list
     from the skip list and applied to the archive parser, so deferred
@@ -177,7 +179,7 @@ def _build_parser_map(
     return parser_map
 
 
-def get_supported_extensions(skip_list_path: str = "config/skip_list.yaml") -> set[str]:
+def get_supported_extensions(skip_list_path: str = "config/config.yaml") -> set[str]:
     """Return all supported file extensions."""
     global _PARSER_MAP
     if _PARSER_MAP is None:
@@ -195,7 +197,7 @@ class ParseDispatcher:
     """Routes files to the appropriate parser based on extension."""
 
     def __init__(self, timeout_seconds: int = 60, max_chars: int = 5_000_000,
-                 skip_list_path: str = "config/skip_list.yaml",
+                 skip_list_path: str = "config/config.yaml",
                  extra_deferred_exts: set[str] | None = None):
         self.timeout = timeout_seconds
         self.max_chars = max_chars

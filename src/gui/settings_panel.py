@@ -10,7 +10,7 @@ from .theme import FONT, current_theme
 
 
 class SettingsPanel:
-    """Pipeline settings: workers, toggles, chunk params. Changes save as local overrides."""
+    """Pipeline settings: workers, toggles, chunk params. Changes save into config.yaml."""
 
     def __init__(self, parent: ttk.LabelFrame, root: tk.Tk, config=None,
                  config_path: str = "", on_save_settings=None,
@@ -239,7 +239,7 @@ class SettingsPanel:
             self._on_save_settings(settings)
         if self._append_log:
             self._append_log(
-                f"Settings saved to config.local.yaml overrides: workers={settings['pipeline']['workers']}, "
+                f"Settings saved to config.yaml: workers={settings['pipeline']['workers']}, "
                 f"OCR={settings['parse']['ocr_mode']}, "
                 f"chunk={settings['chunk']['size']}/{settings['chunk']['overlap']}, "
                 f"embed={'ON' if settings['embed']['enabled'] else 'OFF'}, "
@@ -255,7 +255,7 @@ class SettingsPanel:
             "Reset to Defaults",
             "Reset all settings to config.yaml defaults?\n\n"
             "This does not change config files — only resets the GUI controls.\n"
-            "Click Save Settings after to write config.local.yaml overrides.",
+            "Click Save Settings after to write config.yaml.",
         ):
             return
 
@@ -280,7 +280,7 @@ class SettingsPanel:
             self.embed_batch_var.set(raw.get("hardware", {}).get("embed_batch_size", 256))
 
             if self._append_log:
-                self._append_log("Settings reset to config.yaml defaults. Click Save to write config.local.yaml overrides.", "INFO")
+                self._append_log("Settings reset to config.yaml defaults. Click Save to write config.yaml.", "INFO")
         except Exception as exc:
             if self._append_log:
                 self._append_log(f"Failed to reset defaults: {exc}", "ERROR")
