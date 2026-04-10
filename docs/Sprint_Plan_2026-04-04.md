@@ -118,7 +118,7 @@
 **Goal:** Wire up enrichment and entity extraction stages, produce enriched chunks.
 
 ### Slice 3.1: Contextual Enrichment Validation (Day 1-2)
-- [ ] Verify enricher works with Ollama phi4:14B on Beast
+- [ ] Verify enricher works with Ollama phi4:14B on primary workstation
 - [ ] Test graceful degradation when Ollama unavailable
 - [ ] Validate enriched_text field in chunks.jsonl export
 - [ ] A/B: compare retrieval quality enriched vs plain chunks
@@ -180,7 +180,7 @@
 - [ ] Verify: V2 import handles full-scale export
 
 ### Slice 5.2: Performance Tuning (Day 4-6)
-- [ ] Optimize batch sizes for Beast GPU topology (GPU 0 compute, GPU 1 display)
+- [ ] Optimize batch sizes for primary workstation GPU topology (GPU 0 compute, GPU 1 display)
 - [ ] Optimize SQLite WAL mode for concurrent reads during export
 - [ ] Profile memory usage on full corpus
 - [ ] Target: incremental nightly run < 90 minutes

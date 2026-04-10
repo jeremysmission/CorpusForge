@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-08 MDT | **Author:** CoPilot+
 **Repos tested:** C:\CorpusForge (branch: master), C:\HybridRAG_V2 (branch: master)
-**Machine:** Beast (Windows 11, dual RTX 3090 FE, Python 3.12.10)
+**Machine:** primary workstation (Windows 11, CUDA-capable, Python 3.12.10)
 
 ---
 
@@ -139,7 +139,7 @@ Path B is faster but produces fewer chunks because it uses inline hash dedup (sk
 
 ## Worker Setting / Operator Visibility
 
-**Current config:** `config.local.yaml` sets `pipeline.workers: 16` (Beast default)
+**Current config:** `config.local.yaml` sets `pipeline.workers: 16` (primary workstation default)
 - Desktop target: 32 (set in config.local.yaml on desktop machine)
 - Laptop target: 20 (set in config.local.yaml on laptop)
 

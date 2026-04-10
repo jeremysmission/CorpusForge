@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import shutil
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -35,6 +36,7 @@ class TransferStats:
     bytes_total: int = 0
     current_file: str = ""
     elapsed_seconds: float = 0.0
+    stop_requested: bool = False
     errors: list[dict] = field(default_factory=list)
 
     @property
@@ -51,6 +53,7 @@ class TransferStats:
             "bytes_total": self.bytes_total,
             "current_file": self.current_file,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
+            "stop_requested": self.stop_requested,
             "error_count": len(self.errors),
         }
 
@@ -76,6 +79,7 @@ def _atomic_copy(src: Path, dest: Path) -> int:
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_suffix(dest.suffix + ".tmp")
     try:
+        src_stat = src.stat()
         bytes_copied = 0
         with open(src, "rb") as fin, open(tmp, "wb") as fout:
             while True:
@@ -89,6 +93,7 @@ def _atomic_copy(src: Path, dest: Path) -> int:
             tmp.replace(dest)
         except OSError:
             shutil.move(str(tmp), str(dest))
+        os.utime(dest, (src_stat.st_atime, src_stat.st_mtime))
         return bytes_copied
     except Exception:
         # Clean up partial .tmp on failure
@@ -118,12 +123,14 @@ class BulkSyncer:
         workers: int = 4,
         on_progress: Optional[Callable[[TransferStats], None]] = None,
         should_stop: Optional[Callable[[], bool]] = None,
+        on_file_result: Optional[Callable[[Path, str, int, str], None]] = None,
     ):
         self.source_dir = Path(source_dir).resolve()
         self.dest_dir = Path(dest_dir).resolve()
         self.workers = max(1, workers)
         self._on_progress = on_progress
         self._should_stop = should_stop or (lambda: False)
+        self._on_file_result = on_file_result
         self._hash_cache: dict[str, str] = {}
 
     def discover_files(self) -> list[Path]:
@@ -187,14 +194,16 @@ class BulkSyncer:
             return "failed", 0, str(exc)
 
     def run(self) -> TransferStats:
-        """Execute the bulk transfer. Returns final stats."""
+        """Execute the bulk transfer across every discovered source file."""
+        return self.run_files(self.discover_files())
+
+    def run_files(self, files: list[Path]) -> TransferStats:
+        """Execute the bulk transfer for an explicit source-file subset."""
         stats = TransferStats()
         start_time = time.time()
-
-        logger.info("Discovering files in %s...", self.source_dir)
-        all_files = self.discover_files()
+        all_files = [Path(f).resolve() for f in files]
         stats.total_files = len(all_files)
-        stats.bytes_total = sum(f.stat().st_size for f in all_files)
+        stats.bytes_total = sum(f.stat().st_size for f in all_files if f.exists())
 
         logger.info(
             "Transfer: %d files, %.1f GB from %s -> %s",
@@ -226,6 +235,7 @@ class BulkSyncer:
         for src_file in files:
             if self._should_stop():
                 logger.warning("Transfer aborted by user.")
+                stats.stop_requested = True
                 break
             stats.current_file = src_file.name
             status, nbytes, err = self._copy_one(src_file)
@@ -244,32 +254,64 @@ class BulkSyncer:
         self, files: list[Path], stats: TransferStats, start_time: float
     ) -> None:
         last_progress = time.time()
+        file_iter = iter(files)
+        pending: dict = {}
+
+        def submit_next(pool: ThreadPoolExecutor) -> bool:
+            if self._should_stop():
+                return False
+            try:
+                src_file = next(file_iter)
+            except StopIteration:
+                return False
+            future = pool.submit(self._copy_one, src_file)
+            pending[future] = src_file
+            return True
+
         with ThreadPoolExecutor(
             max_workers=self.workers, thread_name_prefix="sync"
         ) as pool:
-            futures = {}
-            for src_file in files:
-                if self._should_stop():
+            for _ in range(min(self.workers, len(files))):
+                if not submit_next(pool):
                     break
-                fut = pool.submit(self._copy_one, src_file)
-                futures[fut] = src_file
 
-            for fut in as_completed(futures):
+            while pending:
                 if self._should_stop():
-                    break
-                src_file = futures[fut]
-                stats.current_file = src_file.name
-                try:
-                    status, nbytes, err = fut.result(timeout=300)
-                except Exception as exc:
-                    status, nbytes, err = "failed", 0, str(exc)
-                self._apply_result(stats, src_file, status, nbytes, err)
-                # Progress every 2 seconds
-                now = time.time()
-                if now - last_progress >= 2.0:
-                    stats.elapsed_seconds = now - start_time
-                    self._emit_progress(stats, start_time)
-                    last_progress = now
+                    stats.stop_requested = True
+                    logger.warning("Transfer stop requested; cancelling queued copy tasks.")
+                    for fut in list(pending.keys()):
+                        if fut.cancel():
+                            pending.pop(fut)
+                    if not pending:
+                        break
+                done, _ = wait(
+                    list(pending.keys()),
+                    timeout=0.2,
+                    return_when=FIRST_COMPLETED,
+                )
+                if not done:
+                    now = time.time()
+                    if now - last_progress >= 2.0:
+                        stats.elapsed_seconds = now - start_time
+                        self._emit_progress(stats, start_time)
+                        last_progress = now
+                    continue
+
+                for fut in done:
+                    src_file = pending.pop(fut)
+                    stats.current_file = src_file.name
+                    try:
+                        status, nbytes, err = fut.result(timeout=300)
+                    except Exception as exc:
+                        status, nbytes, err = "failed", 0, str(exc)
+                    self._apply_result(stats, src_file, status, nbytes, err)
+                    now = time.time()
+                    if now - last_progress >= 2.0:
+                        stats.elapsed_seconds = now - start_time
+                        self._emit_progress(stats, start_time)
+                        last_progress = now
+                    if not stats.stop_requested:
+                        submit_next(pool)
 
         stats.elapsed_seconds = time.time() - start_time
         self._emit_progress(stats, start_time)
@@ -291,6 +333,11 @@ class BulkSyncer:
             stats.files_failed += 1
             stats.errors.append({"file": str(src_file), "error": err})
             logger.error("Transfer failed: %s: %s", src_file.name, err)
+        if self._on_file_result:
+            try:
+                self._on_file_result(src_file, status, nbytes, err)
+            except Exception:
+                logger.debug("Transfer on_file_result callback failed for %s", src_file, exc_info=True)
 
     def _emit_progress(self, stats: TransferStats, start_time: float) -> None:
         if self._on_progress:

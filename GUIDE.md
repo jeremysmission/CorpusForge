@@ -4,6 +4,10 @@
 
 CorpusForge is the ingest pipeline that turns raw source documents into query-ready export packages consumed by HybridRAG V2. It handles download, hash/dedup, parsing, chunking, enrichment, embedding, extraction, and export.
 
+## Daily Workflow
+
+For the current multi-agent, dual-GPU daily operating model, see [DAILY_WORKFLOW_2026-04-08.md](./DAILY_WORKFLOW_2026-04-08.md).
+
 ## Pipeline
 
 Download -> Hash/Dedup -> Parse -> Chunk -> Enrich -> Embed -> Extract -> Export

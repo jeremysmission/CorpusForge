@@ -23,7 +23,7 @@ CorpusForge is an offline, GPU-accelerated document processing pipeline that tra
 
 - Copies new/updated files from configured network source directories to local landing zone
 - Delta detection via mtime and file size comparison
-- Landing zone configurable per-machine via `config.local.yaml`
+- Landing zone configurable via `config/config.yaml`
 
 ### 2.2 Hash and Deduplicate
 
@@ -50,6 +50,7 @@ CorpusForge is an offline, GPU-accelerated document processing pipeline that tra
 - Per-file timeout: 60 seconds (configurable), prevents hung parsers from blocking pipeline
 - OCR fallback: scanned PDFs detected by low text-to-page ratio, routed through pytesseract + Poppler (requires native binaries on PATH)
 - Parse quality scoring: 0.0-1.0 per file based on text coherence, character distribution, and formatting preservation
+- Parse is mostly CPU and I/O bound; low GPU usage during parse is expected until embed/enrichment stages begin
 - Error isolation: try/except per file, error logged, pipeline continues
 - **Measured on 1000-file production sample:** 94.7% parse success rate. Failures: 64% scanned PDFs (needs Tesseract), 26% DOCX form templates (content controls), 10% edge-case PDFs.
 
@@ -69,7 +70,7 @@ CorpusForge is an offline, GPU-accelerated document processing pipeline that tra
 - Prepended to chunk text before embedding: `[context prefix]\n[original text]`
 - **Measured improvement:** 67% retrieval quality gain vs plain text (Sprint 3 A/B test)
 - Fallback: if Ollama unavailable, chunk proceeds with original text (no enrichment)
-- Concurrent workers: 2-3 on Beast (configurable per-machine)
+- Concurrent workers: 2-3 on primary workstation (configurable per-machine)
 - Can be disabled per-run via `--strip-enrichment` or config
 
 ### 2.7 Embed
@@ -112,7 +113,7 @@ Two-pass strategy proven on production data:
 
 ## 3. Hardware Configuration
 
-### 3.1 Beast Workstation (Primary Development)
+### 3.1 Primary Workstation (Primary Development)
 
 ```
 CPU:     High-core-count (16+ threads, 2 reserved for user interaction)
@@ -149,11 +150,12 @@ GPU allocation strategy:
 
 ### 4.1 Config Loading Order
 
-1. `config/config.yaml` — base settings (committed to git)
-2. `config/config.local.yaml` — machine-specific overrides (gitignored)
-3. Pydantic defaults for any missing fields
+1. `config/config.yaml` — live runtime settings (committed to git)
+2. Pydantic defaults for any missing fields
 
-`config.local.yaml` deep-merges over `config.yaml`. Use it for machine-specific settings: workers, GPU index, paths, batch sizes.
+Legacy `config/config.local.yaml` is not part of the active mainline runtime path.
+
+Update `config/config.yaml` for workers, GPU index, paths, batch sizes, parser defer settings, and optional `parse.docling_mode`. GUI Save Settings writes directly to `config/config.yaml`.
 
 ### 4.2 Demo Presets
 

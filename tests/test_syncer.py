@@ -1,5 +1,6 @@
 """Tests for BulkSyncer — atomic copy, SHA-256 verify, resume."""
 
+import os
 from pathlib import Path
 import pytest
 from src.download.syncer import BulkSyncer, TransferStats
@@ -102,3 +103,32 @@ class TestBulkSyncer:
         with pytest.raises(FileNotFoundError):
             syncer = BulkSyncer(tmp_path / "nonexistent", tmp_path / "dest")
             syncer.run()
+
+    def test_copy_preserves_source_mtime(self, sync_dirs):
+        src, dest = sync_dirs
+        source_file = src / "timed.txt"
+        source_file.write_text("timestamped")
+        fixed_time = 1_700_000_000
+        os.utime(source_file, (fixed_time, fixed_time))
+
+        syncer = BulkSyncer(src, dest)
+        syncer.run()
+
+        copied = dest / "timed.txt"
+        assert int(copied.stat().st_mtime) == fixed_time
+
+    def test_on_file_result_callback_receives_each_file(self, sync_dirs):
+        src, dest = sync_dirs
+        (src / "a.txt").write_text("alpha")
+        (src / "b.txt").write_text("beta")
+
+        seen = []
+
+        def on_file_result(path, status, nbytes, err):
+            seen.append((path.name, status, nbytes, err))
+
+        syncer = BulkSyncer(src, dest, on_file_result=on_file_result)
+        syncer.run()
+
+        assert sorted(name for name, _status, _nbytes, _err in seen) == ["a.txt", "b.txt"]
+        assert all(status == "copied" for _name, status, _nbytes, _err in seen)

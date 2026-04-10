@@ -90,6 +90,7 @@ python scripts/audit_corpus.py
 - "Files parsed: 0" = nothing was processed (check source path)
 - "Enrichment disabled" in log = Ollama wasn't running (expected for --strip-enrichment)
 - "OOM backoff" in log = GPU memory pressure (reduce embed_batch_size in config/config.yaml)
+- low GPU usage during parse = expected; parse is mostly CPU/I/O bound and GPU ramps during embed/enrichment
 - Exit code 1 = config error or no files found
 
 ## Export Location
@@ -147,7 +148,9 @@ python scripts/import_embedengine.py --source "C:\CorpusForge\data\output\latest
 
 | File | What | Committed |
 |------|------|-----------|
-| `config/config.yaml` | Runtime config. Edit this file directly for workers, paths, parser defer list, GPU, batch sizes, and optional `parse.docling_mode`. GUI **Save Settings** writes here. Desktop workers: `32`, laptop workers: `20`. | Yes |
+| `config/config.yaml` | Live runtime config. GUI **Save Settings** writes here. Use it for workers, paths, parser defer list, GPU, batch sizes, and optional `parse.docling_mode`. | Yes |
+
+Legacy note: `config/config.local.yaml` is not part of the live mainline runtime path.
 
 ## Parser Env Vars
 
@@ -158,5 +161,6 @@ python scripts/import_embedengine.py --source "C:\CorpusForge\data\output\latest
 
 Preferred control path:
 
-- use `config/config.yaml` for stable workstation behavior
+- use `config/config.yaml` for worker tuning and saved GUI/runtime settings
+- treat `config/config.local.yaml` as legacy unless a side experiment explicitly wires it in
 - use env vars only for temporary overrides or side-by-side parser testing

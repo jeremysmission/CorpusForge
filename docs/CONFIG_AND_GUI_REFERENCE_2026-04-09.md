@@ -485,4 +485,4 @@ Operator rule: hand off the whole `export_YYYYMMDD_HHMM...` folder, not individu
    - `hardware.embed_batch_size` is not yet wired directly into `src/embed/embedder.py`
    - `hardware.gpu_index` is not the active GPU selector in the current launcher path
 
-Signed: Agent 4 | Lane 3
+Signed: reviewer | Lane 3

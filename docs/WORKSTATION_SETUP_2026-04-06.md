@@ -90,7 +90,7 @@ The exact desktop path can differ. CorpusForge resolves its project root from th
 After install, edit `config/config.yaml` directly on that machine:
 
 ```yaml
-# Example config.yaml for Beast workstation
+# Example config.yaml for primary workstation workstation
 parse:
   docling_mode: "off"   # off | fallback | prefer
 

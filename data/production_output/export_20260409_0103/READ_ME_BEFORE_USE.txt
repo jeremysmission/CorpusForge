@@ -86,9 +86,9 @@ in this artifact:
    degraded.
 
 Other documented gaps (environment limitations, NOT bugs):
-   - No Tesseract on Beast → 14,623 .jpg chunks are metadata-only,
+   - No Tesseract on primary workstation → 14,623 .jpg chunks are metadata-only,
      plus 145 of the 534 file failures are scanned PDFs.
-   - No Poppler on Beast → no rasterize-and-OCR fallback.
+   - No Poppler on primary workstation → no rasterize-and-OCR fallback.
    - No GLiNER entity extraction (entities.jsonl is empty by design;
      this is a Phase 2 deliverable for V2 GATE-2).
    - No contextual enrichment (Ollama phi4 too slow at this scale).

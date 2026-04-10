@@ -2,6 +2,34 @@
 
 Purpose: keep the corpus-adaptation lane alive across context loss.
 
+## 2026-04-09 Status
+
+- Slice A: READY FOR QA
+  - profiler run completed against `C:\CorpusForge\ProductionSource\verified\source\verified\IGS`
+  - outputs:
+    - `C:\CorpusForge\data\export\corpus_profile_igs_sample_20260409.json`
+    - `C:\CorpusForge\data\export\corpus_profile_igs_sample_20260409.md`
+    - `C:\CorpusForge\data\export\corpus_adaptation_export_analysis_20260409.json`
+  - reproducible export-analysis generator:
+    - `C:\CorpusForge\scripts\analyze_export_artifacts.py`
+- Slice B: EVIDENCE CAPTURED, NOT YET PROMOTED
+  - exact recursive folder-signature duplicates were `0` in the sample-tree profile
+  - weaker archive-derived and repeated-basename duplicates do show up in the real export artifacts
+  - keep this lane in audit mode until a looser signature heuristic is measured
+- Slice C: INITIAL TUNING EVIDENCE CAPTURED
+  - spreadsheet-heavy travel/admin and inventory/manifest families dominate retrieval-weight
+  - image families dominate file count but mostly produce one short chunk each
+  - drawing/diagram and archive-derived families are visible enough to justify explicit family tags
+- Slice D: INITIAL TUNING EVIDENCE CAPTURED
+  - table/header/path-first extraction should take priority over semantic extraction for the dominant spreadsheet families
+  - XML telemetry/BIT-style failures look like a defer candidate, but only after one more value audit
+- Slice E: INITIAL ROUTING INPUTS IDENTIFIED
+  - high-value retrieval metadata candidates now include `source_extension`, `document_family`, `table_heavy`, `archive_derived`, `image_or_metadata_only`, `parse_quality`, and `reused_basename_flag`
+
+Primary evidence note:
+
+- `C:\CorpusForge\docs\CORPUS_ADAPTATION_EVIDENCE_2026-04-09.md`
+
 ## Slice A: Metadata Profiling
 
 Deliverable:

@@ -50,11 +50,13 @@ def test_load_config_from_yaml(tmp_path):
     cfg.write_text(yaml.dump({
         "chunk": {"size": 800, "overlap": 100},
         "pipeline": {"workers": 4},
+        "nightly_delta": {"transfer_workers": 6},
     }))
     c = load_config(str(cfg))
     assert c.chunk.size == 800
     assert c.chunk.overlap == 100
     assert c.pipeline.workers == 4
+    assert c.nightly_delta.transfer_workers == 6
 
 
 def test_load_config_uses_single_explicit_file(tmp_path):
@@ -76,6 +78,39 @@ def test_load_config_normalizes_defer_extensions(tmp_path):
     }))
     c = load_config(str(cfg))
     assert c.parse.defer_extensions == [".dwg", ".jpg", ".sao", ".rsf"]
+
+
+def test_load_config_resolves_nightly_delta_paths(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.dump({
+        "nightly_delta": {
+            "source_root": "relative_source",
+            "mirror_root": "relative_mirror",
+            "transfer_state_db": "relative_transfer.sqlite3",
+            "manifest_dir": "relative_manifests",
+            "pipeline_output_dir": "relative_output",
+            "pipeline_state_db": "relative_state.sqlite3",
+            "pipeline_log_dir": "relative_logs",
+            "stop_file": "relative_stop.flag",
+        },
+    }))
+    c = load_config(str(cfg))
+    assert Path(c.nightly_delta.source_root).is_absolute()
+    assert Path(c.nightly_delta.mirror_root).is_absolute()
+    assert Path(c.nightly_delta.transfer_state_db).is_absolute()
+    assert Path(c.nightly_delta.manifest_dir).is_absolute()
+    assert Path(c.nightly_delta.pipeline_output_dir).is_absolute()
+    assert Path(c.nightly_delta.pipeline_state_db).is_absolute()
+    assert Path(c.nightly_delta.pipeline_log_dir).is_absolute()
+    assert Path(c.nightly_delta.stop_file).is_absolute()
+
+
+def test_task_start_time_normalizes_and_validates():
+    c = ForgeConfig(nightly_delta={"task_start_time": "2:5"})
+    assert c.nightly_delta.task_start_time == "02:05"
+
+    with pytest.raises(Exception):
+        ForgeConfig(nightly_delta={"task_start_time": "25:00"})
 
 
 # --- validation ---

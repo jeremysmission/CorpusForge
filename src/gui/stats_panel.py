@@ -65,7 +65,8 @@ class StatsPanel:
             ("stage_progress", "Stage progress:"),
             ("current_file", "Current file:"),
             ("elapsed", "Elapsed time:"),
-            ("throughput", "Throughput:"),
+            ("throughput", "Files/sec:"),
+            ("chunks_per_second", "Chunks/sec:"),
             ("eta", "ETA:"),
             ("skip_reasons", "Skip reasons:"),
         ]
@@ -129,14 +130,24 @@ class StatsPanel:
         self._stat_labels["vectors_created"].configure(
             text=str(stats.get("vectors_created", 0)),
         )
+        chunk_rate = stats.get("chunks_per_second", 0.0) or 0.0
+        if chunk_rate > 0:
+            self._stat_labels["chunks_per_second"].configure(
+                text=f"{chunk_rate:.1f}",
+            )
+        else:
+            self._stat_labels["chunks_per_second"].configure(text="--")
 
         skip_reasons = stats.get("skip_reasons", "")
         self._stat_labels["skip_reasons"].configure(
             text=skip_reasons if skip_reasons else "--",
         )
 
-        if self._start_time:
+        elapsed = stats.get("elapsed_seconds", 0.0)
+        if elapsed <= 0 and self._start_time:
             elapsed = time.time() - self._start_time
+        if elapsed > 0:
+            self._stat_labels["elapsed"].configure(text=_format_elapsed(elapsed))
             if elapsed > 0 and done > 0:
                 rate = done / elapsed
                 self._stat_labels["throughput"].configure(
@@ -152,7 +163,18 @@ class StatsPanel:
                     self._stat_labels["eta"].configure(text="--")
 
     def update_stage_progress(self, stage: str, current: int, total: int, detail: str = ""):
-        stage_display = stage.replace("_", " ").title()
+        stage_map = {
+            "discover": "Discover (CPU/IO)",
+            "dedup": "Dedup (CPU/IO)",
+            "parse": "Parse (CPU/IO)",
+            "chunk": "Chunk (CPU)",
+            "enrich": "Enrich (Ollama)",
+            "embed": "Embed (GPU)",
+            "extract": "Extract (CPU)",
+            "export": "Export (CPU/IO)",
+            "stopping": "Stopping",
+        }
+        stage_display = stage_map.get(stage, stage.replace("_", " ").title())
         detail_display = detail
         if len(detail_display) > 70:
             detail_display = detail_display[:67] + "..."
@@ -165,6 +187,8 @@ class StatsPanel:
             pct = min(100.0, (current / total) * 100.0)
             self._progress_var.set(pct)
             self._progress_label.configure(text=f"{stage_display} {current} / {total}")
+        elif stage == "stopping":
+            self._progress_label.configure(text="Stopping safely...")
 
     def update_current_file(self, filename: str):
         display = filename
@@ -175,10 +199,13 @@ class StatsPanel:
     def finalize(self, stats: dict):
         """Set final state after pipeline completes."""
         elapsed = stats.get("elapsed_seconds", 0)
+        stop_requested = bool(stats.get("stop_requested"))
         self._stat_labels["elapsed"].configure(text=_format_elapsed(elapsed))
-        self._stat_labels["eta"].configure(text="Done")
-        self._stat_labels["stage"].configure(text="Done")
-        self._stat_labels["stage_progress"].configure(text="Completed")
+        self._stat_labels["eta"].configure(text="Stopped" if stop_requested else "Done")
+        self._stat_labels["stage"].configure(text="Stopped" if stop_requested else "Done")
+        self._stat_labels["stage_progress"].configure(
+            text="Stopped cleanly after in-flight work" if stop_requested else "Completed"
+        )
         self._stat_labels["current_file"].configure(text="--")
 
         total = stats.get("files_found", 0)
@@ -188,10 +215,20 @@ class StatsPanel:
         skipped = stats.get("files_skipped", 0)
         done = parsed + failed + skipped
         if work_total > 0:
-            self._progress_var.set(100.0)
-            if total > work_total:
-                self._progress_label.configure(
-                    text=f"Done ({done}/{work_total} work files, {total} discovered)"
-                )
+            if stop_requested:
+                pct = min(100.0, (done / work_total) * 100.0)
+                self._progress_var.set(pct)
+                if total > work_total:
+                    self._progress_label.configure(
+                        text=f"Stopped ({done}/{work_total} work files, {total} discovered)"
+                    )
+                else:
+                    self._progress_label.configure(text=f"Stopped ({done}/{work_total} work files)")
             else:
-                self._progress_label.configure(text=f"Done ({done}/{work_total} work files)")
+                self._progress_var.set(100.0)
+                if total > work_total:
+                    self._progress_label.configure(
+                        text=f"Done ({done}/{work_total} work files, {total} discovered)"
+                    )
+                else:
+                    self._progress_label.configure(text=f"Done ({done}/{work_total} work files)")

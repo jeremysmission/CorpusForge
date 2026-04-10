@@ -80,4 +80,4 @@ Crash-safety note:
 - This lane is no longer local-only.
 - The reference and handoff note are committed and pushed in `0d7c5ab`.
 
-Signed: Agent 4 | Lane 3
+Signed: reviewer | Lane 3

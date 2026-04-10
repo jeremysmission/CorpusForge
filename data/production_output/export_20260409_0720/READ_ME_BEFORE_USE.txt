@@ -38,7 +38,7 @@ counts an empty parse result as "files_failed" rather than
 extension skipping. This is a semantic mislabeling, not a real failure.
 
 The remaining ~518 failures are the same baseline as Run 5: 314 BIT.XML
-sensor files, 145 scanned PDFs (no Poppler/Tesseract on Beast), 60
+sensor files, 145 scanned PDFs (no Poppler/Tesseract on primary workstation), 60
 empty/corrupted DOCX, etc. See failures_run6.txt for detail (will be
 written by a follow-up task if QA needs it).
 
@@ -71,7 +71,7 @@ operators to remember to apply the filter.
 Format coverage (top 15 by chunk count)
 ---------------------------------------
     .xlsx:  189,862  (logistics packing lists — primary value)
-    .jpg:    14,623  (metadata-only — no Tesseract on Beast)
+    .jpg:    14,623  (metadata-only — no Tesseract on primary workstation)
     .pdf:    14,324  (text-layer only)
     .txt:    11,201
     .rtf:     5,194
@@ -99,7 +99,7 @@ Still-open items inherited from Run 5
    archive-defer fix plumbing) were also active. Reviewer must
    commit-split or accept before this can claim full provenance.
 
-3. Tesseract + Poppler not installed on Beast. ~14,623 JPGs are
+3. Tesseract + Poppler not installed on primary workstation. ~14,623 JPGs are
    metadata-only and ~145 scanned PDFs failed parse. Environment
    limitation, not a code bug.
 

@@ -67,13 +67,13 @@ Sprint 6.6 production corpus ingest — Phase 1 (parse + chunk + embed, no enric
 
 ## Known Gaps
 
-### Tesseract NOT installed on Beast
+### Tesseract NOT installed on primary workstation
 - `where.exe tesseract` → NOT FOUND
 - Impact: 29,500 JPG/JPEG/PNG images get metadata-only fallback (filename, size, dimensions)
 - No OCR text extraction from images
 - **DO NOT claim OCR/scanned-doc coverage on this machine**
 
-### Poppler (pdftoppm) NOT installed on Beast
+### Poppler (pdftoppm) NOT installed on primary workstation
 - `where.exe pdftoppm` → NOT FOUND
 - Impact: Scanned PDFs with no embedded text layer will produce empty/minimal text
 - PDFs with embedded text (digital-native) parse fully via pdfplumber
@@ -176,7 +176,7 @@ CUDA_VISIBLE_DEVICES=1 python scripts/run_pipeline.py --input ProductionSource/v
 
 ### 23:55 MDT — Run 3 OOM (same as Run 2), Run 4 launched with SAO/RSF deferred
 - Run 3 also OOM'd during embed sub-batch 3 (~20GB RAM peak)
-- Root cause: 2.2M chunks (77% from SAO/RSF atmospheric data) exceeds Beast 63GB RAM during embedding
+- Root cause: 2.2M chunks (77% from SAO/RSF atmospheric data) exceeds primary workstation 63GB RAM during embedding
 - Decision: Defer SAO/RSF to Phase 2 — these are raw scientific data, not core demo content
 - Run 4 config: `parse.defer_extensions: [".sao", ".rsf"]` in config.local.yaml
 - SAO deferred: 2,776 files. RSF deferred: 2,758 files. Still hashed for manifest.
@@ -229,7 +229,7 @@ CUDA_VISIBLE_DEVICES=1 python scripts/run_pipeline.py --input ProductionSource/v
 | skip_manifest.json | 1.1 MB | All deferred/skipped files inventory |
 
 #### Hardware / Environment
-- **Workstation:** Beast (dual RTX 3090 24GB, 16 logical CPU threads, 63 GB RAM)
+- **Workstation:** primary workstation (CUDA-capable, 16 logical CPU threads, 63 GB RAM)
 - **Compute GPU:** Physical GPU 1 (logical cuda:0 via CUDA_VISIBLE_DEVICES=1)
 - **GPU selection rule applied:** lesser-used GPU at start (GPU 1: 55 MiB vs GPU 0: 67 MiB)
 - **Embedding model:** nomic-ai/nomic-embed-text-v1.5 (768-dim, float16)
@@ -252,7 +252,7 @@ CUDA_VISIBLE_DEVICES=1 python scripts/run_pipeline.py --input ProductionSource/v
 - ✅ Text-native documents covered: PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, TXT, XML, MSG, HTML, ZIP contents
 - ✅ Embeddings produced: 344K chunks × 768 dims float16
 - ✅ Dedup applied: 50% reduction from 53,750 → 27,015 unique
-- ❌ **NO OCR coverage** — Tesseract NOT installed on Beast (`where.exe tesseract` → NOT FOUND)
+- ❌ **NO OCR coverage** — Tesseract NOT installed on primary workstation (`where.exe tesseract` → NOT FOUND)
 - ❌ **NO scanned PDF text layer** — Poppler NOT installed (`where.exe pdftoppm` → NOT FOUND)
 - ❌ **Image content NOT indexed** — 14,623 JPGs + 612 JPEG/PNG/etc. = metadata-only chunks (filename, size, dimensions)
 - ❌ **SAO/RSF atmospheric data NOT indexed** in this run — 2,767 files deferred (Phase 2 follow-up needed if engineer persona requires raw scientific data)
@@ -280,7 +280,7 @@ cd /c/CorpusForge && CUDA_VISIBLE_DEVICES=0 .venv/Scripts/python.exe scripts/run
 ```
 
 #### Phase 2 Plan (Future Work)
-1. **Install Tesseract + Poppler** on Beast (or run on a machine that has them) to cover OCR + scanned PDFs
+1. **Install Tesseract + Poppler** on primary workstation (or run on a machine that has them) to cover OCR + scanned PDFs
 2. **Run extraction pass** (GLiNER on GPU) on existing chunks.jsonl → produce entities.jsonl
 3. **Run separate embed pass** on SAO/RSF files in chunks of ~50K chunks with the sub-batch mechanism — only if engineer persona needs raw scientific data
 4. **Optional enrichment pass** via AWS AI endpoint (faster than local phi4 at scale)
@@ -360,7 +360,7 @@ Written to `C:\CorpusForge\data\production_output\export_20260409_0103\failures_
 | Extension | Count | Likely root cause |
 |-----------|-------|-------------------|
 | .xml | 314 | Ionogram `BIT.XML` (Built-In Test) sensor files. XmlParser does not extract content from this schema-specific element layout. |
-| .pdf | 145 | Scanned PDFs with no embedded text layer. `pdfplumber` returns empty. **Poppler not installed on Beast** — would have enabled the rasterize-and-OCR fallback (which would also need Tesseract). |
+| .pdf | 145 | Scanned PDFs with no embedded text layer. `pdfplumber` returns empty. **Poppler not installed on primary workstation** — would have enabled the rasterize-and-OCR fallback (which would also need Tesseract). |
 | .docx | 60 | DOCX files with no body text (image-only, embedded-object-only, or empty). |
 | .pptx | 12 | PPTX with text only inside shapes/images that python-pptx does not extract. |
 | .xlsx | 2 | Empty workbooks or formula-only sheets. |
@@ -449,7 +449,7 @@ else:
 | 3 | ZIP recursion leaks deferred SAO/RSF data (~102K chunks in `.zip`) | MEDIUM | Re-defer at the archive_parser level if needed |
 | 4 | Both code changes shipped without tests | MEDIUM | Add regression tests for `_embed_chunks` sub-batch path and embedder CUDA_VISIBLE_DEVICES handling |
 | 5 | Linter/other edits in pipeline.py shipped unreviewed in same working copy | MEDIUM | Diff against `origin/master`, decide commit boundaries |
-| 6 | 145 scanned PDFs failed (no Tesseract/Poppler on Beast) | MEDIUM | Re-run on a machine with Tesseract+Poppler (NOT Beast — system install rule) |
+| 6 | 145 scanned PDFs failed (no Tesseract/Poppler on primary workstation) | MEDIUM | Re-run on a machine with Tesseract+Poppler (NOT primary workstation — system install rule) |
 | 7 | 314 BIT.XML files produced empty parse | LOW | Schema-specific XML parser would help, low retrieval value |
 | 8 | 4 of 5 production runs failed before success (20% success rate) | MEDIUM | Both bugs are now fixed in code, but only Run 5 path is proven |
 | 9 | Process repeatedly held stale CUDA contexts on GPU 1 between crashes | LOW | nvidia-smi clears on process termination eventually |
@@ -546,8 +546,8 @@ The legacy `.ppt` parser at `src/parse/parsers/ppt_parser.py` returns these cont
 - ✅ Top-level SAO/RSF defer: worked (0 top-level chunks)
 - ❌ **SAO/RSF defer DID NOT propagate into ZIP archives** — 100,055 SAO chunks leaked via `*.SAO.zip` recursion (29.1% of export)
 - ❌ **`.ppt` (legacy) coverage is degraded** — 178 garbage chunks with falsely high quality score
-- ❌ No OCR (no Tesseract on Beast)
-- ❌ No scanned-PDF text layer (no Poppler on Beast) — accounts for 145 of the 534 Empty parse failures
+- ❌ No OCR (no Tesseract on primary workstation)
+- ❌ No scanned-PDF text layer (no Poppler on primary workstation) — accounts for 145 of the 534 Empty parse failures
 - ❌ No GLiNER entity extraction (Phase 2)
 - ❌ No contextual enrichment (deferred — too slow at scale)
 - ❌ Code state is unbounded — Run 5 ran from a dirty working copy that includes unreviewed pipeline.py edits beyond reviewer's two fixes
@@ -603,7 +603,7 @@ The two paths are operationally equivalent. The 0.6% difference is plausibly acc
 
 This is a **semantic mislabeling**, not real failures. Breakdown:
 - ~6,550 are `.SAO.zip` archives that the new archive-defer fix correctly refuses to extract — `ArchiveParser.parse()` returns an empty doc at entry when the archive's basename has a deferred dot-segment. The pipeline accounting then counts the empty parse result as `files_failed++` because the SkipManager only handles top-level extension skipping, not the new archive-name-segment defer.
-- ~518 are the same baseline as Run 5: 314 BIT.XML sensor files (XmlParser returns empty), 145 scanned PDFs (no Tesseract/Poppler on Beast), 60 empty/corrupted DOCX, 12 PPTX, 2 XLSX, 1 ZIP.
+- ~518 are the same baseline as Run 5: 314 BIT.XML sensor files (XmlParser returns empty), 145 scanned PDFs (no Tesseract/Poppler on primary workstation), 60 empty/corrupted DOCX, 12 PPTX, 2 XLSX, 1 ZIP.
 
 A future cleanup could move the deferred-archive case from `files_failed` to `files_skipped` for accurate accounting, but the chunks-and-vectors output is unaffected.
 
@@ -651,7 +651,7 @@ The V2 `--exclude-source-glob` flag and the durable `import_report_*.json` artif
 | Code-state provenance in `src/pipeline.py` | UNRESOLVED — linter/other edits still need commit-split or accept |
 | `.ppt` legacy parser garbage (178 chunks in Run 6) | UNRESOLVED — recommend filtering at V2 import or accepting low impact |
 | Forge 6.1-6.5 QA gate | UNRESOLVED — coordinator decision |
-| Tesseract / Poppler on Beast | NOT ACTIONABLE on Beast (system PATH rule) — accept as environment limitation |
+| Tesseract / Poppler on primary workstation | NOT ACTIONABLE on primary workstation (system PATH rule) — accept as environment limitation |
 | GLiNER entities (V2 GATE-2) | DEFERRED to Phase 2 by design |
 
 ### Sprint 6.6 outcome

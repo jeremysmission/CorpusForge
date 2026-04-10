@@ -1,6 +1,6 @@
 # Simulation Data — Dedup Findings
 
-**Date:** 2026-04-08 | **Author:** Agent 1 (Forge Coder)
+**Date:** 2026-04-08 | **Author:** reviewer (Forge Coder)
 **Data Source:** C:\CorpusForge\ProductionSource\verified\source\verified\ (87 GB)
 
 ---
@@ -97,4 +97,4 @@ Content-hash dedup catches additional cross-name duplicates (same content, diffe
 
 ---
 
-Signed: Agent 1 (Forge Coder) | CorpusForge | 2026-04-08 | MDT
+Signed: reviewer (Forge Coder) | CorpusForge | 2026-04-08 | MDT

@@ -1,6 +1,6 @@
 # Install Path Validation Evidence
 
-**Date:** 2026-04-08 MDT | **Author:** CoPilot+ | **Machine:** Beast (Windows 11, dual 3090)
+**Date:** 2026-04-08 MDT | **Author:** CoPilot+ | **Machine:** primary workstation (Windows 11, CUDA-capable)
 
 ---
 
@@ -35,7 +35,7 @@
 | 5. pip + pip-system-certs | Auto | PASS | pip upgraded, certs installed |
 | 6. Install torch | `pip install torch==2.7.1 --index-url .../cu128` | PASS | Attempt 1/3 succeeded |
 | 7. Install requirements | `pip install -r requirements.txt` | PASS | Attempt 1/3 succeeded |
-| 8. Verify CUDA torch | Auto | PASS | torch 2.7.1+cu128, CUDA=True, 2 GPUs |
+| 8. Verify CUDA torch | Auto | PASS | torch 2.7.1+cu128, CUDA=True, CUDA devices detected |
 | 9. Verify key imports | 16 packages checked | PASS | All 16/16 pass |
 | 10. Check Ollama | HTTP probe to localhost:11434 | PASS (manual) | v0.20.0 running |
 | 11. Check OCR | where tesseract, where pdftoppm | WARN | Both missing (expected) |
@@ -60,7 +60,7 @@
 | 6. Install torch | Auto (3 attempts) | **FAIL** | `[Errno 28] No space left on device` — 2.6 GB free, torch wheel = 3.27 GB |
 | 6b. Manual torch | `pip install torch==2.7.1 --index-url .../cu128` | PASS | After freeing 6 GB of disk space |
 | 7. Install requirements | `pip install -r requirements.txt` | PASS | All packages installed |
-| 8. Verify CUDA torch | Manual | PASS | torch 2.7.1+cu128, CUDA=True, 2 GPUs |
+| 8. Verify CUDA torch | Manual | PASS | torch 2.7.1+cu128, CUDA=True, CUDA devices detected |
 | 9. Verify key imports | Manual (8 key packages) | PASS | lancedb, sentence-transformers, openai, flashrank, gliner, pydantic, fastapi all OK |
 | **Boot check** | `python scripts/boot.py` | PASS | "V2 ready." API Base=NOT SET (expected, no API key) |
 | **Test suite** | `pytest tests/ -x -q` | PASS | **88/88 tests pass** in 1.9s |

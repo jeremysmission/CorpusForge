@@ -30,12 +30,12 @@
 
 **CorpusForge:**
 - [ ] `src/config/schema.py` — Pydantic schema: source paths, output path, chunk size/overlap, embed model, GPU settings
-- [ ] `config/config.yaml` — single config, beast preset defaults
+- [ ] `config/config.yaml` — single config, primary workstation preset defaults
 - [ ] Boot script: load config → validate → print "CorpusForge ready"
 
 **HybridRAG V2:**
 - [ ] `src/config/schema.py` — Pydantic schema: LanceDB path, SQLite path, LLM settings, retrieval settings, hardware preset
-- [ ] `config/config.yaml` — single config, no modes, beast preset defaults
+- [ ] `config/config.yaml` — single config, no modes, primary workstation preset defaults
 - [ ] Boot script: load config → validate → print "V2 ready"
 
 **Exit:** Both apps boot and validate config without errors.
@@ -249,7 +249,7 @@
 - [ ] Benchmark all query types on production data
 - [ ] Tune: LanceDB index settings, FlashRank top-N, retrieval depth, RRF weights
 - [ ] Target: P50 < 3s, P95 < 10s
-- [ ] Memory profiling on Beast and laptop
+- [ ] Memory profiling on primary workstation and laptop
 - [ ] CorpusForge incremental nightly target: < 90 minutes
 
 ### Slice 4.3: Demo Prep (Day 26-28)

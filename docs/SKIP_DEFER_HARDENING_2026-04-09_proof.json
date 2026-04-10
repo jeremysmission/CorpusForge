@@ -1,0 +1,20 @@
+{
+  "source_export": "data\\production_output\\export_20260409_0720\\chunks.jsonl",
+  "total_chunks_scanned": 242650,
+  "image_asset_chunks_total": 15239,
+  "image_asset_chunks_metadata_only": 15237,
+  "image_asset_chunks_with_real_text": 2,
+  "unique_image_source_paths": 15239,
+  "encrypted_filename_cue_chunks": 0,
+  "counterfactual_if_rules_active": {
+    "chunks_eliminated_by_image_skip_when_ocr_disabled": 15237,
+    "chunks_eliminated_by_encrypted_name_cue": 0,
+    "total_chunks_eliminated": 15237,
+    "percent_of_corpus_eliminated": 6.28
+  },
+  "notes": [
+    "Real text from images (2 chunks) would still be captured under ocr_mode=auto/force.",
+    "This counterfactual does NOT delete anything \u2014 it replays the new gates against the Run 6 export.",
+    "Hash continuity is preserved: every skipped file still appears in skip_manifest.json with its SHA-256."
+  ]
+}

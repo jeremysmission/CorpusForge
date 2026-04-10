@@ -315,7 +315,7 @@ The GUI is for monitoring only — the pipeline runs headless via scheduled task
 
 ## 9. Scheduling
 
-### Windows Task Scheduler (Beast Workstation)
+### Windows Task Scheduler (primary workstation Workstation)
 
 ```
 Task: CorpusForge Nightly Pipeline

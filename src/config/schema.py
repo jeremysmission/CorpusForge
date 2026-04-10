@@ -148,7 +148,7 @@ class EnrichConfig(BaseModel):
         default=2,
         ge=1, le=8,
         description="Concurrent enrichment requests to Ollama. "
-                    "Higher = faster but needs more GPU VRAM. Beast: 2-3.",
+                    "Higher = faster but needs more GPU VRAM. primary workstation: 2-3.",
     )
 
 
@@ -176,13 +176,13 @@ class ExtractConfig(BaseModel):
         default=16,
         ge=1, le=128,
         description="Batch size for GLiNER inference. Higher = faster but more RAM. "
-                    "Beast: 16, workstation: 20-32.",
+                    "primary workstation: 16, workstation: 20-32.",
     )
     max_concurrent: int = Field(
         default=4,
         ge=1, le=32,
         description="Concurrent extraction workers. Each worker processes one batch. "
-                    "Beast: 16.",
+                    "primary workstation: 16.",
     )
 
 
@@ -198,11 +198,89 @@ class PipelineConfig(BaseModel):
         le=32,
         description=(
             "Parallel parser workers, sized by logical CPU threads rather than physical cores. "
-            "Common values: desktop 32, laptop 20, Beast 16."
+            "Common values: desktop 32, laptop 20, primary workstation 16."
         ),
     )
     stale_future_timeout: int = Field(default=120, ge=30, description="Seconds before watchdog kills a hung parser.")
     embed_flush_batch: int = Field(default=512, ge=32, description="Chunks accumulated before flushing to GPU embed.")
+
+
+class NightlyDeltaConfig(BaseModel):
+    """Nightly delta ingest settings for scheduled development runs."""
+
+    enabled: bool = Field(default=False, description="Enable the nightly delta ingest lane.")
+    source_root: str = Field(
+        default="ProductionSource/verified/source/verified/IGS",
+        description="Upstream source root to scan for new or changed files.",
+    )
+    mirror_root: str = Field(
+        default="data/nightly_delta/source_mirror",
+        description="Local mirror root on C: that receives nightly delta copies.",
+    )
+    transfer_state_db: str = Field(
+        default="data/nightly_delta/source_transfer_state.sqlite3",
+        description="SQLite state DB tracking source-side delta scan and mirror resume state.",
+    )
+    manifest_dir: str = Field(
+        default="data/nightly_delta/manifests",
+        description="Directory for manifest, input-list, and report artifacts.",
+    )
+    pipeline_output_dir: Optional[str] = Field(
+        default=None,
+        description="Optional override for the pipeline export directory. Defaults to paths.output_dir when omitted.",
+    )
+    pipeline_state_db: Optional[str] = Field(
+        default=None,
+        description="Optional override for the pipeline state DB. Defaults to paths.state_db when omitted.",
+    )
+    pipeline_log_dir: str = Field(
+        default="logs/nightly_delta",
+        description="Directory for nightly pipeline logs.",
+    )
+    stop_file: str = Field(
+        default="data/nightly_delta/nightly_delta.stop",
+        description="Sentinel file path. When present, the nightly delta runner stops cleanly at the next stage boundary.",
+    )
+    transfer_workers: int = Field(
+        default=8,
+        ge=1,
+        le=64,
+        description="Parallel copy workers for source-to-mirror delta transfer.",
+    )
+    canary_globs: list[str] = Field(
+        default_factory=lambda: ["*nightly_canary*", "*canary*"],
+        description="Filename globs surfaced separately in delta reports for canary validation.",
+    )
+    require_canary: bool = Field(
+        default=False,
+        description="Fail the nightly run if no canary file appears in the detected delta set.",
+    )
+    max_files: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Optional cap on delta files for proof runs or controlled testing.",
+    )
+    task_name: str = Field(
+        default="CorpusForge Nightly Delta",
+        description="Windows Task Scheduler task name used by the install helper.",
+    )
+    task_start_time: str = Field(
+        default="02:00",
+        description="Daily task start time in HH:MM 24-hour format.",
+    )
+
+    @field_validator("task_start_time")
+    @classmethod
+    def validate_task_start_time(cls, v: str) -> str:
+        parts = v.split(":")
+        if len(parts) != 2:
+            raise ValueError("task_start_time must use HH:MM 24-hour format")
+        hour, minute = parts
+        if not (hour.isdigit() and minute.isdigit()):
+            raise ValueError("task_start_time must use HH:MM 24-hour format")
+        if not (0 <= int(hour) <= 23 and 0 <= int(minute) <= 59):
+            raise ValueError("task_start_time must use a valid 24-hour time")
+        return f"{int(hour):02d}:{int(minute):02d}"
 
 
 class HardwarePreset(BaseModel):
@@ -232,6 +310,7 @@ class ForgeConfig(BaseModel):
     enrich: EnrichConfig = Field(default_factory=EnrichConfig)
     extract: ExtractConfig = Field(default_factory=ExtractConfig)
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
+    nightly_delta: NightlyDeltaConfig = Field(default_factory=NightlyDeltaConfig)
     hardware: HardwarePreset = Field(default_factory=HardwarePreset)
 
 
@@ -302,6 +381,25 @@ def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
         entry_path = Path(value)
         if not entry_path.is_absolute():
             paths[key] = str((PROJECT_ROOT / entry_path).resolve())
+
+    nightly_delta = raw.setdefault("nightly_delta", {})
+    nightly_path_keys = (
+        "source_root",
+        "mirror_root",
+        "transfer_state_db",
+        "manifest_dir",
+        "pipeline_output_dir",
+        "pipeline_state_db",
+        "pipeline_log_dir",
+        "stop_file",
+    )
+    for key in nightly_path_keys:
+        value = nightly_delta.get(key)
+        if not value:
+            continue
+        entry_path = Path(value)
+        if not entry_path.is_absolute():
+            nightly_delta[key] = str((PROJECT_ROOT / entry_path).resolve())
 
     runtime_raw = dict(raw)
     runtime_raw.pop("skip", None)

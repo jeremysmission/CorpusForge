@@ -16,7 +16,7 @@ Sample (first 5):
   ... and 309 more
 
 ### .pdf (145 files)
-Likely cause: scanned PDFs with no embedded text layer. pdfplumber returns empty text. Poppler not installed on Beast — would have enabled image-based fallback.
+Likely cause: scanned PDFs with no embedded text layer. pdfplumber returns empty text. Poppler not installed on primary workstation — would have enabled image-based fallback.
 
 Sample (first 5):
   - DCS (14-0001)_Trip Report (CDRL A045B)_Alpena Allied Support Verification Trip (15-18 Dec 13).pdf

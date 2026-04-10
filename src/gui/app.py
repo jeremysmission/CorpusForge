@@ -293,7 +293,7 @@ class CorpusForgeApp:
         self.precheck_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.stop_btn = ttk.Button(
-            row2, text="Stop", style="Tertiary.TButton",
+            row2, text="Stop Safely", style="Tertiary.TButton",
             command=self._on_stop_click, state=tk.DISABLED,
         )
         self.stop_btn.pack(side=tk.LEFT, padx=(0, 12))
@@ -431,7 +431,17 @@ class CorpusForgeApp:
     def _on_stop_click(self):
         if self._on_stop:
             self._on_stop()
-        self.append_log("Pipeline stop requested by user.", "WARNING")
+        self.stop_btn.configure(state=tk.DISABLED, text="Stopping...")
+        self.update_stage_progress(
+            "stopping",
+            0,
+            0,
+            "Finishing in-flight file/stage, then packaging completed work.",
+        )
+        self.append_log(
+            "Safe stop requested. CorpusForge will not admit new files, will finish in-flight work, then package completed output.",
+            "WARNING",
+        )
 
     def _on_precheck_click(self):
         if self._on_precheck:
@@ -469,7 +479,7 @@ class CorpusForgeApp:
         if running:
             self.start_btn.configure(state=tk.DISABLED)
             self.precheck_btn.configure(state=tk.DISABLED)
-            self.stop_btn.configure(state=tk.NORMAL)
+            self.stop_btn.configure(state=tk.NORMAL, text="Stop Safely")
             self.browse_src_btn.configure(state=tk.DISABLED)
             self.browse_out_btn.configure(state=tk.DISABLED)
             self.source_entry.configure(state=tk.DISABLED)
@@ -478,7 +488,7 @@ class CorpusForgeApp:
         else:
             self.start_btn.configure(state=tk.NORMAL)
             self.precheck_btn.configure(state=tk.NORMAL)
-            self.stop_btn.configure(state=tk.DISABLED)
+            self.stop_btn.configure(state=tk.DISABLED, text="Stop Safely")
             self.browse_src_btn.configure(state=tk.NORMAL)
             self.browse_out_btn.configure(state=tk.NORMAL)
             self.source_entry.configure(state=tk.NORMAL)
@@ -534,11 +544,29 @@ class CorpusForgeApp:
         parsed = stats.get("files_parsed", 0)
         failed = stats.get("files_failed", 0)
         skipped = stats.get("files_skipped", 0)
-        self.append_log(
-            f"Pipeline complete: {parsed} parsed, {failed} failed, "
-            f"{skipped} skipped in {elapsed:.1f}s",
-            "INFO",
-        )
+        if stats.get("stop_requested"):
+            export_dir = stats.get("export_dir") or ""
+            if export_dir:
+                self.append_log(
+                    f"Pipeline stopped cleanly: {parsed} parsed, {failed} failed, "
+                    f"{skipped} skipped in {elapsed:.1f}s. "
+                    f"Completed work was packaged at {export_dir}; remaining files stay resumable.",
+                    "WARNING",
+                )
+            else:
+                self.append_log(
+                    f"Pipeline stopped cleanly: {parsed} parsed, {failed} failed, "
+                    f"{skipped} skipped in {elapsed:.1f}s. "
+                    f"No export was written (stop fired before any packageable work was ready); "
+                    f"hashed files stay resumable on the next run.",
+                    "WARNING",
+                )
+        else:
+            self.append_log(
+                f"Pipeline complete: {parsed} parsed, {failed} failed, "
+                f"{skipped} skipped in {elapsed:.1f}s",
+                "INFO",
+            )
 
     def _update_status_bar(self):
         """Refresh status bar labels with current config info."""

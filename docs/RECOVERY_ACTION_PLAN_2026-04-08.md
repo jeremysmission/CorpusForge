@@ -11,7 +11,7 @@
 ### CorpusForge
 - Sprints 1-5 complete, all QA passed
 - 89 tests passing, sanitizer clean
-- Per-role corpus runs on Beast: field_engineer (312K chunks), logistics, autocad, bulk_stress_test completed; cyber_security, system_admin still running; engineering, program_management failed (bash variable bug, need re-run)
+- Per-role corpus runs on primary workstation: field_engineer (312K chunks), logistics, autocad, bulk_stress_test completed; cyber_security, system_admin still running; engineering, program_management failed (bash variable bug, need re-run)
 - Tiered extraction implemented: Tier 1 regex at 4,238 chunks/sec (V2 side)
 - GLiNER on CPU at 1 chunk/sec — unusable at full scale, GPU acceleration pending
 
@@ -23,7 +23,7 @@
 - Demo-ready pending fresh production corpus
 
 ### Infrastructure
-- Beast: Dual RTX 3090, 16 threads, both GPUs available
+- primary workstation: CUDA-capable development workstation, 16 threads
 - Work Desktop: 32-thread CPU, single GPU
 - Work Laptop: 20-thread CPU, single GPU
 - AWS AI endpoint: Successfully tested, available for chunk enrichment
@@ -32,10 +32,10 @@
 
 ## Big Poles in the Tent
 
-1. **Fresh 700GB source pull + reindex** — Production corpus lives on work machines. Everything tested so far was Beast test subset.
+1. **Fresh 700GB source pull + reindex** — Production corpus lives on work machines. Everything tested so far was primary workstation test subset.
 2. **Dedup before chunking** — V1 lesson: 55.6% was junk. Run dedup on fresh 700GB BEFORE burning GPU cycles on chunking.
 3. **GLiNER extraction speed** — 1 chunk/sec CPU unusable at scale. Tiered Tier 1 regex handles 60-70% at 4,238/sec. Tier 2 GLiNER GPU acceleration not yet benchmarked.
-4. **AWS AI enrichment** — Tested endpoint works. If chunk enrichment succeeds, offloads phi4 from Beast, runs in parallel with local indexing.
+4. **AWS AI enrichment** — Tested endpoint works. If chunk enrichment succeeds, offloads phi4 from primary workstation, runs in parallel with local indexing.
 5. **V2 entity store clean rebuild** — Mixed V1+V2 data. Needs full wipe and re-import from fresh Forge exports.
 
 ---
@@ -70,7 +70,7 @@
 
 ---
 
-## Beast Actions (Home)
+## primary workstation Actions (Home)
 
 ### Immediate
 1. Let cyber_security and system_admin per-role runs finish
@@ -78,7 +78,7 @@
 3. Compile per-persona coverage report from all completed role directories
 
 ### After Work Data Arrives
-1. Beast becomes dedup + quality review machine
+1. primary workstation becomes dedup + quality review machine
 2. Run document-level dedup on 700GB pull
 3. Run Forge full pipeline (parse + embed + extract) on deduped canonical set
 4. Export to V2 — clean entity store rebuild
@@ -93,11 +93,11 @@
 | Slice | What | Where | Priority |
 |-------|------|-------|----------|
 | 6.1 | Pull fresh 700GB source data | Work machines | P0 |
-| 6.2 | Chunk-only dedup pass (no GPU, fast) | Work machines or Beast | P0 |
-| 6.3 | Dedup review + canonical file list freeze | Beast | P0 |
-| 6.4 | Full pipeline on canonical set (CUDA embed + extract) | Beast or work desktop (32 threads) | P0 |
+| 6.2 | Chunk-only dedup pass (no GPU, fast) | Work machines or primary workstation | P0 |
+| 6.3 | Dedup review + canonical file list freeze | primary workstation | P0 |
+| 6.4 | Full pipeline on canonical set (CUDA embed + extract) | primary workstation or work desktop (32 threads) | P0 |
 | 6.5 | AWS enrichment test on chunk subset | Work machines (API access) | P1 |
-| 6.6 | Export and deliver to V2 | Beast | P0 |
+| 6.6 | Export and deliver to V2 | primary workstation | P0 |
 
 **Exit Criteria:** Deduped canonical corpus chunked, embedded, entities extracted, exported for V2 import.
 
@@ -118,19 +118,19 @@
 
 | Time | Action | Where |
 |------|--------|-------|
-| Morning | Review overnight results, prod stale agents | Beast |
+| Morning | Review overnight results, prod stale agents | primary workstation |
 | At work | Pull 700GB source data to staging | Work machine |
 | At work | git pull both repos, set up config.local.yaml | Work machines |
 | At work | Test AWS enrichment on chunk subset | Work machine |
 | At work | Start chunk-only dedup pass on fresh data | Work desktop (32 threads) |
-| Tonight | Review dedup results, freeze canonical list | Beast |
-| Overnight | Full CUDA pipeline on canonical set | Beast or work desktop |
+| Tonight | Review dedup results, freeze canonical list | primary workstation |
+| Overnight | Full CUDA pipeline on canonical set | primary workstation or work desktop |
 
 ---
 
 ## Bottleneck Reference
 
-| Stage | Beast Speed | Work Desktop Speed | Notes |
+| Stage | primary workstation Speed | Work Desktop Speed | Notes |
 |-------|------------|-------------------|-------|
 | Parse (16 workers) | ~52 files/min | ~100 files/min (32 threads) | PDF cmap warnings slow parse |
 | Embed (CUDA) | 177 chunks/sec | TBD | GPU dependent |

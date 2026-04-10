@@ -20,7 +20,7 @@ In the **Settings** panel:
 - **Embedding:** UNCHECK (disabled)
 - **Enrichment:** UNCHECK (disabled)
 - **Entity Extraction:** UNCHECK (disabled)
-- **Workers:** Set to max for your machine (Beast: 16, Desktop: 32, Laptop: 20)
+- **Workers:** Set to max for your machine (primary workstation: 16, Desktop: 32, Laptop: 20)
 - Click **Save Settings**
 
 ### Step 3: Run
@@ -132,7 +132,7 @@ type data\output\export_*\skip_manifest.json
 
 | Machine | Workers | Command |
 |---------|---------|---------|
-| Beast (16 threads) | 16 | `python scripts/run_pipeline.py --input "path" --full-reindex --log-file logs/dedup.log` |
+| primary workstation (16 threads) | 16 | `python scripts/run_pipeline.py --input "path" --full-reindex --log-file logs/dedup.log` |
 | Work Desktop (32 threads) | 32 | Same command — workers set via config.local.yaml |
 | Work Laptop (20 threads) | 20 | Same command — workers set via config.local.yaml |
 

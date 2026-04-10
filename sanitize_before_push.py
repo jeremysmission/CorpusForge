@@ -57,6 +57,7 @@ TEXT_REPLACEMENTS = [
 
     # Agent references -> team review
     (r"\bAgent\s*[1-6]\b", "reviewer"),
+    (r"\bBeast\b", "primary workstation"),
     (r"\b6-agent debate\b", "design review"),
     (r"\bagent debate\b", "design review"),
     (r"\bwar room\b", "review board"),
@@ -66,7 +67,8 @@ TEXT_REPLACEMENTS = [
     (r"\bdebate session\b", "review session"),
 
     # Program-specific terms -> generic
-    (r"(?<!\.)\b" + _w("I","GS") + r"\b", "enterprise program"),
+    # Keep path segments like ".../IGS" intact in live config/schema strings.
+    (r"(?<![./\\\\])\b" + _w("I","GS") + r"\b(?![/\\\\])", "enterprise program"),
     (r"\b" + _w("NEX","ION") + r"\b", "monitoring system"),
     (r"\b" + _w("iono","sonde") + r"s?\b", "sensor system"),
     (r"\b" + _w("iono","spheric") + r"\b", "atmospheric"),

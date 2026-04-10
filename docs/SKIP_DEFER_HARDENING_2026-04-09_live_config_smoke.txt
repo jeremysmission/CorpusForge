@@ -1,0 +1,110 @@
+Live-config SkipManager smoke — reproduction of QA finding
+===========================================================
+Repo:    C:\CorpusForge
+Config:  config/config.yaml (live runtime config)
+Date:    2026-04-09 MDT
+Author:  reviewer
+Purpose: prove the two-group split between skip.image_asset_extensions
+         (this lane) and parse.defer_extensions (other lane, pre-existing)
+         matches the table in docs/SKIP_DEFER_HARDENING_2026-04-09.md
+
+Command:
+  .venv/Scripts/python.exe -c "<see smoke script in section below>"
+
+Result:
+
+=== ocr_mode=skip ===
+  .jpg    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .jpeg   skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .svg    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .psd    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .png    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .gif    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .bmp    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .tif    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .tiff   skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .webp   skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .wmf    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+  .emf    skip=True  reason=image asset (OCR disabled - metadata-only parse suppressed)
+
+=== ocr_mode=auto ===
+  .jpg    skip=True  reason=Deferred by config for this run
+  .jpeg   skip=True  reason=Deferred by config for this run
+  .svg    skip=True  reason=Deferred by config for this run
+  .psd    skip=True  reason=Deferred by config for this run
+  .png    skip=False reason=
+  .gif    skip=False reason=
+  .bmp    skip=False reason=
+  .tif    skip=False reason=
+  .tiff   skip=False reason=
+  .webp   skip=False reason=
+  .wmf    skip=False reason=
+  .emf    skip=False reason=
+
+=== ocr_mode=force ===
+  .jpg    skip=True  reason=Deferred by config for this run
+  .jpeg   skip=True  reason=Deferred by config for this run
+  .svg    skip=True  reason=Deferred by config for this run
+  .psd    skip=True  reason=Deferred by config for this run
+  .png    skip=False reason=
+  .gif    skip=False reason=
+  .bmp    skip=False reason=
+  .tif    skip=False reason=
+  .tiff   skip=False reason=
+  .webp   skip=False reason=
+  .wmf    skip=False reason=
+  .emf    skip=False reason=
+
+Interpretation:
+
+Group A — unconditionally deferred by parse.defer_extensions (pre-existing):
+  .jpg, .jpeg, .svg, .psd
+  - Under ocr_mode=skip this lane tags them with the more informative
+    "image asset (OCR disabled - metadata-only parse suppressed)" reason
+    because the new rule runs before the deferred-format check.
+  - Under ocr_mode=auto/force the new rule is dormant and the pre-existing
+    parse.defer_extensions check fires instead with
+    "Deferred by config for this run".
+  - Flipping parse.ocr_mode alone does NOT route these back through
+    ImageParser. The operator must also remove them from
+    parse.defer_extensions. This lane does not auto-clean that list.
+
+Group B — gated solely by this lane's new rule:
+  .png, .gif, .bmp, .tif, .tiff, .webp, .wmf, .emf
+  - Under ocr_mode=skip the new rule fires: hashed and recorded as
+    "image asset (OCR disabled - metadata-only parse suppressed)".
+  - Under ocr_mode=auto/force the new rule is dormant AND parse.defer_extensions
+    does not cover them, so the dispatcher routes them to ImageParser as before.
+  - Flipping parse.ocr_mode is sufficient to recover these.
+
+Hash continuity:
+  Both skip classes route through SkipManager.record_skip, which calls
+  Hasher.update_hash with status="deferred" (or "skipped") so the file state
+  DB records SHA-256, size, and mtime. A later run recognizes them by hash.
+
+Smoke script (verbatim):
+-------------------------
+from pathlib import Path
+import tempfile
+from src.config.schema import load_config
+from src.skip.skip_manager import SkipManager
+from src.download.hasher import Hasher
+
+config = load_config("config/config.yaml")
+tmpd = Path(tempfile.mkdtemp(prefix="skip_smoke_"))
+for ocr in ("skip", "auto", "force"):
+    hasher = Hasher(str(tmpd / f"state_{ocr}.sqlite3"))
+    config_deferred = {ext: "Deferred by config for this run"
+                       for ext in config.parse.defer_extensions}
+    sm = SkipManager(config.paths.skip_list, hasher,
+                     extra_deferred_exts=config_deferred, ocr_mode=ocr)
+    print(f"=== ocr_mode={ocr} ===")
+    for ext in (".jpg",".jpeg",".svg",".psd",".png",".gif",".bmp",
+                ".tif",".tiff",".webp",".wmf",".emf"):
+        f = tmpd / f"sample{ext}"
+        f.write_bytes(b"body")
+        skip, reason = sm.should_skip(f, f.stat().st_size)
+        print(f"  {ext:<7} skip={skip!s:<5} reason={reason}")
+-------------------------
+
+Signed: reviewer | CorpusForge | 2026-04-09 MDT

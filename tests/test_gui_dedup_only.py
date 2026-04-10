@@ -82,6 +82,125 @@ def test_pipeline_finished_progress_label_uses_work_total(root):
     assert app.progress_label.cget("text") == "Done (2/2 work files, 10 discovered)"
 
 
+def test_pipeline_stop_ui_uses_safe_wording(root):
+    config = load_config()
+    stop_calls = []
+    app = CorpusForgeApp(root, config=config, on_stop=lambda: stop_calls.append("stop"))
+
+    assert app.stop_btn.cget("text") == "Stop Safely"
+
+    app._set_running(True)
+    app._on_stop_click()
+
+    assert stop_calls == ["stop"]
+    assert app.stop_btn.cget("text") == "Stopping..."
+    assert str(app.stop_btn.cget("state")) == str(tk.DISABLED)
+    assert app._stats_panel._stat_labels["stage"].cget("text") == "Stopping"
+
+
+def test_stats_panel_shows_chunk_rate_and_stage_mapping(root):
+    config = load_config()
+    app = CorpusForgeApp(root, config=config)
+
+    app.update_stats({
+        "files_found": 10,
+        "files_after_dedup": 4,
+        "files_parsed": 2,
+        "files_skipped": 0,
+        "files_failed": 0,
+        "chunks_created": 80,
+        "chunks_per_second": 22.5,
+        "chunks_enriched": 0,
+        "vectors_created": 0,
+        "elapsed_seconds": 4.0,
+        "skip_reasons": "",
+    })
+    app.update_stage_progress("parse", 2, 4, "alpha.txt | CPU/IO parse | 80 chunks | 22.5 chunks/sec")
+
+    assert app._stats_panel._stat_labels["chunks_per_second"].cget("text") == "22.5"
+    assert app._stats_panel._stat_labels["stage"].cget("text") == "Parse (CPU/IO)"
+
+
+def test_stats_panel_stage_label_map_covers_all_stages(root):
+    """Every stage emitted by Pipeline + launch_gui should map to an operator-friendly label."""
+    config = load_config()
+    app = CorpusForgeApp(root, config=config)
+    expected = {
+        "discover": "Discover (CPU/IO)",
+        "dedup": "Dedup (CPU/IO)",
+        "parse": "Parse (CPU/IO)",
+        "chunk": "Chunk (CPU)",
+        "enrich": "Enrich (Ollama)",
+        "embed": "Embed (GPU)",
+        "extract": "Extract (CPU)",
+        "export": "Export (CPU/IO)",
+        "stopping": "Stopping",
+    }
+    for raw, friendly in expected.items():
+        app.update_stage_progress(raw, 0, 1, "test detail")
+        assert app._stats_panel._stat_labels["stage"].cget("text") == friendly, (
+            f"stage {raw!r} should render as {friendly!r}"
+        )
+
+
+def test_pipeline_finished_log_distinguishes_packaged_from_empty_stop(root):
+    """QA H2: pipeline_finished must NOT claim work was packaged on a stop that
+    produced no export. The honest wording must say so, and a real export_dir
+    must swap back to the 'packaged at ...' line."""
+    config = load_config()
+    app = CorpusForgeApp(root, config=config)
+
+    logs = []
+    orig_append = app.append_log
+    def capture(msg, level="INFO"):
+        logs.append((level, msg))
+        orig_append(msg, level)
+    app.append_log = capture
+
+    try:
+        # Case 1: stopped with no export
+        app._set_running(True)
+        app.pipeline_finished({
+            "files_found": 10, "files_after_dedup": 0, "files_parsed": 0,
+            "files_skipped": 0, "files_failed": 0, "chunks_created": 0,
+            "chunks_enriched": 0, "vectors_created": 0, "elapsed_seconds": 1.0,
+            "export_dir": "", "stop_requested": True, "skip_reasons": "",
+        })
+        empty_log = next((m for lvl, m in logs if "stopped cleanly" in m), None)
+        assert empty_log is not None
+        assert "No export was written" in empty_log
+        assert "packaged at" not in empty_log
+
+        # Case 2: stopped WITH an export dir
+        logs.clear()
+        app._set_running(True)
+        app.pipeline_finished({
+            "files_found": 10, "files_after_dedup": 5, "files_parsed": 5,
+            "files_skipped": 0, "files_failed": 0, "chunks_created": 50,
+            "chunks_enriched": 0, "vectors_created": 50, "elapsed_seconds": 2.0,
+            "export_dir": "C:/tmp/export_20260409_1234", "stop_requested": True,
+            "skip_reasons": "",
+        })
+        packaged_log = next((m for lvl, m in logs if "stopped cleanly" in m), None)
+        assert packaged_log is not None
+        assert "packaged at C:/tmp/export_20260409_1234" in packaged_log
+        assert "No export was written" not in packaged_log
+    finally:
+        app.append_log = orig_append
+
+
+def test_stats_panel_chunks_per_second_blank_when_zero(root):
+    config = load_config()
+    app = CorpusForgeApp(root, config=config)
+    app.update_stats({
+        "files_found": 1, "files_after_dedup": 1, "files_parsed": 0,
+        "files_skipped": 0, "files_failed": 0, "chunks_created": 0,
+        "chunks_per_second": 0.0, "chunks_enriched": 0, "vectors_created": 0,
+        "elapsed_seconds": 0.0, "skip_reasons": "",
+    })
+    assert app._stats_panel._stat_labels["chunks_per_second"].cget("text") == "--"
+
+
 def test_save_settings_writes_config_yaml(tmp_path):
     config_file = tmp_path / "config.yaml"
     config_file.write_text("pipeline:\n  workers: 8\n", encoding="utf-8")

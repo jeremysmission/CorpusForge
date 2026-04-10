@@ -24,7 +24,7 @@ Use the machine's logical CPU thread count, not physical cores.
 
 - workstation desktop: `32`
 - workstation laptop: `20`
-- Beast: `16`
+- primary workstation: `16`
 
 If you are using the workstation desktop, set `Pipeline workers` to `32`.
 

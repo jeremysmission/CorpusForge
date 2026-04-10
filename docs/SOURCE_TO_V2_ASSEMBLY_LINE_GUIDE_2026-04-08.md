@@ -41,7 +41,9 @@ Current workstation targets:
 - desktop: `32`
 - laptop: `20`
 
-The GUI Save Settings action writes directly to `config/config.yaml`.
+The GUI Save Settings action writes runtime settings to `config/config.yaml`.
+
+`config/config.local.yaml` is legacy and is not part of the live mainline runtime path.
 
 ## The Assembly Line
 

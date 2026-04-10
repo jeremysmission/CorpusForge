@@ -24,9 +24,9 @@ _DEFAULT_CONFIG = "config/config.yaml"
 
 _EMPTY_STATS = {
     "files_found": 0, "files_after_dedup": 0, "files_parsed": 0, "files_failed": 0,
-    "files_skipped": 0, "chunks_created": 0, "chunks_enriched": 0,
+    "files_skipped": 0, "chunks_created": 0, "chunks_per_second": 0.0, "chunks_enriched": 0,
     "vectors_created": 0, "entities_extracted": 0,
-    "elapsed_seconds": 0.0, "skip_reasons": "",
+    "elapsed_seconds": 0.0, "stop_requested": False, "skip_reasons": "",
 }
 
 
@@ -447,10 +447,46 @@ class PipelineRunner:
         supported = get_supported_extensions(self.config.paths.skip_list)
         deferred = load_deferred_extension_map(self.config.paths.skip_list)
         deferred.update({ext: "Deferred by config for this run" for ext in self.config.parse.defer_extensions})
+        safe_after(self.app.root, 0, self.app.update_stage_progress,
+                   "discover", 0, 0, f"Walking {source_path} (CPU/IO, no GPU yet)...")
         if source_path.is_file():
             discovered = [source_path]
+            discover_stopped = False
         else:
-            discovered = sorted(f for f in source_path.rglob("*") if f.is_file())
+            # Cooperative discovery: iterate rglob so a Stop Safely pressed while
+            # we walk a 700GB tree actually bails early instead of enumerating
+            # the whole disk. Stop is checked every 500 entries.
+            discovered = []
+            discover_stopped = False
+            _STOP_POLL = 500
+            _PROGRESS_POLL = 2000
+            for idx, entry in enumerate(source_path.rglob("*")):
+                if idx % _STOP_POLL == 0 and self._stop_event.is_set():
+                    discover_stopped = True
+                    break
+                try:
+                    if entry.is_file():
+                        discovered.append(entry)
+                except OSError:
+                    continue
+                if idx and idx % _PROGRESS_POLL == 0:
+                    safe_after(self.app.root, 0, self.app.update_stage_progress,
+                               "discover", len(discovered), 0,
+                               f"Walked {idx} entries, {len(discovered)} files so far...")
+            discovered.sort()
+        if discover_stopped:
+            safe_after(self.app.root, 0, self.app.update_stage_progress,
+                       "stopping", 0, 0,
+                       f"Stop honored during discovery after {len(discovered)} files.")
+            return self._finish(
+                f"Discovery stopped by operator after {len(discovered)} files. "
+                f"No work was admitted; hashed state is unchanged.",
+                "WARNING",
+                {**_EMPTY_STATS, "files_found": len(discovered), "stop_requested": True},
+            )
+        safe_after(self.app.root, 0, self.app.update_stage_progress,
+                   "discover", len(discovered), len(discovered),
+                   f"Found {len(discovered)} files on disk.")
         files, deferred_counts, unsupported_counts = _discover_candidates(discovered, supported, deferred)
         if self.config.pipeline.max_files:
             files = files[: self.config.pipeline.max_files]
@@ -479,8 +515,8 @@ class PipelineRunner:
         safe_after(self.app.root, 0, self.app.update_stats,
                    {**_EMPTY_STATS, "files_found": len(files)})
         if self._stop_event.is_set():
-            return self._finish("Pipeline cancelled.", "WARNING",
-                                {**_EMPTY_STATS, "files_found": len(files)})
+            return self._finish("Pipeline cancelled before processing began.", "WARNING",
+                                {**_EMPTY_STATS, "files_found": len(files), "stop_requested": True})
         stages = []
         if self.config.enrich.enabled:
             stages.append("enrichment")
@@ -517,6 +553,7 @@ class PipelineRunner:
             on_file_start=on_file_start,
             on_stage_progress=on_stage_progress,
             on_stats_update=on_stats_update,
+            should_stop=self._stop_event.is_set,
         )
         safe_after(self.app.root, 0, self.app.pipeline_finished, stats.to_dict())
 
