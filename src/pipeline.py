@@ -13,6 +13,7 @@ V1 achieved 60-200 chunks/sec sustained with this pattern.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ from .chunk.chunker import Chunker
 from .chunk.chunk_ids import make_chunk_id
 from .embed.embedder import Embedder
 from .enrichment.contextual_enricher import ContextualEnricher, EnricherConfig, probe_enrichment
+from .export.chunk_checkpoint import ChunkCheckpoint
 from .export.packager import Packager
 from .download.hasher import Hasher
 from .download.deduplicator import Deduplicator
@@ -57,8 +59,10 @@ class RunStats:
     entities_extracted: int = 0
     elapsed_seconds: float = 0.0
     export_dir: str = ""
+    checkpoint_dir: str = ""
     stop_requested: bool = False
     skip_reasons: str = ""
+    checkpointed_files: int = 0
     errors: list[dict] = field(default_factory=list)
     format_coverage: dict = field(default_factory=dict)
 
@@ -78,9 +82,11 @@ class RunStats:
             "entities_extracted": self.entities_extracted,
             "elapsed_seconds": round(self.elapsed_seconds, 2),
             "export_dir": self.export_dir,
+            "checkpoint_dir": self.checkpoint_dir,
             "stop_requested": self.stop_requested,
             "error_count": len(self.errors),
             "skip_reasons": self.skip_reasons,
+            "checkpointed_files": self.checkpointed_files,
             "format_coverage": self.format_coverage,
         }
 
@@ -218,6 +224,7 @@ class Pipeline:
             max_heading_len=config.chunk.max_heading_len,
         )
         self.packager = Packager(output_dir=config.paths.output_dir)
+        self.chunk_checkpoint = ChunkCheckpoint(config.paths.output_dir)
 
         # Callbacks — set in run(), but helper methods may emit updates.
         self._on_file_start = None
@@ -341,208 +348,257 @@ class Pipeline:
 
         stats.files_found = len(input_files)
         self._emit_stats(stats)
-        if self._check_stop(
-            stats,
-            "Stop requested before dedup started. No new work admitted.",
-        ):
-            return stats
-
-        # Stage 2: Hash & dedup
-        self._emit_stage("dedup", 0, len(input_files), "Starting dedup scan...")
-        if self.config.pipeline.full_reindex:
-            work_files = input_files
-        else:
-            def _dedup_progress(scanned, total, current, dupes):
-                self._emit_stage("dedup", scanned, total, f"{current} ({dupes} dupes)")
-
-            work_files = self.deduplicator.filter_new_and_changed(
-                input_files,
-                on_progress=_dedup_progress,
-                should_stop=self._should_stop,
-            )
-            stats.skipped_unchanged = self.deduplicator.skipped_unchanged
-            stats.skipped_duplicate = self.deduplicator.skipped_duplicate
-        stats.files_after_dedup = len(work_files)
-        self._emit_stats(stats)
-        if self._check_stop(
-            stats,
-            "Stop requested after dedup. Remaining stages will not start.",
-        ):
-            return stats
-
-        if not work_files:
-            logger.info("No new or changed files to process.")
-            stats.elapsed_seconds = time.time() - start_time
-            self._emit_stats(stats)
-            return stats
-
-        # Stage 2b: Skip check (hash but don't parse)
-        parse_files = []
-        for fp in work_files:
+        try:
             if self._check_stop(
                 stats,
-                "Stop requested during skip review. Parse will not start.",
+                "Stop requested before dedup started. No new work admitted.",
             ):
-                break
-            try:
-                fsize = fp.stat().st_size
-            except OSError:
-                fsize = 0
-            skip, reason = self.skip_manager.should_skip(fp, fsize)
-            if skip:
-                self.skip_manager.record_skip(fp, reason)
-                stats.files_skipped += 1
+                return stats
+
+            # Stage 2: Hash & dedup
+            self._emit_stage("dedup", 0, len(input_files), "Starting dedup scan...")
+            if self.config.pipeline.full_reindex:
+                work_files = input_files
             else:
-                parse_files.append(fp)
-        self._emit_stats(stats)
-        if stats.stop_requested and not parse_files:
-            stats.skip_reasons = self.skip_manager.get_reason_summary()
-            self._finalize_skip(stats, start_time)
-            return stats
+                def _dedup_progress(scanned, total, current, dupes):
+                    self._emit_stage("dedup", scanned, total, f"{current} ({dupes} dupes)")
 
-        if not parse_files:
-            logger.info("All files skipped -- nothing to parse.")
-            stats.skip_reasons = self.skip_manager.get_reason_summary()
-            self._finalize_skip(stats, start_time)
-            self._emit_stats(stats)
-            return stats
-
-        # Stage 3+4+5+6: Parallel parse → chunk → enrich → embed
-        self._emit_stage("parse", 0, len(parse_files), "Starting parse...")
-        if self.workers > 1 and len(parse_files) > 1:
-            all_chunks, all_docs = self._parallel_parse_and_chunk(parse_files, stats)
-        else:
-            all_docs = self._parse_files(parse_files, stats)
-            all_chunks = self._chunk_documents(all_docs, stats)
-
-        if not all_chunks:
-            logger.warning("No chunks produced -- nothing to embed or export.")
-            stats.elapsed_seconds = time.time() - start_time
-            self._emit_stats(stats)
-            return stats
-
-        # Stage 5: Contextual enrichment (phi4:14B via Ollama) — skipped if disabled
-        if self.config.enrich.enabled:
-            self._emit_stage("enrich", 0, len(all_chunks), "Loading enricher...")
-            enricher = self._get_enricher()
-            doc_texts = {doc.source_path: doc.text for doc in all_docs}
-            all_chunks = enricher.enrich_chunks(all_chunks, doc_texts)
-            stats.chunks_enriched = sum(
-                1 for c in all_chunks if c.get("enriched_text") is not None
-            )
-            self._emit_stage("enrich", stats.chunks_enriched, len(all_chunks), "Done")
-            self._emit_stats(stats)
-        else:
-            logger.info("Enrichment disabled — skipping.")
-
-        # Cooperative stop check before embed. If the operator stops here with
-        # embed enabled, we must NOT ship a chunks+vectors export (that would be
-        # a chunk/vector length mismatch at V2 import time). Drop chunks to 0 so
-        # the export path below sees an empty work set and skips packaging.
-        self._check_stop(
-            stats,
-            "Stop requested before embed. Discarding chunks so no mismatched export is written.",
-        )
-
-        # Stage 6: Embed (GPU batch with token-budget packing + OOM backoff)
-        if self.config.embed.enabled and not stats.stop_requested:
-            vectors = self._embed_chunks(all_chunks, stats)
-            # If a stop fired mid-embed, vectors may be shorter than chunks.
-            # Trim chunks so the export keeps chunks/vectors aligned.
-            if stats.stop_requested and len(vectors) < len(all_chunks):
-                logger.warning(
-                    "Stop honored mid-embed: trimming chunks %d -> %d to match vectors.",
-                    len(all_chunks), len(vectors),
+                work_files = self.deduplicator.filter_new_and_changed(
+                    input_files,
+                    on_progress=_dedup_progress,
+                    should_stop=self._should_stop,
                 )
-                all_chunks = all_chunks[: len(vectors)]
+                stats.skipped_unchanged = self.deduplicator.skipped_unchanged
+                stats.skipped_duplicate = self.deduplicator.skipped_duplicate
+            stats.files_after_dedup = len(work_files)
+            self._emit_stats(stats)
+            if self._check_stop(
+                stats,
+                "Stop requested after dedup. Remaining stages will not start.",
+            ):
+                return stats
+
+            if not work_files:
+                logger.info("No new or changed files to process.")
+                stats.elapsed_seconds = time.time() - start_time
+                self._emit_stats(stats)
+                return stats
+
+            # Stage 2b: Skip check (hash but don't parse)
+            parse_files = []
+            for fp in work_files:
+                if self._check_stop(
+                    stats,
+                    "Stop requested during skip review. Parse will not start.",
+                ):
+                    break
+                try:
+                    fsize = fp.stat().st_size
+                except OSError:
+                    fsize = 0
+                skip, reason = self.skip_manager.should_skip(fp, fsize)
+                if skip:
+                    self.skip_manager.record_skip(fp, reason)
+                    stats.files_skipped += 1
+                else:
+                    parse_files.append(fp)
+            self._emit_stats(stats)
+            if stats.stop_requested and not parse_files:
+                stats.skip_reasons = self.skip_manager.get_reason_summary()
+                self._finalize_skip(stats, start_time)
+                return stats
+
+            if not parse_files:
+                logger.info("All files skipped -- nothing to parse.")
+                stats.skip_reasons = self.skip_manager.get_reason_summary()
+                self._finalize_skip(stats, start_time)
+                self._emit_stats(stats)
+                return stats
+
+            total_parse_files = len(parse_files)
+            resume = self.chunk_checkpoint.begin_run(
+                self._build_checkpoint_signature(),
+                parse_files,
+                file_hashes=self._build_file_hash_lookup(parse_files),
+                resume_enabled=True,
+            )
+            stats.checkpoint_dir = str(self.chunk_checkpoint.root)
+            stats.checkpointed_files = len(resume.source_paths)
+            all_chunks = list(resume.chunks)
+            parsed_source_paths = list(resume.source_paths)
+            all_docs = list(resume.docs)
+            parse_files = resume.remaining_files
+
+            # Stage 3+4+5+6: Parallel parse → chunk → enrich → embed
+            if resume.resumed:
+                stats.files_parsed = len(parsed_source_paths)
                 stats.chunks_created = len(all_chunks)
-        elif self.config.embed.enabled and stats.stop_requested:
-            # Stop fired before the embed loop ran at all. Chunks are valid but
-            # we have no vectors for them, and embed is expected in this config.
-            # Ship nothing: the V2 import contract requires aligned chunks+vectors.
-            logger.warning(
-                "Stop fired before embed (embed enabled) — dropping %d chunks to "
-                "avoid chunk/vector mismatch. No export will be written.",
-                len(all_chunks),
-            )
-            all_chunks = []
-            stats.chunks_created = 0
-            vectors = np.empty((0, 768), dtype=np.float16)
-        else:
-            logger.info("Embedding disabled — chunk-only export.")
-            vectors = np.empty((0, 768), dtype=np.float16)
+                self._emit_stage(
+                    "parse",
+                    stats.files_parsed,
+                    total_parse_files,
+                    f"Resumed {len(parsed_source_paths)} files / {len(all_chunks)} chunks from checkpoint.",
+                )
+                self._emit_stats(stats)
 
-        # If we have nothing left to ship after a cooperative stop, don't write
-        # an export directory. The GUI uses stats.export_dir to honestly tell the
-        # operator whether any completed work was packaged.
-        if stats.stop_requested and not all_chunks:
-            logger.warning(
-                "Stop honored with no packageable work — skipping export entirely."
+            if parse_files:
+                self._emit_stage("parse", stats.files_parsed, total_parse_files, "Starting parse...")
+                if self.workers > 1 and len(parse_files) > 1:
+                    new_chunks, new_docs, new_source_paths = self._parallel_parse_and_chunk(
+                        parse_files,
+                        stats,
+                        total_files=total_parse_files,
+                    )
+                else:
+                    new_chunks, new_docs, new_source_paths = self._parse_and_chunk_sequential(
+                        parse_files,
+                        stats,
+                        total_files=total_parse_files,
+                    )
+                all_chunks.extend(new_chunks)
+                all_docs.extend(new_docs)
+                parsed_source_paths.extend(new_source_paths)
+
+            if not all_chunks:
+                logger.warning("No chunks produced -- nothing to embed or export.")
+                stats.elapsed_seconds = time.time() - start_time
+                self._emit_stats(stats)
+                return stats
+
+            self.chunk_checkpoint.set_status("chunked")
+
+            # Stage 5: Contextual enrichment (phi4:14B via Ollama) — skipped if disabled
+            if self.config.enrich.enabled:
+                self.chunk_checkpoint.set_status("enriching")
+                self._emit_stage("enrich", 0, len(all_chunks), "Loading enricher...")
+                enricher = self._get_enricher()
+                doc_texts = {doc.source_path: doc.text for doc in all_docs}
+                all_chunks = enricher.enrich_chunks(all_chunks, doc_texts)
+                stats.chunks_enriched = sum(
+                    1 for c in all_chunks if c.get("enriched_text") is not None
+                )
+                self._emit_stage("enrich", stats.chunks_enriched, len(all_chunks), "Done")
+                self._emit_stats(stats)
+            else:
+                logger.info("Enrichment disabled — skipping.")
+
+            # Cooperative stop check before embed. If the operator stops here with
+            # embed enabled, we must NOT ship a chunks+vectors export (that would be
+            # a chunk/vector length mismatch at V2 import time). Drop chunks to 0 so
+            # the export path below sees an empty work set and skips packaging.
+            self._check_stop(
+                stats,
+                "Stop requested before embed. Keeping chunk checkpoint on disk; no mismatched export will be written.",
             )
-            stats.skip_reasons = self.skip_manager.get_reason_summary()
-            stats.elapsed_seconds = time.time() - start_time
+
+            # Stage 6: Embed (GPU batch with token-budget packing + OOM backoff)
+            if self.config.embed.enabled and not stats.stop_requested:
+                self.chunk_checkpoint.set_status("embedding")
+                vectors = self._embed_chunks(all_chunks, stats)
+                # If a stop fired mid-embed, vectors may be shorter than chunks.
+                # Trim chunks so the export keeps chunks/vectors aligned.
+                if stats.stop_requested and len(vectors) < len(all_chunks):
+                    logger.warning(
+                        "Stop honored mid-embed: trimming chunks %d -> %d to match vectors.",
+                        len(all_chunks), len(vectors),
+                    )
+                    all_chunks = all_chunks[: len(vectors)]
+                    stats.chunks_created = len(all_chunks)
+            elif self.config.embed.enabled and stats.stop_requested:
+                logger.warning(
+                    "Stop fired before embed (embed enabled) — preserving %d checkpointed "
+                    "chunks on disk, but writing no export to avoid chunk/vector mismatch.",
+                    len(all_chunks),
+                )
+                all_chunks = []
+                stats.chunks_created = 0
+                vectors = np.empty((0, 768), dtype=np.float16)
+            else:
+                logger.info("Embedding disabled — chunk-only export.")
+                vectors = np.empty((0, 768), dtype=np.float16)
+
+            # If we have nothing left to ship after a cooperative stop, don't write
+            # an export directory. The GUI uses stats.export_dir to honestly tell the
+            # operator whether any completed work was packaged.
+            if stats.stop_requested and not all_chunks:
+                logger.warning(
+                    "Stop honored with no packageable work — skipping export entirely."
+                )
+                self.chunk_checkpoint.set_status("stopped_before_export")
+                stats.skip_reasons = self.skip_manager.get_reason_summary()
+                stats.elapsed_seconds = time.time() - start_time
+                self._emit_stats(stats)
+                return stats
+
+            # Stage 7: Entity extraction (GLiNER batch on CPU) — skipped if disabled
+            entities = []
+            if self.config.extract.enabled and not stats.stop_requested:
+                self._emit_stage("extract", 0, len(all_chunks), "Loading extractor...")
+                extractor = self._get_extractor()
+                entities = extractor.extract_entities(all_chunks)
+                stats.entities_extracted = len(entities)
+                self._emit_stage("extract", len(entities), len(all_chunks), "Done")
+                self._emit_stats(stats)
+            elif stats.stop_requested:
+                logger.info("Stop requested — skipping entity extraction; packaging completed work.")
+            else:
+                logger.info("Entity extraction disabled — skipping.")
+
+            export_stats = self._build_export_stats(stats, start_time)
+
+            # Stage 8: Export
+            self.chunk_checkpoint.set_status("exporting")
+            self._emit_stage(
+                "export", 0, len(all_chunks),
+                f"Writing chunks/vectors/manifest for {len(all_chunks)} chunks...",
+            )
+            export_dir = self.packager.export(
+                chunks=all_chunks,
+                vectors=vectors,
+                entities=entities,
+                stats=export_stats,
+            )
+            stats.export_dir = str(export_dir)
+            self._emit_stage(
+                "export", len(all_chunks), len(all_chunks),
+                f"Done -> {export_dir.name if hasattr(export_dir, 'name') else export_dir}",
+            )
+            exported_source_paths = sorted({
+                str(chunk["source_path"])
+                for chunk in all_chunks
+                if chunk.get("source_path")
+            })
+            self.deduplicator.mark_indexed([Path(path) for path in exported_source_paths])
+            self.chunk_checkpoint.clear()
+            logger.info("Export written to: %s", export_dir)
+
+            # Write skip manifest alongside export
+            if self.skip_manager.skip_count > 0:
+                self.skip_manager.write_skip_manifest(export_dir)
+
+            stats.skip_reasons = export_stats["skip_reasons"]
+            stats.elapsed_seconds = export_stats["elapsed_seconds"]
+
+            # Pipeline summary
+            rate = stats.chunks_created / max(stats.elapsed_seconds, 0.01)
+            logger.info(
+                "Pipeline summary: %d files hashed, %d parsed, %d skipped, "
+                "%d chunks at %.1f chunks/sec (reasons: %s)",
+                stats.files_after_dedup, stats.files_parsed, stats.files_skipped,
+                stats.chunks_created, rate, stats.skip_reasons or "none",
+            )
+
+            # Write run report (slice 3.3)
+            self._write_run_report(export_dir, stats)
+
+            # Append to run history (slice 4.1)
+            self._append_run_history(export_dir, stats)
             self._emit_stats(stats)
+
             return stats
-
-        # Stage 7: Entity extraction (GLiNER batch on CPU) — skipped if disabled
-        entities = []
-        if self.config.extract.enabled and not stats.stop_requested:
-            self._emit_stage("extract", 0, len(all_chunks), "Loading extractor...")
-            extractor = self._get_extractor()
-            entities = extractor.extract_entities(all_chunks)
-            stats.entities_extracted = len(entities)
-            self._emit_stage("extract", len(entities), len(all_chunks), "Done")
-            self._emit_stats(stats)
-        elif stats.stop_requested:
-            logger.info("Stop requested — skipping entity extraction; packaging completed work.")
-        else:
-            logger.info("Entity extraction disabled — skipping.")
-
-        export_stats = self._build_export_stats(stats, start_time)
-
-        # Stage 8: Export
-        self._emit_stage(
-            "export", 0, len(all_chunks),
-            f"Writing chunks/vectors/manifest for {len(all_chunks)} chunks...",
-        )
-        export_dir = self.packager.export(
-            chunks=all_chunks,
-            vectors=vectors,
-            entities=entities,
-            stats=export_stats,
-        )
-        stats.export_dir = str(export_dir)
-        self._emit_stage(
-            "export", len(all_chunks), len(all_chunks),
-            f"Done -> {export_dir.name if hasattr(export_dir, 'name') else export_dir}",
-        )
-        self.deduplicator.mark_indexed([Path(doc.source_path) for doc in all_docs])
-        logger.info("Export written to: %s", export_dir)
-
-        # Write skip manifest alongside export
-        if self.skip_manager.skip_count > 0:
-            self.skip_manager.write_skip_manifest(export_dir)
-
-        stats.skip_reasons = export_stats["skip_reasons"]
-        stats.elapsed_seconds = export_stats["elapsed_seconds"]
-
-        # Pipeline summary
-        rate = stats.chunks_created / max(stats.elapsed_seconds, 0.01)
-        logger.info(
-            "Pipeline summary: %d files hashed, %d parsed, %d skipped, "
-            "%d chunks at %.1f chunks/sec (reasons: %s)",
-            stats.files_after_dedup, stats.files_parsed, stats.files_skipped,
-            stats.chunks_created, rate, stats.skip_reasons or "none",
-        )
-
-        # Write run report (slice 3.3)
-        self._write_run_report(export_dir, stats)
-
-        # Append to run history (slice 4.1)
-        self._append_run_history(export_dir, stats)
-        self._emit_stats(stats)
-
-        return stats
+        except Exception:
+            self._sync_checkpoint_on_failure(stats)
+            raise
 
     def _refresh_live_rates(self, stats: RunStats) -> None:
         """Update elapsed time and chunk throughput for live telemetry."""
@@ -585,6 +641,65 @@ class Pipeline:
                 self._on_stats_update(stats.to_dict())
             except Exception:
                 pass
+
+    def _build_checkpoint_signature(self) -> str:
+        """Build a stable signature for crash-safe chunk checkpoint reuse."""
+        payload = {
+            "source_dirs": [str(Path(p)) for p in self.config.paths.source_dirs],
+            "output_dir": self.config.paths.output_dir,
+            "chunk_size": self.config.chunk.size,
+            "chunk_overlap": self.config.chunk.overlap,
+            "chunk_heading": self.config.chunk.max_heading_len,
+            "parse_max_chars": self.config.parse.max_chars_per_file,
+            "parse_ocr_mode": self.config.parse.ocr_mode,
+            "parse_docling_mode": self.config.parse.docling_mode,
+            "embed_enabled": self.config.embed.enabled,
+            "enrich_enabled": self.config.enrich.enabled,
+            "extract_enabled": self.config.extract.enabled,
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+
+    def _checkpoint_document(
+        self,
+        doc: ParsedDocument,
+        chunks: list[dict],
+        stats: RunStats,
+        *,
+        file_ext: str,
+    ) -> tuple[list[dict], list[str]]:
+        """Persist a parsed document's chunks immediately for crash safety."""
+        state = self.hasher.get_state(doc.source_path)
+        content_hash = state["hash"] if state else self.hasher.hash_file(Path(doc.source_path))
+        self.chunk_checkpoint.append_document(doc, chunks, content_hash=content_hash)
+        stats.files_parsed += 1
+        stats.chunks_created += len(chunks)
+        stats.checkpointed_files += 1
+        stats.checkpoint_dir = str(self.chunk_checkpoint.root)
+        stats.format_coverage[file_ext] = stats.format_coverage.get(file_ext, 0) + 1
+        return chunks, [doc.source_path]
+
+    def _build_file_hash_lookup(self, files: list[Path]) -> dict[str, str]:
+        """Map current candidate files to their content hash for safe resume checks."""
+        file_hashes: dict[str, str] = {}
+        for file_path in files:
+            state = self.hasher.get_state(file_path)
+            if state:
+                file_hashes[self.hasher._normalize_path(file_path)] = state["hash"]
+            else:
+                file_hashes[self.hasher._normalize_path(file_path)] = self.hasher.hash_file(file_path)
+        return file_hashes
+
+    def _sync_checkpoint_on_failure(self, stats: RunStats) -> None:
+        """Best-effort checkpoint flush when a run crashes before export completes."""
+        try:
+            if self.chunk_checkpoint.root.exists():
+                self.chunk_checkpoint.sync(status="crashed")
+                stats.checkpoint_dir = str(self.chunk_checkpoint.root)
+                self._emit_stats(stats)
+        except Exception:
+            pass
 
     def _write_run_report(self, export_dir: Path, stats: RunStats) -> None:
         """Write a human-readable run report alongside the export."""
@@ -674,8 +789,12 @@ class Pipeline:
     # ------------------------------------------------------------------
 
     def _parallel_parse_and_chunk(
-        self, files: list[Path], stats: RunStats
-    ) -> tuple[list[dict], list[ParsedDocument]]:
+        self,
+        files: list[Path],
+        stats: RunStats,
+        *,
+        total_files: int | None = None,
+    ) -> tuple[list[dict], list[ParsedDocument], list[str]]:
         """
         Parse files in parallel using ThreadPoolExecutor.
 
@@ -687,7 +806,7 @@ class Pipeline:
         """
         workers = min(self.workers, len(files))
         prefetch = workers * 2
-        total = len(files)
+        total = total_files or len(files)
 
         logger.info(
             "Parallel pipeline: %d parser threads, %d prefetch, %d files",
@@ -696,6 +815,7 @@ class Pipeline:
 
         all_chunks = []
         all_docs = []
+        parsed_source_paths = []
         pending: Dict[Future, Tuple[int, Path]] = {}
         file_iter = iter(enumerate(files))
         stop_submissions = False
@@ -775,11 +895,15 @@ class Pipeline:
                         if doc is not None and doc.text.strip():
                             all_docs.append(doc)
                             chunks = self._chunk_single_doc(doc)
-                            all_chunks.extend(chunks)
-                            stats.files_parsed += 1
-                            stats.chunks_created = len(all_chunks)
                             ext = fp_done.suffix.lower() or "(no ext)"
-                            stats.format_coverage[ext] = stats.format_coverage.get(ext, 0) + 1
+                            new_chunks, new_sources = self._checkpoint_document(
+                                doc,
+                                chunks,
+                                stats,
+                                file_ext=ext,
+                            )
+                            all_chunks.extend(new_chunks)
+                            parsed_source_paths.extend(new_sources)
                         else:
                             logger.warning("Empty parse: %s", fp_done.name)
                             stats.files_failed += 1
@@ -828,7 +952,7 @@ class Pipeline:
             f"Done ({len(all_chunks)} chunks, {stats.chunks_per_second:.1f} chunks/sec, CPU/IO parse complete)",
         )
         self._emit_stats(stats)
-        return all_chunks, all_docs
+        return all_chunks, all_docs, parsed_source_paths
 
     def _safe_parse_file(self, file_path: Path) -> ParsedDocument | None:
         """Parse a single file, catching exceptions for the thread pool."""
@@ -902,11 +1026,19 @@ class Pipeline:
         stats.elapsed_seconds = time.time() - start_time
         return stats.to_dict()
 
-    def _parse_files(
-        self, files: list[Path], stats: RunStats
-    ) -> list[ParsedDocument]:
-        """Sequential parse fallback (workers=1)."""
-        parsed = []
+    def _parse_and_chunk_sequential(
+        self,
+        files: list[Path],
+        stats: RunStats,
+        *,
+        total_files: int | None = None,
+    ) -> tuple[list[dict], list[ParsedDocument], list[str]]:
+        """Sequential parse+chunk fallback with per-document checkpoint flush."""
+        parsed_docs = []
+        parsed_source_paths = []
+        all_chunks = []
+        total = total_files or len(files)
+
         for i, file_path in enumerate(files):
             if self._check_stop(
                 stats,
@@ -915,14 +1047,23 @@ class Pipeline:
                 break
             if self._on_file_start:
                 try:
-                    self._on_file_start(str(file_path), i, len(files))
+                    self._on_file_start(str(file_path), i, total)
                 except Exception:
                     pass
             try:
                 doc = self.dispatcher.parse(file_path)
                 if doc.text.strip():
-                    parsed.append(doc)
-                    stats.files_parsed += 1
+                    parsed_docs.append(doc)
+                    chunks = self._chunk_single_doc(doc)
+                    ext = file_path.suffix.lower() or "(no ext)"
+                    new_chunks, new_sources = self._checkpoint_document(
+                        doc,
+                        chunks,
+                        stats,
+                        file_ext=ext,
+                    )
+                    all_chunks.extend(new_chunks)
+                    parsed_source_paths.extend(new_sources)
                 else:
                     logger.warning("Empty parse result: %s", file_path)
                     stats.files_failed += 1
@@ -933,32 +1074,11 @@ class Pipeline:
             self._emit_stage(
                 "parse",
                 stats.files_parsed + stats.files_failed,
-                len(files),
-                f"{file_path.name} | CPU/IO parse",
-            )
-            self._emit_stats(stats)
-        return parsed
-
-    def _chunk_documents(
-        self, docs: list[ParsedDocument], stats: RunStats
-    ) -> list[dict]:
-        """Chunk all parsed documents (sequential fallback)."""
-        all_chunks = []
-        total = len(docs)
-        for idx, doc in enumerate(docs, start=1):
-            all_chunks.extend(self._chunk_single_doc(doc))
-            stats.chunks_created = len(all_chunks)
-            self._refresh_live_rates(stats)
-            self._emit_stage(
-                "chunk",
-                idx,
                 total,
-                f"{Path(doc.source_path).name} | CPU chunk | {stats.chunks_created} chunks | {stats.chunks_per_second:.1f} chunks/sec",
+                f"{file_path.name} | CPU/IO parse | {stats.chunks_created} chunks | {stats.chunks_per_second:.1f} chunks/sec",
             )
             self._emit_stats(stats)
-        stats.chunks_created = len(all_chunks)
-        self._emit_stats(stats)
-        return all_chunks
+        return all_chunks, parsed_docs, parsed_source_paths
 
     def _embed_chunks(
         self, chunks: list[dict], stats: RunStats

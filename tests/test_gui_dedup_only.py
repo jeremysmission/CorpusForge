@@ -49,18 +49,33 @@ def test_dedup_only_panel_passes_selected_output(root, tmp_path):
 
     assert captured["source"] == str(tmp_path / "source")
     assert captured["output"] == str(tmp_path / "chosen_output")
+    assert captured["copy_sources"] is True
 
 
 def test_corpusforge_status_bar_shows_worker_count(root):
     config = load_config()
-    app = CorpusForgeApp(root, config=config)
+    app = CorpusForgeApp(root, config=config, config_path="config/config.yaml")
     root.update_idletasks()
+    assert app._status_labels["config"].cget("text") == "Runtime: config/config.yaml"
+    assert "Skip/defer:" in app._status_labels["skip"].cget("text")
     assert "Pipeline workers:" in app._status_labels["workers"].cget("text")
 
     app.workers_var.set(20)
     app.update_worker_status(20)
 
     assert app._status_labels["workers"].cget("text") == "Pipeline workers: 20 logical threads"
+
+
+def test_save_settings_log_calls_out_live_runtime_config(root):
+    config = load_config()
+    app = CorpusForgeApp(root, config=config, config_path="config/config.yaml")
+    logs = []
+    app._settings_panel._append_log = lambda message, level="INFO": logs.append((level, message))
+    app._settings_panel._on_save_settings = lambda settings: None
+
+    app._settings_panel._handle_save_settings()
+
+    assert any("runtime config config/config.yaml" in message for _level, message in logs)
 
 
 def test_pipeline_finished_progress_label_uses_work_total(root):
@@ -281,6 +296,7 @@ def test_dedup_only_runner_writes_selected_output_artifacts(root, tmp_path):
     assert app.finished is not None
     final_stats, final_message = app.finished
     assert "canonical_files.txt" in final_message
+    assert "Deduped source copy:" in final_message
     assert final_stats["unique_files"] == 2
     assert final_stats["duplicates_found"] == 1
 
@@ -291,11 +307,70 @@ def test_dedup_only_runner_writes_selected_output_artifacts(root, tmp_path):
     canonical = run_dir / "canonical_files.txt"
     report = run_dir / "dedup_report.json"
     run_report = run_dir / "run_report.txt"
+    portable_copy = run_dir / "deduped_sources"
 
     assert canonical.exists()
     assert report.exists()
     assert run_report.exists()
+    assert portable_copy.exists()
 
     canonical_lines = canonical.read_text(encoding="utf-8").splitlines()
     assert len(canonical_lines) == 2
     assert all(Path(line).is_absolute() for line in canonical_lines)
+    assert (portable_copy / "report.txt").exists()
+    assert (portable_copy / "notes.txt").exists()
+    assert not (portable_copy / "report_1.txt").exists()
+
+
+def test_dedup_only_runner_canonical_snapshot_includes_indexed_unchanged(root, tmp_path):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    report = source_dir / "report.txt"
+    duplicate = source_dir / "report_1.txt"
+    notes = source_dir / "notes.txt"
+    report.write_text("same content")
+    duplicate.write_text("same content")
+    notes.write_text("unique content")
+
+    output_root = tmp_path / "dedup_output"
+    config = load_config()
+    config.paths.state_db = str(tmp_path / "state.sqlite3")
+
+    from src.download.hasher import Hasher
+    hasher = Hasher(config.paths.state_db)
+    hasher.update_hash(report, hasher.hash_file(report), status="indexed")
+    hasher.update_hash(duplicate, hasher.hash_file(duplicate), status="duplicate")
+    hasher.update_hash(notes, hasher.hash_file(notes), status="indexed")
+    hasher.close()
+
+    class _AppStub:
+        def __init__(self, root_widget):
+            self.root = root_widget
+            self.logs = []
+            self.stats = []
+            self.finished = None
+
+        def append_log(self, message, level="INFO"):
+            self.logs.append((level, message))
+
+        def update_dedup_only_stats(self, stats):
+            self.stats.append(stats)
+
+        def dedup_only_finished(self, stats, message=""):
+            self.finished = (stats, message)
+
+    app = _AppStub(root)
+    runner = DedupOnlyRunner(app, config)
+    runner._run(str(source_dir), str(output_root), copy_sources=False)
+    drain_ui_queue()
+    root.update()
+
+    assert app.finished is not None
+    final_stats, _message = app.finished
+    assert final_stats["unique_files"] == 2
+
+    run_dir = next(output_root.glob("dedup_only_*"))
+    canonical_lines = (run_dir / "canonical_files.txt").read_text(encoding="utf-8").splitlines()
+    assert len(canonical_lines) == 2
+    assert str(report.resolve()) in canonical_lines
+    assert str(notes.resolve()) in canonical_lines

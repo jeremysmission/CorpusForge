@@ -322,6 +322,236 @@ def test_pipeline_stop_before_dedup_reports_no_export(config_chunk_only):
     assert stats.files_parsed == 0
 
 
+def test_pipeline_stop_before_embed_leaves_durable_chunk_checkpoint(config_chunk_only, monkeypatch):
+    """A stop before embed must still leave chunk data durably checkpointed on disk."""
+    config_chunk_only.embed.enabled = True
+    config_chunk_only.pipeline.workers = 1
+
+    class _StubEmbedder:
+        dim = 8
+        def embed_batch(self, texts):
+            raise AssertionError("embed should not run in the stop-before-embed case")
+
+    p = Pipeline(config_chunk_only)
+    monkeypatch.setattr(p, "_get_embedder", lambda: _StubEmbedder())
+
+    files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
+    files = [f for f in files if f.is_file()]
+    stop = {"value": False}
+
+    def on_stats_update(snapshot):
+        if snapshot.get("files_parsed", 0) >= 1:
+            stop["value"] = True
+
+    stats = p.run(files, on_stats_update=on_stats_update, should_stop=lambda: stop["value"])
+
+    checkpoint_dir = Path(config_chunk_only.paths.output_dir) / "_checkpoint_active"
+    chunks_path = checkpoint_dir / "chunks.partial.jsonl"
+    sources_path = checkpoint_dir / "parsed_sources.txt"
+
+    assert stats.stop_requested is True
+    assert stats.export_dir == ""
+    assert checkpoint_dir.exists()
+    assert chunks_path.exists()
+    assert sources_path.exists()
+    assert len([line for line in chunks_path.read_text(encoding="utf-8").splitlines() if line.strip()]) > 0
+    assert len([line for line in sources_path.read_text(encoding="utf-8").splitlines() if line.strip()]) >= 1
+
+
+def test_pipeline_resume_from_chunk_checkpoint_after_stop_before_embed(config_chunk_only, monkeypatch):
+    """A rerun should reuse checkpointed chunks and only parse the files that were
+    not yet checkpointed when the prior run was stopped."""
+    config_chunk_only.embed.enabled = True
+    config_chunk_only.pipeline.workers = 1
+
+    class _StubEmbedder:
+        dim = 8
+        def embed_batch(self, texts):
+            return np.zeros((len(texts), self.dim), dtype=np.float16)
+
+    files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
+    files = [f for f in files if f.is_file()]
+
+    # First run: stop after one file has been parsed/chunked so the checkpoint
+    # contains partial progress but no export is written.
+    first = Pipeline(config_chunk_only)
+    monkeypatch.setattr(first, "_get_embedder", lambda: _StubEmbedder())
+    stop = {"value": False}
+
+    def on_stats_update(snapshot):
+        if snapshot.get("files_parsed", 0) >= 1:
+            stop["value"] = True
+
+    first_stats = first.run(files, on_stats_update=on_stats_update, should_stop=lambda: stop["value"])
+    assert first_stats.export_dir == ""
+
+    # Second run: resume from checkpoint and export successfully.
+    second = Pipeline(config_chunk_only)
+    monkeypatch.setattr(second, "_get_embedder", lambda: _StubEmbedder())
+    parse_calls = {"count": 0}
+    original_parse = second.dispatcher.parse
+
+    def _counted_parse(file_path):
+        parse_calls["count"] += 1
+        return original_parse(file_path)
+
+    monkeypatch.setattr(second.dispatcher, "parse", _counted_parse)
+    second_stats = second.run(files)
+
+    out = Path(config_chunk_only.paths.output_dir)
+    exports = sorted(out.glob("export_*"))
+
+    assert second_stats.files_parsed == len(files)
+    assert parse_calls["count"] == len(files) - 1
+    assert len(exports) >= 1
+    assert not (out / "_checkpoint_active").exists()
+
+
+def test_pipeline_resume_from_chunk_checkpoint_with_enrichment_enabled(config_chunk_only, monkeypatch):
+    """Resume must still work when enrichment is enabled; completed docs should
+    not be reparsed just to rebuild doc_texts for the enricher."""
+    config_chunk_only.embed.enabled = True
+    config_chunk_only.enrich.enabled = True
+    config_chunk_only.pipeline.workers = 1
+
+    class _StubEmbedder:
+        dim = 8
+        def embed_batch(self, texts):
+            return np.zeros((len(texts), self.dim), dtype=np.float16)
+
+    enriched_doc_counts = []
+
+    class _StubEnricher:
+        def enrich_chunks(self, chunks, doc_texts):
+            enriched_doc_counts.append(len(doc_texts))
+            for chunk in chunks:
+                chunk["enriched_text"] = f"ctx::{chunk['text']}"
+            return chunks
+
+    files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
+    files = [f for f in files if f.is_file()]
+
+    first = Pipeline(config_chunk_only)
+    monkeypatch.setattr(first, "_get_embedder", lambda: _StubEmbedder())
+    monkeypatch.setattr(first, "_get_enricher", lambda: _StubEnricher())
+    stop = {"value": False}
+
+    def on_stats_update(snapshot):
+        if snapshot.get("files_parsed", 0) >= 1:
+            stop["value"] = True
+
+    first_stats = first.run(files, on_stats_update=on_stats_update, should_stop=lambda: stop["value"])
+    assert first_stats.export_dir == ""
+
+    second = Pipeline(config_chunk_only)
+    monkeypatch.setattr(second, "_get_embedder", lambda: _StubEmbedder())
+    monkeypatch.setattr(second, "_get_enricher", lambda: _StubEnricher())
+    parse_calls = {"count": 0}
+    original_parse = second.dispatcher.parse
+
+    def _counted_parse(file_path):
+        parse_calls["count"] += 1
+        return original_parse(file_path)
+
+    monkeypatch.setattr(second.dispatcher, "parse", _counted_parse)
+    second_stats = second.run(files)
+
+    assert second_stats.files_parsed == len(files)
+    assert parse_calls["count"] == len(files) - 1
+    assert enriched_doc_counts[-1] == len(files)
+
+
+def test_pipeline_resume_ignores_changed_checkpointed_file(config_chunk_only, monkeypatch):
+    """If a checkpointed source file changes before resume, the old checkpointed
+    chunks must be discarded and the file must be reparsed."""
+    config_chunk_only.embed.enabled = True
+    config_chunk_only.pipeline.workers = 1
+
+    class _StubEmbedder:
+        dim = 8
+        def embed_batch(self, texts):
+            return np.zeros((len(texts), self.dim), dtype=np.float16)
+
+    files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
+    files = [f for f in files if f.is_file()]
+
+    first = Pipeline(config_chunk_only)
+    monkeypatch.setattr(first, "_get_embedder", lambda: _StubEmbedder())
+    stop = {"value": False}
+
+    def on_stats_update(snapshot):
+        if snapshot.get("files_parsed", 0) >= 1:
+            stop["value"] = True
+
+    first.run(files, on_stats_update=on_stats_update, should_stop=lambda: stop["value"])
+
+    checkpoint_sources = (
+        Path(config_chunk_only.paths.output_dir) / "_checkpoint_active" / "parsed_sources.txt"
+    ).read_text(encoding="utf-8").splitlines()
+    changed_path = Path(checkpoint_sources[0])
+    changed_path.write_text(changed_path.read_text(encoding="utf-8") + "\nresume-invalidating change\n", encoding="utf-8")
+
+    second = Pipeline(config_chunk_only)
+    monkeypatch.setattr(second, "_get_embedder", lambda: _StubEmbedder())
+    parse_calls = {"count": 0}
+    original_parse = second.dispatcher.parse
+
+    def _counted_parse(file_path):
+        parse_calls["count"] += 1
+        return original_parse(file_path)
+
+    monkeypatch.setattr(second.dispatcher, "parse", _counted_parse)
+    second_stats = second.run(files)
+
+    assert second_stats.files_parsed == len(files)
+    assert parse_calls["count"] == len(files)
+
+
+def test_pipeline_crash_before_export_leaves_checkpoint_and_resumes(config_chunk_only, monkeypatch):
+    """A crash after parse/chunk but before export must leave a synced checkpoint
+    that a rerun can use without reparsing completed documents."""
+    config_chunk_only.embed.enabled = True
+    config_chunk_only.pipeline.workers = 1
+
+    class _CrashingEmbedder:
+        dim = 8
+        def embed_batch(self, texts):
+            raise RuntimeError("simulated embed crash")
+
+    first = Pipeline(config_chunk_only)
+    monkeypatch.setattr(first, "_get_embedder", lambda: _CrashingEmbedder())
+    files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
+    files = [f for f in files if f.is_file()]
+
+    with pytest.raises(RuntimeError, match="simulated embed crash"):
+        first.run(files)
+
+    checkpoint_dir = Path(config_chunk_only.paths.output_dir) / "_checkpoint_active"
+    assert checkpoint_dir.exists()
+    assert (checkpoint_dir / "checkpoint_manifest.json").exists()
+
+    class _StubEmbedder:
+        dim = 8
+        def embed_batch(self, texts):
+            return np.zeros((len(texts), self.dim), dtype=np.float16)
+
+    second = Pipeline(config_chunk_only)
+    monkeypatch.setattr(second, "_get_embedder", lambda: _StubEmbedder())
+    parse_calls = {"count": 0}
+    original_parse = second.dispatcher.parse
+
+    def _counted_parse(file_path):
+        parse_calls["count"] += 1
+        return original_parse(file_path)
+
+    monkeypatch.setattr(second.dispatcher, "parse", _counted_parse)
+    second_stats = second.run(files)
+
+    assert second_stats.files_parsed == len(files)
+    assert parse_calls["count"] == 0
+    assert not checkpoint_dir.exists()
+
+
 def test_chunk_only_writes_jsonl(config_chunk_only):
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))

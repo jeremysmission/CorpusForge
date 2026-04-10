@@ -74,36 +74,47 @@ class DedupOnlyPanel:
         self.browse_dedup_only_out_btn.pack(side=tk.RIGHT)
 
         row2 = ttk.Frame(parent)
-        row2.pack(fill=tk.X, pady=(6, 2))
+        row2.pack(fill=tk.X, pady=(2, 2))
+
+        self.copy_deduped_sources_var = tk.BooleanVar(value=True)
+        self.copy_deduped_sources_chk = ttk.Checkbutton(
+            row2,
+            text="Save portable deduped source copy (deduped_sources/)",
+            variable=self.copy_deduped_sources_var,
+        )
+        self.copy_deduped_sources_chk.pack(side=tk.LEFT)
+
+        row3 = ttk.Frame(parent)
+        row3.pack(fill=tk.X, pady=(6, 2))
 
         self.dedup_only_start_btn = ttk.Button(
-            row2, text="Run Dedup Only", style="Accent.TButton",
+            row3, text="Run Dedup Only", style="Accent.TButton",
             command=self._on_start_click,
         )
         self.dedup_only_start_btn.pack(side=tk.LEFT, padx=(0, 6))
 
         self.dedup_only_stop_btn = ttk.Button(
-            row2, text="Stop", style="Tertiary.TButton",
+            row3, text="Stop", style="Tertiary.TButton",
             command=self._on_stop_click, state=tk.DISABLED,
         )
         self.dedup_only_stop_btn.pack(side=tk.LEFT, padx=(0, 12))
 
         self.dedup_only_progress_var = tk.DoubleVar(value=0.0)
         self.dedup_only_progress_bar = ttk.Progressbar(
-            row2, variable=self.dedup_only_progress_var, maximum=100,
+            row3, variable=self.dedup_only_progress_var, maximum=100,
             mode="determinate", length=250,
         )
         self.dedup_only_progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
 
         self.dedup_only_status_label = tk.Label(
-            row2, text="Idle", font=FONT_SMALL,
+            row3, text="Idle", font=FONT_SMALL,
             bg=t["panel_bg"], fg=t["label_fg"],
         )
         self.dedup_only_status_label.pack(side=tk.RIGHT)
 
         # Dedup stats row
-        row3 = ttk.Frame(parent)
-        row3.pack(fill=tk.X, pady=2)
+        row4 = ttk.Frame(parent)
+        row4.pack(fill=tk.X, pady=2)
 
         self._dedup_only_stat_labels = {}
         for key, label_text in [
@@ -111,18 +122,18 @@ class DedupOnlyPanel:
             ("unique", "Unique:"), ("current", "Current:"),
             ("elapsed", "Elapsed:"), ("eta", "ETA:"),
         ]:
-            tk.Label(row3, text=label_text, font=FONT_SMALL, bg=t["panel_bg"],
+            tk.Label(row4, text=label_text, font=FONT_SMALL, bg=t["panel_bg"],
                      fg=t["label_fg"]).pack(side=tk.LEFT, padx=(0, 2))
-            val = tk.Label(row3, text="--", font=FONT_SMALL, bg=t["panel_bg"],
+            val = tk.Label(row4, text="--", font=FONT_SMALL, bg=t["panel_bg"],
                            fg=t["fg"])
             val.pack(side=tk.LEFT, padx=(0, 10))
             self._dedup_only_stat_labels[key] = val
 
-        row4 = ttk.Frame(parent)
-        row4.pack(fill=tk.X, pady=(2, 0))
+        row5 = ttk.Frame(parent)
+        row5.pack(fill=tk.X, pady=(2, 0))
         self.dedup_only_artifact_label = tk.Label(
-            row4,
-            text="Artifacts: canonical_files.txt, dedup_report.json, run_report.txt",
+            row5,
+            text="Artifacts: canonical_files.txt, dedup_report.json, run_report.txt, optional deduped_sources/",
             font=FONT_SMALL,
             bg=t["panel_bg"],
             fg=t["label_fg"],
@@ -147,6 +158,7 @@ class DedupOnlyPanel:
             self._on_dedup_only_start(
                 source=self.dedup_only_src_var.get(),
                 output=self.dedup_only_out_var.get(),
+                copy_sources=self.copy_deduped_sources_var.get(),
             )
 
     def _on_stop_click(self):
@@ -190,9 +202,13 @@ class DedupOnlyPanel:
         status_text = stats.get("status_text", f"{scanned}/{total}" if total else "Idle")
         self.dedup_only_status_label.configure(text=status_text)
         output_dir = stats.get("output_dir")
+        portable_copy_dir = stats.get("portable_copy_dir")
         if output_dir:
+            artifact_text = "Output: " + str(output_dir) + " | Artifacts: canonical_files.txt, dedup_report.json, run_report.txt"
+            if portable_copy_dir:
+                artifact_text += f", deduped_sources/ -> {portable_copy_dir}"
             self.dedup_only_artifact_label.configure(
-                text=f"Output: {output_dir} | Artifacts: canonical_files.txt, dedup_report.json, run_report.txt"
+                text=artifact_text
             )
 
     def dedup_only_finished(self, stats: dict, message: str = ""):

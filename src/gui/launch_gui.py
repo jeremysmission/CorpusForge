@@ -5,6 +5,7 @@ import argparse
 import logging, subprocess, sys, threading, tkinter as tk
 from collections import Counter
 from pathlib import Path
+import shutil
 from tkinter import messagebox
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -28,6 +29,17 @@ _EMPTY_STATS = {
     "vectors_created": 0, "entities_extracted": 0,
     "elapsed_seconds": 0.0, "stop_requested": False, "skip_reasons": "",
 }
+
+
+def _display_repo_relative(path_value: str | Path) -> str:
+    """Return a concise repo-relative path when possible."""
+    path = Path(path_value)
+    if not path.is_absolute():
+        return path.as_posix()
+    try:
+        return path.resolve().relative_to(_PROJECT_ROOT).as_posix()
+    except Exception:
+        return str(path)
 
 
 def _discover_candidates(files: list[Path], supported: set[str], deferred: dict[str, str]) -> tuple[list[Path], Counter, Counter]:
@@ -159,12 +171,12 @@ class DedupOnlyRunner:
         self._thread = None
         self._stop_event = threading.Event()
 
-    def start(self, source: str, output: str):
+    def start(self, source: str, output: str, copy_sources: bool = True):
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
         self._thread = threading.Thread(
-            target=self._run, args=(source, output),
+            target=self._run, args=(source, output, copy_sources),
             name="CorpusForge-DedupOnly", daemon=True,
         )
         self._thread.start()
@@ -172,12 +184,45 @@ class DedupOnlyRunner:
     def stop(self):
         self._stop_event.set()
 
-    def _write_outputs(self, output_dir: Path, source_path: Path, unique_files: list[Path], report: dict) -> None:
+    def _collect_canonical_files(self, deduplicator, scanned_files: list[Path]) -> list[Path]:
+        """Return the full canonical snapshot for the scanned portion of the tree.
+
+        This includes unchanged indexed canonicals and newly hashed canonicals,
+        not just the current run's incremental work list.
+        """
+        canonical_files: list[Path] = []
+        for file_path in scanned_files:
+            state = deduplicator.hasher.get_state(file_path)
+            if state and state["status"] != "duplicate":
+                canonical_files.append(file_path)
+        return canonical_files
+
+    def _copy_canonical_sources(
+        self,
+        output_dir: Path,
+        source_path: Path,
+        canonical_files: list[Path],
+    ) -> tuple[Path, int]:
+        portable_copy_dir = output_dir / "deduped_sources"
+        portable_copy_dir.mkdir(parents=True, exist_ok=True)
+        copied = 0
+        for file_path in canonical_files:
+            try:
+                relative_path = file_path.resolve().relative_to(source_path)
+            except Exception:
+                relative_path = Path(file_path.name)
+            destination = portable_copy_dir / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file_path, destination)
+            copied += 1
+        return portable_copy_dir, copied
+
+    def _write_outputs(self, output_dir: Path, source_path: Path, canonical_files: list[Path], report: dict) -> None:
         import json
 
         canonical_path = output_dir / "canonical_files.txt"
         with open(canonical_path, "w", encoding="utf-8", newline="\n") as handle:
-            for file_path in unique_files:
+            for file_path in canonical_files:
                 handle.write(str(file_path.resolve()) + "\n")
 
         with open(output_dir / "dedup_report.json", "w", encoding="utf-8", newline="\n") as handle:
@@ -192,20 +237,23 @@ class DedupOnlyRunner:
             f"Source:         {source_path}",
             f"Output:         {output_dir}",
             f"Files scanned:  {report['files_scanned']}",
-            f"Unique files:   {report['unique_files']}",
+            f"Canonical files:{report['unique_files']}",
+            f"Work files:     {report['work_files']}",
             f"Duplicates:     {report['duplicates_found']}",
             f"Unchanged:      {report['unchanged_files']}",
             f"Elapsed:        {report['elapsed_seconds']:.1f}s",
             f"State DB:       {report['state_db']}",
             "",
             f"Canonical list: {canonical_path}",
+            f"Portable copy:  {report['portable_copy_dir'] or '(disabled)'}",
+            f"Files copied:   {report['portable_files_copied']}",
             "",
             "=" * 60,
         ]
         with open(output_dir / "run_report.txt", "w", encoding="utf-8", newline="\n") as handle:
             handle.write("\n".join(lines) + "\n")
 
-    def _run(self, source: str, output: str):
+    def _run(self, source: str, output: str, copy_sources: bool = True):
         import time as _time
         from datetime import datetime
         from src.download.hasher import Hasher
@@ -253,42 +301,57 @@ class DedupOnlyRunner:
                     "total_files": total_files,
                     "files_scanned": scanned_count,
                     "duplicates_found": dupes,
-                    "unique_files": max(scanned_count - dupes - deduplicator.skipped_unchanged, 0),
+                    "unique_files": max(scanned_count - dupes, 0),
                     "current_file": current_file,
                     "elapsed_seconds": _time.time() - start,
                     "output_dir": str(output_dir),
+                    "portable_copy_dir": str(output_dir / "deduped_sources") if copy_sources else "",
                     "status_text": "Scanning..." if not self._stop_event.is_set() else "Stopping...",
                 }
                 safe_after(self.app.root, 0, self.app.update_dedup_only_stats, stats)
 
-            unique_files = deduplicator.filter_new_and_changed(
+            work_files = deduplicator.filter_new_and_changed(
                 all_files, on_progress=on_progress, should_stop=self._stop_event.is_set,
             )
             scanned = deduplicator.files_scanned
             duplicates = deduplicator.skipped_duplicate
             unchanged = deduplicator.skipped_unchanged
             elapsed = _time.time() - start
+            scanned_files = all_files[:scanned]
+            canonical_files = self._collect_canonical_files(deduplicator, scanned_files)
+            portable_copy_dir = ""
+            portable_files_copied = 0
+            if copy_sources and canonical_files:
+                portable_copy_path, portable_files_copied = self._copy_canonical_sources(
+                    output_dir, source_path, canonical_files
+                )
+                portable_copy_dir = str(portable_copy_path)
             report = {
                 "generated_at": datetime.now().isoformat(timespec="seconds"),
                 "source_root": str(source_path),
                 "output_dir": str(output_dir),
                 "files_scanned": scanned,
-                "unique_files": len(unique_files),
+                "unique_files": len(canonical_files),
+                "work_files": len(work_files),
                 "duplicates_found": duplicates,
                 "unchanged_files": unchanged,
                 "elapsed_seconds": round(elapsed, 2),
                 "state_db": self.config.paths.state_db,
+                "portable_copy_enabled": copy_sources,
+                "portable_copy_dir": portable_copy_dir,
+                "portable_files_copied": portable_files_copied,
             }
-            self._write_outputs(output_dir, source_path, unique_files, report)
+            self._write_outputs(output_dir, source_path, canonical_files, report)
             stopped = self._stop_event.is_set() and scanned < total
             final_stats = {
                 "total_files": total,
                 "files_scanned": scanned,
                 "duplicates_found": duplicates,
-                "unique_files": len(unique_files),
+                "unique_files": len(canonical_files),
                 "current_file": "",
                 "elapsed_seconds": elapsed,
                 "output_dir": str(output_dir),
+                "portable_copy_dir": portable_copy_dir,
                 "status_text": "Stopped" if stopped else "Done",
             }
             if stopped:
@@ -296,12 +359,16 @@ class DedupOnlyRunner:
                     f"Dedup stopped after {scanned}/{total} files. "
                     f"Partial canonical list written to {output_dir / 'canonical_files.txt'}"
                 )
+                if portable_copy_dir:
+                    msg += f" and partial deduped source copy saved to {portable_copy_dir}"
             else:
                 msg = (
                     f"Dedup complete: {scanned} scanned, {duplicates} duplicates found, "
-                    f"{len(unique_files)} unique in {elapsed:.1f}s. "
+                    f"{len(canonical_files)} canonical files in {elapsed:.1f}s. "
                     f"Canonical list: {output_dir / 'canonical_files.txt'}"
                 )
+                if portable_copy_dir:
+                    msg += f" | Deduped source copy: {portable_copy_dir}"
             safe_after(self.app.root, 0, self.app.dedup_only_finished, final_stats, msg)
         except Exception as exc:
             logger.error("Dedup-only crashed: %s", exc, exc_info=True)
@@ -351,7 +418,18 @@ class PrecheckRunner:
             "--extract-enabled", "1" if settings["extract"]["enabled"] else "0",
             "--embed-batch-size", str(settings["hardware"]["embed_batch_size"]),
         ]
-        safe_after(self.app.root, 0, self.app.append_log, "Running workstation precheck...", "INFO")
+        safe_after(
+            self.app.root,
+            0,
+            self.app.append_log,
+            (
+                f"Running workstation precheck against runtime config "
+                f"{_display_repo_relative(self.config_path)} "
+                f"(workers={settings['pipeline']['workers']}, "
+                f"run defers stay in YAML)..."
+            ),
+            "INFO",
+        )
         try:
             proc = subprocess.run(
                 cmd,
@@ -538,7 +616,10 @@ class PipelineRunner:
             safe_after(self.app.root, 0, self.app.update_current_file, name)
 
         def on_stats_update(stats_snapshot):
-            safe_after(self.app.root, 0, self.app.update_stats, stats_snapshot)
+            if isinstance(self.app, CorpusForgeApp):
+                safe_after(self.app.root, 0, self.app.update_stats, stats_snapshot)
+            else:
+                self.app.update_stats(stats_snapshot)
 
         def on_stage_progress(stage, current, total, detail):
             msg = f"[{stage}] {current}/{total}"
@@ -555,7 +636,18 @@ class PipelineRunner:
             on_stats_update=on_stats_update,
             should_stop=self._stop_event.is_set,
         )
-        safe_after(self.app.root, 0, self.app.pipeline_finished, stats.to_dict())
+        if stats.stop_requested and not stats.export_dir and stats.checkpoint_dir:
+            safe_after(
+                self.app.root,
+                0,
+                self.app.append_log,
+                f"Chunk checkpoint preserved at {stats.checkpoint_dir}. Re-run the same source/output to resume before export.",
+                "WARNING",
+            )
+        if isinstance(self.app, CorpusForgeApp):
+            safe_after(self.app.root, 0, self.app.pipeline_finished, stats.to_dict())
+        else:
+            self.app.pipeline_finished(stats.to_dict())
 
     @property
     def is_alive(self):
@@ -627,10 +719,10 @@ def main():
         if transfer_runner[0]:
             transfer_runner[0].stop()
 
-    def on_dedup_only_start(source, output):
+    def on_dedup_only_start(source, output, copy_sources=True):
         if dedup_only_runner[0] is None or not dedup_only_runner[0].is_alive:
             dedup_only_runner[0] = DedupOnlyRunner(app, config)
-        dedup_only_runner[0].start(source, output)
+        dedup_only_runner[0].start(source, output, copy_sources=copy_sources)
 
     def on_dedup_only_stop():
         if dedup_only_runner[0]:
@@ -698,8 +790,11 @@ def main():
 
     app.append_log("CorpusForge GUI ready. Configure paths and click Start.", "INFO")
     app.append_log(
-        f"Config: {config_path} | {supported_count} formats | "
-        f"{skip_count} deferred | Enrichment: {'ON' if config.enrich.enabled else 'OFF'} | "
+        f"Runtime config: {_display_repo_relative(config_path)} | "
+        f"Skip/defer source: {_display_repo_relative(config.paths.skip_list)} | "
+        f"{supported_count} formats | {skip_count} static defers | "
+        f"{len(config.parse.defer_extensions)} run defers | "
+        f"Enrichment: {'ON' if config.enrich.enabled else 'OFF'} | "
         f"Pipeline workers: {config.pipeline.workers} logical threads",
         "INFO")
 
