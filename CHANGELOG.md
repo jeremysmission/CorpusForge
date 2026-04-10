@@ -150,7 +150,7 @@ The repo did not use formal release tags or semantic versions during the initial
 | `2026-04-07T22:39:17-06:00` | `68e7635` | feat: expose all worker/batch controls in config.yaml and GUI |
 | `2026-04-07T22:40:25-06:00` | `1782e61` | fix: GUI settings validation + rapid-click debounce |
 | `2026-04-07T22:46:03-06:00` | `fb53d73` | feat: Reset to Defaults button in GUI settings panel |
-| `2026-04-07T23:20:39-06:00` | `35465f8` | feat: Sprint 4 — CLAUDE.md, GUI button smash, audit tool, run history, Task Scheduler |
+| `2026-04-07T23:20:39-06:00` | `35465f8` | feat: Sprint 4 — developer guidance file, GUI button smash, audit tool, run history, Task Scheduler |
 | `2026-04-08T01:07:42-06:00` | `7a3db63` | feat: Sprint 5 — operator quickstart doc + run history |
 | `2026-04-08T05:55:08-06:00` | `deed970` | feat: concurrent GLiNER extraction — extract.max_concurrent config |
 | `2026-04-08T07:56:04-06:00` | `cd714ab` | docs: recovery action plan + sprint sync + dedup guides |
