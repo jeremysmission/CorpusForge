@@ -1,3 +1,4 @@
+# PRESET / LEGACY PROOF CONFIG — not the live runtime config.
 # Sprint 6.6 archive-defer fix — short proof sample config (2026-04-09)
 # Used to verify the archive-member defer fix on a tiny targeted sample
 # before launching the full production rerun. Mechanism check only.

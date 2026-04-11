@@ -1,7 +1,9 @@
+# LEGACY REFERENCE LIST — not the live mainline runtime config.
 # CorpusForge Skip List — formats hashed but not parsed
 # Date: 2026-04-07
 # Rule: All skipped files are still SHA-256 hashed for the manifest.
-# Rule: NO hardcoded format decisions in Python — everything here.
+# Rule: Mainline now loads skip/defer rules from config/config.yaml via paths.skip_list.
+# Rule: Keep this file only as a historical/reference copy while older notes are retired.
 
 # Formats deferred for production (hashed but not parsed)
 deferred_formats:

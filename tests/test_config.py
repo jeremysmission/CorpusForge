@@ -1,10 +1,12 @@
 """Tests for configuration loading and validation."""
+from argparse import Namespace
 from pathlib import Path
 
 import pytest
 import yaml
 
 from src.config.schema import load_config, ForgeConfig, _deep_merge
+from tools.precheck_workstation_large_ingest import _collect_results
 
 
 # --- deep merge ---
@@ -71,6 +73,12 @@ def test_load_config_uses_single_explicit_file(tmp_path):
     assert c.chunk.size == 1200
 
 
+def test_live_runtime_config_points_skip_rules_at_config_yaml():
+    config = load_config("config/config.yaml")
+    expected = (Path(__file__).resolve().parent.parent / "config" / "config.yaml").resolve()
+    assert Path(config.paths.skip_list).resolve() == expected
+
+
 def test_load_config_normalizes_defer_extensions(tmp_path):
     cfg = tmp_path / "config.yaml"
     cfg.write_text(yaml.dump({
@@ -103,6 +111,63 @@ def test_load_config_resolves_nightly_delta_paths(tmp_path):
     assert Path(c.nightly_delta.pipeline_state_db).is_absolute()
     assert Path(c.nightly_delta.pipeline_log_dir).is_absolute()
     assert Path(c.nightly_delta.stop_file).is_absolute()
+
+
+def test_precheck_reports_runtime_and_skip_defer_sources(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(yaml.dump({
+        "paths": {
+            "source_dirs": [str(tmp_path / "source")],
+            "output_dir": str(tmp_path / "output"),
+            "state_db": str(tmp_path / "state.sqlite3"),
+            "skip_list": str(cfg),
+        },
+        "embed": {"enabled": False},
+        "enrich": {"enabled": False},
+        "extract": {"enabled": False},
+        "parse": {"defer_extensions": [".sao", ".rsf"]},
+    }))
+    (tmp_path / "source").mkdir()
+
+    results, summary = _collect_results(Namespace(
+        config=str(cfg),
+        source=None,
+        output=None,
+        workers=None,
+        ocr_mode=None,
+        embed_enabled="0",
+        enrich_enabled="0",
+        extract_enabled="0",
+        embed_batch_size=None,
+    ))
+
+    titles = {item.title for item in results}
+    assert "Live runtime config" in titles
+    assert "Skip/defer source" in titles
+    assert summary["runtime_config"].endswith("config.yaml")
+    assert summary["skip_defer_source"].endswith("config.yaml")
+
+
+def test_precheck_resolves_runtime_config_against_project_root_when_cwd_differs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+
+    results, summary = _collect_results(Namespace(
+        config="config/config.yaml",
+        source=str(tmp_path),
+        output=str(tmp_path / "output"),
+        workers=1,
+        ocr_mode="auto",
+        embed_enabled="0",
+        enrich_enabled="0",
+        extract_enabled="0",
+        embed_batch_size=8,
+    ))
+
+    expected = (Path(__file__).resolve().parent.parent / "config" / "config.yaml").resolve()
+    assert summary["runtime_config"] == str(expected)
+    live_runtime_entries = [item for item in results if item.title == "Live runtime config"]
+    assert len(live_runtime_entries) == 1
+    assert live_runtime_entries[0].proof == str(expected)
 
 
 def test_task_start_time_normalizes_and_validates():

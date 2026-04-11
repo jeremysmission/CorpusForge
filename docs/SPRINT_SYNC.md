@@ -1,6 +1,6 @@
 # Unified Sprint Plan — CorpusForge + HybridRAG V2
 
-**Last Updated:** 2026-04-09 | **Updated By:** reviewer — corpus-adaptation profiling completed against the local sample tree plus real export artifacts, a checked-in export-analysis generator was added for reproducibility, and CA.1 is now ready for QA.
+**Last Updated:** 2026-04-10 | **Updated By:** reviewer — Sprint 9.4 nightly delta / scheduler / admin plan packet posted, board synced, and targeted design-lane verification completed (`tests/test_nightly_delta.py`, `tests/test_stage_forge_import.py`).
 **Demo Target:** 2026-05-02
 **Update Rule:** Every agent updates ALL 3 copies at end of sprint session (review board + both repos)
 
@@ -353,6 +353,22 @@
 - All code changes happen in main repo, then `git pull` into clone
 - Each clone gets its own config.local.yaml (different output dirs, GPU assignment)
 - Venv MUST be rebuilt from scratch — copied venvs break on Windows (hardcoded paths)
+
+---
+
+## Sprint 9 (2026-04-10): review board Lanes
+
+**Added:** 2026-04-10 | **Purpose:** recover from the lost 700GB long-run payload, convert the captured corpus metadata into retrieval value, and keep the four-lane team moving from a single coordinator board.
+
+| Slice | Repo | Priority | What | Status | Owner |
+|-------|------|----------|------|--------|-------|
+| 9.1 | Forge | P0 | Durability / chunk checkpointing: persist parse/chunk output during long runs, resume after stop/crash before export, and keep export safety guarantees intact. | READY FOR QA (corrected packet at `data/sprint9_lane1_validation_20260410_171433/hardware_proof_report.json` plus handoff/checklist in `docs/SPRINT9_1_DURABILITY_HARDWARE_HANDOFF_2026-04-10.md` and `docs/SPRINT9_1_DURABILITY_QA_CHECKLIST_2026-04-10.md`. The absolute proof command is now replayable and refreshes the fixed proof root in place. Real subset: 8 files with 4 duplicate pairs; dedup-only reduced to 4 canonicals and preserved source-relative portable copy `4/4`. Stop pass left `_checkpoint_active` with `2 docs / 59 chunks`, status `stopped_before_export`, and no export dir. Compatible rerun emitted `Resumed 2 files / 59 chunks from checkpoint.` and exported `62` aligned chunks/vectors (`vector_dim=768`). Separate live-embed run on the same subset proved CUDA activity before parse finished: live snapshot `files_parsed=1/4`, `vectors_created=1`, GPU memory `2111 MiB` vs `36 MiB` baseline, `5` saved `nvidia-smi` samples, and nonzero torch CUDA allocations/reservations. Targeted tests passed: `tests/test_pipeline_e2e.py` `23/23`, `tests/test_gui_button_smash.py` `16/16`, isolated `tests/test_gui_dedup_only.py` `14/14` from an alternate working directory; the combined slice still hits a workstation Tk blocker at the shared `root` fixture with `_tkinter.TclError: invalid command name \"tcl_findLibrary\"`) | reviewer |
+| 9.2 | Forge | P1 | Runtime config simplification / operator clarity: inventory remaining config files, enforce `config/config.yaml` as the live runtime path, and retire/quarantine stale operator-facing config confusion. | READY FOR QA (2026-04-10: truth map + handoff at `docs/LANE9_2_CONFIG_SIMPLIFICATION_HANDOFF_2026-04-10.md`; added `config/CONFIG_INVENTORY_2026-04-10.md`; GUI, CLI, precheck, and operator docs now consistently call out `config/config.yaml` as the live runtime config; `paths.skip_list` intentionally remains `config/config.yaml`; legacy/preset YAMLs are labeled non-runtime; precheck now resolves relative `--config` against repo root before reporting it; focused tests `tests/test_config.py`, `tests/test_gui_dedup_only.py`, and `tests/test_gui_button_smash.py` passed 49/49; external-cwd `boot.py` + precheck proof passed; Tier D non-author human GUI button smash still required before signoff) | reviewer |
+| 9.3 | Both | P1 | Retrieval metadata schema: convert captured corpus structure into implementation-ready metadata fields and ranking/filter rules for DM, logistics, cybersecurity, archive, and future V3 linkage. Artifacts: `C:\CorpusForge\docs\RETRIEVAL_METADATA_SCHEMA_SPRINT9_2026-04-10.md`, `C:\HybridRAG_V2\docs\RETRIEVAL_METADATA_SCHEMA_SPRINT9_2026-04-10.md`, and bounded probe packet `C:\HybridRAG_V2\docs\RETRIEVAL_METADATA_GPU_PROBE_2026-04-10.{md,json}`. | READY FOR QA (GPU addendum) | reviewer |
+| 9.4 | Both | P1 | Nightly delta / scheduler / admin-panel plan: implementation-ready slices for unattended delta copy + Forge pipeline + V2 staging/import, with stop/pause/resume expectations, V1 prior art references, canary strategy, and plan doc at `C:\CorpusForge\docs\NIGHTLY_DELTA_SCHEDULER_ADMIN_PLAN_2026-04-10.md`. | READY FOR QA (design lane only; main packet `docs/NIGHTLY_DELTA_SCHEDULER_ADMIN_PLAN_2026-04-10.md`, handoff `docs/LANE4_NIGHTLY_DELTA_HANDOFF_2026-04-10.md`, targeted tests passed: Forge `tests/test_nightly_delta.py`, V2 `tests/test_stage_forge_import.py`) | reviewer |
+| 9.QA | Both | P0 | QA lane for Sprint 9. Runtime-changing work still requires targeted tests and proof artifacts; GUI/runtime operator claims still require harness coverage and non-author validation before signoff. | READY | QA |
+
+**Sprint 9 Board:** `C:\CorpusForge\___WAR_ROOM_BOARD_2026_04_10.md`
 
 ---
 

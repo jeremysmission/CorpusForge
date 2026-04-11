@@ -10,7 +10,7 @@ from .theme import FONT, current_theme
 
 
 class SettingsPanel:
-    """Pipeline settings: workers, toggles, chunk params. Changes save into config.yaml."""
+    """Pipeline settings: workers, toggles, chunk params. Changes save into the live runtime config."""
 
     def __init__(self, parent: ttk.LabelFrame, root: tk.Tk, config=None,
                  config_path: str = "", on_save_settings=None,
@@ -22,6 +22,9 @@ class SettingsPanel:
         self._append_log = append_log
         self._last_save_time = 0.0
         self._build(parent)
+
+    def _display_config_path(self) -> str:
+        return self.config_path or "config/config.yaml"
 
     def _build(self, parent):
         t = current_theme()
@@ -183,6 +186,23 @@ class SettingsPanel:
         )
         self.reset_defaults_btn.pack(side=tk.RIGHT, padx=(0, 6))
 
+        row3 = ttk.Frame(parent)
+        row3.pack(fill=tk.X, pady=(4, 0))
+        tk.Label(
+            row3,
+            text=(
+                f"Live runtime config: {self._display_config_path()} | "
+                "Save Settings updates workers/OCR/chunk/stage toggles only. "
+                "Skip/defer rules stay in the runtime YAML."
+            ),
+            font=FONT,
+            bg=t["panel_bg"],
+            fg=t["label_fg"],
+            anchor=tk.W,
+            justify=tk.LEFT,
+            wraplength=760,
+        ).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
     def _handle_save_settings(self):
         """Collect current settings, validate, and invoke the save callback."""
         now = time.time()
@@ -239,7 +259,8 @@ class SettingsPanel:
             self._on_save_settings(settings)
         if self._append_log:
             self._append_log(
-                f"Settings saved to config.yaml: workers={settings['pipeline']['workers']}, "
+                f"Settings saved to runtime config {self._display_config_path()}: "
+                f"workers={settings['pipeline']['workers']}, "
                 f"OCR={settings['parse']['ocr_mode']}, "
                 f"chunk={settings['chunk']['size']}/{settings['chunk']['overlap']}, "
                 f"embed={'ON' if settings['embed']['enabled'] else 'OFF'}, "
@@ -249,13 +270,13 @@ class SettingsPanel:
             )
 
     def _handle_reset_defaults(self):
-        """Reset all settings controls to base config.yaml values."""
+        """Reset all settings controls to the live runtime-config values."""
         from tkinter import messagebox
         if not messagebox.askyesno(
             "Reset to Defaults",
-            "Reset all settings to config.yaml defaults?\n\n"
+            f"Reset all settings to {self._display_config_path()} defaults?\n\n"
             "This does not change config files — only resets the GUI controls.\n"
-            "Click Save Settings after to write config.yaml.",
+            "Click Save Settings after to write the live runtime config.",
         ):
             return
 
@@ -280,7 +301,11 @@ class SettingsPanel:
             self.embed_batch_var.set(raw.get("hardware", {}).get("embed_batch_size", 256))
 
             if self._append_log:
-                self._append_log("Settings reset to config.yaml defaults. Click Save to write config.yaml.", "INFO")
+                self._append_log(
+                    f"Settings reset to {self._display_config_path()} defaults. "
+                    "Click Save to write the live runtime config.",
+                    "INFO",
+                )
         except Exception as exc:
             if self._append_log:
                 self._append_log(f"Failed to reset defaults: {exc}", "ERROR")

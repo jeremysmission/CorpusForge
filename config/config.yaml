@@ -1,6 +1,8 @@
-# CorpusForge Configuration — Workstation Defaults
+# CorpusForge Configuration — Live Runtime Config
 # Date: 2026-04-04
-# Rule: Single config, no modes. One hardware preset.
+# Rule: mainline operator runtime uses this file: config/config.yaml
+# Note: GUI Save Settings writes here.
+# Note: skip/defer rules are also loaded from this file via paths.skip_list.
 
 paths:
   source_dirs:
@@ -8,7 +10,7 @@ paths:
   output_dir: "data/production_output"
   state_db: "data/production_state_run6.sqlite3"
   landing_zone: "data/source"
-  skip_list: "config/config.yaml"
+  skip_list: "config/config.yaml"   # Live skip/defer rule source for mainline.
 
 chunk:
   size: 1200

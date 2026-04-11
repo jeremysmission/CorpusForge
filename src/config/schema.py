@@ -42,7 +42,10 @@ class PathsConfig(BaseModel):
     )
     skip_list: str = Field(
         default="config/config.yaml",
-        description="Runtime config file containing skip/defer rules; normal path is config/config.yaml.",
+        description=(
+            "Skip/defer rule source. Mainline points this at config/config.yaml so one "
+            "live operator file carries runtime settings plus skip/defer policy."
+        ),
     )
 
 
@@ -347,7 +350,7 @@ def load_config(config_path: str | Path = "config/config.yaml") -> ForgeConfig:
     Load and validate CorpusForge configuration from YAML.
 
     Loading order:
-      1. config.yaml (explicit runtime config, committed to git or edited per machine)
+      1. config.yaml (explicit live runtime config for mainline)
 
     Falls back to Pydantic defaults for any missing fields.
     """

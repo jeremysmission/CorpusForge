@@ -344,9 +344,9 @@ class CorpusForgeApp:
 
         self._status_labels = {}
         items = [
-            ("config", f"Config: {self.config_path}"),
+            ("config", f"Runtime: {self._display_config_path()}"),
             ("formats", f"Formats: {self.supported_formats}"),
-            ("skip", f"Skip list: {self.skip_list_count} deferred"),
+            ("skip", f"Skip/defer: {self.skip_list_count} static, {self._current_defer_count()} run"),
             ("workers", f"Pipeline workers: {self._current_worker_count()} logical threads"),
             ("enrich", f"Enrichment: {'enabled' if self.enrichment_enabled else 'disabled'}"),
         ]
@@ -575,13 +575,13 @@ class CorpusForgeApp:
         enrich_fg = t["green"] if self.enrichment_enabled else t["gray"]
 
         self._status_labels["config"].configure(
-            text=f"Config: {self.config_path}",
+            text=f"Runtime: {self._display_config_path()}",
         )
         self._status_labels["formats"].configure(
             text=f"Formats: {self.supported_formats}",
         )
         self._status_labels["skip"].configure(
-            text=f"Skip list: {self.skip_list_count} deferred",
+            text=f"Skip/defer: {self.skip_list_count} static, {self._current_defer_count()} run",
         )
         self._status_labels["workers"].configure(
             text=f"Pipeline workers: {self._current_worker_count()} logical threads",
@@ -609,6 +609,9 @@ class CorpusForgeApp:
             self._config.pipeline.workers = workers
         self._update_status_bar()
 
+    def _display_config_path(self) -> str:
+        return self.config_path or "config/config.yaml"
+
     def _current_worker_count(self) -> int:
         if hasattr(self, "_settings_panel"):
             try:
@@ -617,6 +620,14 @@ class CorpusForgeApp:
                 pass
         if self._config is not None:
             return int(self._config.pipeline.workers)
+        return 0
+
+    def _current_defer_count(self) -> int:
+        if self._config is not None:
+            try:
+                return len(self._config.parse.defer_extensions)
+            except Exception:
+                pass
         return 0
 
     def _collect_current_settings(self) -> dict:

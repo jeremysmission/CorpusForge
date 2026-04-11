@@ -142,58 +142,20 @@ def test_pipeline_emits_export_stage(config_chunk_only):
 def test_pipeline_embed_stop_truncates_chunks_to_match_vectors(config_chunk_only, monkeypatch):
     """Cooperative stop fired mid-embed must keep chunks/vectors aligned in the export."""
     config_chunk_only.embed.enabled = True
+    config_chunk_only.pipeline.workers = 1
+    config_chunk_only.pipeline.embed_flush_batch = 1
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
     files = [f for f in files if f.is_file()]
 
-    # Force the sub-batch path with a tiny sub-batch size, and stub the embedder
-    # so we don't load a real model. The stub returns deterministic float16 vectors.
+    # Stub the embedder so we don't load a real model. The stub returns
+    # deterministic float16 vectors while the live flush path handles batching.
     class _StubEmbedder:
         dim = 8
         def embed_batch(self, texts):
             return np.zeros((len(texts), self.dim), dtype=np.float16)
 
     monkeypatch.setattr(p, "_get_embedder", lambda: _StubEmbedder())
-
-    # Drop the sub-batch threshold so the loop runs even with small inputs.
-    import src.pipeline as pipeline_module
-    original_embed = pipeline_module.Pipeline._embed_chunks
-
-    def _embed_with_small_batches(self, chunks, stats):
-        # Monkey-replace the constant inline by re-implementing with sub_batch_size=1
-        embedder = self._get_embedder()
-        total = len(chunks)
-        dim = embedder.dim
-        sub_batch_size = 1
-        self._emit_stage("embed", 0, total, "Starting embedding...")
-
-        import tempfile, time as _t
-        from pathlib import Path as _P
-        mmap_path = _P(tempfile.mktemp(suffix=".dat", prefix="embed_test_"))
-        vectors_mmap = np.memmap(str(mmap_path), dtype=np.float16, mode="w+", shape=(total, dim))
-        embed_start = _t.time()
-        offset = 0
-        for batch_start in range(0, total, sub_batch_size):
-            if self._check_stop(stats, f"stop mid-embed at {offset}/{total}"):
-                break
-            batch_end = min(batch_start + sub_batch_size, total)
-            batch_texts = [c.get("enriched_text") or c["text"] for c in chunks[batch_start:batch_end]]
-            batch_vectors = embedder.embed_batch(batch_texts)
-            batch_count = len(batch_vectors)
-            vectors_mmap[offset:offset + batch_count] = batch_vectors.astype(np.float16)
-            offset += batch_count
-            stats.vectors_created = offset
-            self._emit_stats(stats)
-        vectors = np.array(vectors_mmap[:offset], dtype=np.float16)
-        del vectors_mmap
-        try:
-            mmap_path.unlink()
-        except OSError:
-            pass
-        stats.vectors_created = len(vectors)
-        return vectors
-
-    monkeypatch.setattr(pipeline_module.Pipeline, "_embed_chunks", _embed_with_small_batches)
 
     # Stop after the first embed sub-batch posts vectors_created.
     stop = {"value": False}
@@ -258,6 +220,48 @@ def test_pipeline_skips_extraction_when_stopped(config_chunk_only, monkeypatch):
     assert extract_called["value"] is False, (
         "Entity extraction must be skipped after a cooperative stop"
     )
+
+
+def test_pipeline_live_embed_flush_starts_before_parse_finishes(config_chunk_only, monkeypatch):
+    """Embed-enabled runs should start producing vectors during parse rather than
+    waiting until all files are fully parsed/chunked."""
+    config_chunk_only.embed.enabled = True
+    config_chunk_only.enrich.enabled = False
+    config_chunk_only.pipeline.workers = 1
+    config_chunk_only.pipeline.embed_flush_batch = 1
+
+    class _StubEmbedder:
+        dim = 8
+
+        def embed_batch(self, texts):
+            return np.ones((len(texts), self.dim), dtype=np.float16)
+
+    p = Pipeline(config_chunk_only)
+    monkeypatch.setattr(p, "_get_embedder", lambda: _StubEmbedder())
+
+    files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
+    files = [f for f in files if f.is_file()]
+
+    snapshots = []
+    stage_events = []
+    stats = p.run(
+        files,
+        on_stats_update=lambda snapshot: snapshots.append(dict(snapshot)),
+        on_stage_progress=lambda stage, current, total, detail: stage_events.append(
+            (stage, current, total, detail)
+        ),
+    )
+
+    assert stats.files_parsed == len(files)
+    assert stats.vectors_created == stats.chunks_created
+    assert any(
+        snap.get("vectors_created", 0) > 0 and snap.get("files_parsed", 0) < len(files)
+        for snap in snapshots
+    ), "expected vectors to start appearing before parse completed"
+    assert any(
+        stage == "embed" and "GPU live flush" in detail
+        for stage, _current, _total, detail in stage_events
+    ), "expected live embed stage updates during parse"
 
 
 def test_pipeline_stop_before_embed_does_not_ship_mismatched_export(config_chunk_only, monkeypatch):

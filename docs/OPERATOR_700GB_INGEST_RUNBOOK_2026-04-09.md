@@ -80,6 +80,7 @@ Before a large run, confirm these settings are what you intend:
 - `pipeline.workers`
 - `parse.ocr_mode`
 - `parse.defer_extensions` if you intentionally want formats deferred for this run
+- `skip.*` if you intentionally want durable skip/defer policy changed for this lane
 - `enrich.enabled`
 - `extract.enabled`
 - `hardware.embed_batch_size`
@@ -99,6 +100,8 @@ For the current large-ingest Phase 1 path, the important values are:
 - `hardware.embed_batch_size: 256`
 
 If this run intentionally defers known low-value formats, confirm `parse.defer_extensions` contains those dotted lowercase extensions before you start.
+
+Durable skip/defer policy is also read from the same live file through the `skip:` block in `config/config.yaml`. Consuming code paths: `src/pipeline.py::__init__` for per-run defer merge and `src/skip/skip_manager.py::_load_skip_source` / `src/skip/skip_manager.py::SkipManager.should_skip` for durable skip policy.
 
 ## Env Vars To Confirm
 
@@ -249,7 +252,7 @@ In the `Settings` panel, set these values for the current large-ingest Phase 1 p
 After you set the values:
 
 1. Click `Save Settings`
-2. Confirm the log says settings were saved to `config.yaml`
+2. Confirm the log says settings were saved to `config/config.yaml`
 3. Confirm the bottom status bar shows the worker count you expect
 
 Important:

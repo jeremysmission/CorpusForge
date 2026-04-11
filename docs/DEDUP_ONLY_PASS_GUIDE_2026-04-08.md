@@ -37,7 +37,12 @@ In the **Settings** panel:
 
 ### Step 5: Decide
 - If skip/dedup numbers look reasonable: proceed to full pipeline with embedding enabled
-- If too many skips or unexpected formats: review skip_manifest.json and adjust config/skip_list.yaml
+- If too many skips or unexpected formats: review skip_manifest.json and adjust `config/config.yaml`
+
+Code anchors for skip/defer behavior:
+
+- run-time defer list: `src/pipeline.py::__init__`, `src/pipeline.py::run`
+- durable skip rules: `src/skip/skip_manager.py::_load_skip_source`, `src/skip/skip_manager.py::SkipManager.should_skip`
 
 ---
 
@@ -56,7 +61,7 @@ extract:
   enabled: false    # No GLiNER extraction
 ```
 
-Or if you have a `config/config.local.yaml`, override there instead (doesn't touch the shared config).
+Mainline operator path: keep the change in `config/config.yaml`. Do not assume `config/config.local.yaml` is active unless a side lane explicitly rewired code to use it.
 
 ### Step 2: Run
 ```bash
@@ -122,8 +127,10 @@ type data\output\export_*\skip_manifest.json
 5. Re-run with: `python scripts/run_pipeline.py --input-list canonical_files.txt --strict-input-list`
 
 ### If unexpected format skips:
-1. Check `config/skip_list.yaml` — is the format listed as deferred or placeholder?
-2. To add a format: remove it from skip_list.yaml (or add a real parser)
+1. Check `config/config.yaml`:
+   - `parse.defer_extensions` for per-run defers
+   - `skip.deferred_formats` or `skip.placeholder_formats` for durable policy
+2. To add a format: remove it from the live `config/config.yaml` skip/defer sections or add a real parser
 3. To keep it skipped: leave it — the skip manifest documents the decision
 
 ---
@@ -133,8 +140,8 @@ type data\output\export_*\skip_manifest.json
 | Machine | Workers | Command |
 |---------|---------|---------|
 | primary workstation (16 threads) | 16 | `python scripts/run_pipeline.py --input "path" --full-reindex --log-file logs/dedup.log` |
-| Work Desktop (32 threads) | 32 | Same command — workers set via config.local.yaml |
-| Work Laptop (20 threads) | 20 | Same command — workers set via config.local.yaml |
+| Work Desktop (32 threads) | 32 | Same command — workers set in `config/config.yaml` |
+| Work Laptop (20 threads) | 20 | Same command — workers set in `config/config.yaml` |
 
 **Time estimate:** ~1-3 hours for 700GB depending on file types (PDFs with emoji cmaps are slow).
 

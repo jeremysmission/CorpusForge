@@ -1,3 +1,4 @@
+# PRESET / LEGACY PROBE CONFIG — not the live runtime config.
 # CorpusForge Configuration — AWS Probe Fast Path
 # Date: 2026-04-06
 # Purpose: Controlled export for timing/probe work without local phi4 enrichment delay.

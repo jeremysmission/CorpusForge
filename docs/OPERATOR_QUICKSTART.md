@@ -149,6 +149,7 @@ python scripts/import_embedengine.py --source "C:\CorpusForge\data\output\latest
 | File | What | Committed |
 |------|------|-----------|
 | `config/config.yaml` | Live runtime config. GUI **Save Settings** writes here. Use it for workers, paths, parser defer list, GPU, batch sizes, and optional `parse.docling_mode`. | Yes |
+| `config/skip_list.yaml` | Legacy reference only. Mainline skip/defer policy now loads from the `skip:` block inside `config/config.yaml`. | Yes |
 
 Legacy note: `config/config.local.yaml` is not part of the live mainline runtime path.
 

@@ -92,8 +92,16 @@ def _disk_free_gb(path: Path) -> float:
     return usage.free / (1024 ** 3)
 
 
+def _resolve_runtime_config_path(config_arg: str | Path) -> Path:
+    path = Path(config_arg)
+    if not path.is_absolute():
+        path = (PROJECT_ROOT / path).resolve()
+    return path
+
+
 def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]:
-    config = load_config(args.config)
+    runtime_config_path = _resolve_runtime_config_path(args.config)
+    config = load_config(runtime_config_path)
 
     if args.source:
         config.paths.source_dirs = [str(Path(args.source).expanduser().resolve())]
@@ -123,7 +131,8 @@ def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]
     else:
         results.append(CheckResult("FAIL", "Python version", f"{py_ver} (expected 3.12.x)"))
 
-    results.append(CheckResult("PASS", "Runtime config", str(Path(args.config).resolve())))
+    results.append(CheckResult("PASS", "Live runtime config", str(runtime_config_path)))
+    results.append(CheckResult("PASS", "Skip/defer source", str(Path(config.paths.skip_list).resolve())))
 
     if source_path.exists():
         kind = "directory" if source_path.is_dir() else "file"
@@ -222,6 +231,8 @@ def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]
     }
 
     summary = {
+        "runtime_config": str(runtime_config_path),
+        "skip_defer_source": str(Path(config.paths.skip_list).resolve()),
         "source_path": str(source_path),
         "output_dir": str(output_dir),
         "state_db": str(state_db),
@@ -251,6 +262,8 @@ def _render_report(results: list[CheckResult], summary: dict, report_path: Path)
         f"Report:    {report_path}",
         "",
         "Effective run settings:",
+        f"  Runtime cfg:    {summary['runtime_config']}",
+        f"  Skip/defer src: {summary['skip_defer_source']}",
         f"  Source:         {summary['source_path']}",
         f"  Output:         {summary['output_dir']}",
         f"  State DB:       {summary['state_db']}",

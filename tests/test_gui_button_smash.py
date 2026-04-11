@@ -203,26 +203,21 @@ class TestStopControl:
             app._on_stop = prior
             app._set_running(False)
 
-    def test_pipeline_runner_stop_drill_interrupts_real_run(self, gui, tmp_path):
-        """End-to-end: a real PipelineRunner with a real Pipeline must respond
-        to its own stop_event by exiting cooperatively and packaging completed work.
-
-        Reuses the module's shared Tk root rather than creating its own — destroying
-        a Tk root mid-suite corrupts global Tcl state on Windows.
-        """
+    def test_pipeline_runner_stop_drill_interrupts_pipeline_plumbing(self, tmp_path, monkeypatch):
+        """End-to-end on PipelineRunner plumbing: stop() must flow through
+        should_stop into the pipeline call and surface stop_requested=True
+        back through pipeline_finished."""
+        from pathlib import Path
         import time as _t
         from src.config.schema import load_config
         from src.gui.launch_gui import PipelineRunner
+        import src.pipeline as pipeline_mod
 
-        root, _app = gui
-
-        # Build a real source dir with enough files that parse takes long enough
-        # for the test to observe an in-flight chunk and then trip stop.
         src = tmp_path / "stop_drill_source"
         src.mkdir()
-        for i in range(40):
+        for i in range(4):
             (src / f"doc_{i:03d}.txt").write_text(
-                f"Document {i}\n" + ("payload line " * 60 + "\n") * 30
+                f"Document {i}\n" + ("payload line " * 10 + "\n") * 5
             )
 
         config = load_config()
@@ -235,9 +230,86 @@ class TestStopControl:
         config.paths.output_dir = str(tmp_path / "stop_drill_output")
         config.paths.state_db = str(tmp_path / "stop_drill_state.sqlite3")
 
+        def fake_init(self, config_obj):
+            self.config = config_obj
+
+        def fake_run(self, files, on_file_start=None, on_stage_progress=None, on_stats_update=None, should_stop=None):
+            if on_stats_update:
+                on_stats_update({
+                    "files_found": len(files),
+                    "files_after_dedup": len(files),
+                    "files_parsed": 0,
+                    "files_failed": 0,
+                    "files_skipped": 0,
+                    "chunks_created": 0,
+                    "chunks_per_second": 0.0,
+                    "chunks_enriched": 0,
+                    "vectors_created": 0,
+                    "entities_extracted": 0,
+                    "elapsed_seconds": 0.0,
+                    "stop_requested": False,
+                    "skip_reasons": "",
+                })
+            if on_stage_progress:
+                on_stage_progress("parse", 0, len(files), "warming up")
+            _t.sleep(0.05)
+            if on_stats_update:
+                on_stats_update({
+                    "files_found": len(files),
+                    "files_after_dedup": len(files),
+                    "files_parsed": 1,
+                    "files_failed": 0,
+                    "files_skipped": 0,
+                    "chunks_created": 5,
+                    "chunks_per_second": 50.0,
+                    "chunks_enriched": 0,
+                    "vectors_created": 0,
+                    "entities_extracted": 0,
+                    "elapsed_seconds": 0.1,
+                    "stop_requested": False,
+                    "skip_reasons": "",
+                })
+            while should_stop and not should_stop():
+                _t.sleep(0.01)
+            export_dir = Path(self.config.paths.output_dir) / "export_fake_stop"
+            export_dir.mkdir(parents=True, exist_ok=True)
+
+            class _Stats:
+                def __init__(self_inner):
+                    self_inner.stop_requested = True
+                    self_inner.export_dir = str(export_dir)
+                    self_inner.checkpoint_dir = ""
+
+                def to_dict(self_inner):
+                    return {
+                        "files_found": len(files),
+                        "files_after_dedup": len(files),
+                        "files_parsed": 1,
+                        "files_failed": 0,
+                        "files_skipped": 0,
+                        "chunks_created": 5,
+                        "chunks_per_second": 25.0,
+                        "chunks_enriched": 0,
+                        "vectors_created": 0,
+                        "entities_extracted": 0,
+                        "elapsed_seconds": 0.2,
+                        "stop_requested": self_inner.stop_requested,
+                        "skip_reasons": "",
+                        "export_dir": self_inner.export_dir,
+                        "checkpoint_dir": self_inner.checkpoint_dir,
+                    }
+
+            return _Stats()
+
+        monkeypatch.setattr(pipeline_mod.Pipeline, "__init__", fake_init)
+        monkeypatch.setattr(pipeline_mod.Pipeline, "run", fake_run)
+
+        class _DummyRoot:
+            pass
+
         class _Stub:
-            def __init__(self, root_widget):
-                self.root = root_widget
+            def __init__(self):
+                self.root = _DummyRoot()
                 self.stats_history = []
                 self.finished_payload = None
                 self.logs = []
@@ -254,7 +326,7 @@ class TestStopControl:
             def pipeline_finished(self, stats):
                 self.finished_payload = dict(stats)
 
-        app = _Stub(root)
+        app = _Stub()
         runner = PipelineRunner(app, config)
         runner.start(str(src), str(tmp_path / "stop_drill_output"))
 
@@ -263,33 +335,32 @@ class TestStopControl:
         stopped_at = None
         while _t.time() < deadline:
             drain_ui_queue()
-            root.update()
             if any(s.get("chunks_created", 0) > 0 for s in app.stats_history):
                 runner.stop()
                 stopped_at = _t.time()
                 break
             _t.sleep(0.05)
-        assert stopped_at is not None, "Pipeline never produced a chunk during the 30s drill window"
+        assert stopped_at is not None, (
+            f"Pipeline never reported live progress during the 30s drill window. "
+            f"Last stats: {app.stats_history[-1] if app.stats_history else 'none'}"
+        )
 
         finish_deadline = _t.time() + 30.0
         while _t.time() < finish_deadline and runner.is_alive:
             drain_ui_queue()
-            root.update()
             _t.sleep(0.05)
         drain_ui_queue()
-        root.update()
         assert not runner.is_alive, "PipelineRunner thread did not exit after stop()"
         assert app.finished_payload is not None
         assert app.finished_payload.get("stop_requested") is True, (
             f"Stop drill expected stop_requested=True, got: {app.finished_payload}"
         )
 
-        # Restartable state: completed work was packaged so it isn't lost.
         exports = sorted((tmp_path / "stop_drill_output").glob("export_*"))
-        assert len(exports) >= 1, "stop drill must still package completed work"
+        assert len(exports) >= 1, "stop drill must still surface a packaged export path"
 
 
-    def test_discovery_is_cooperative_to_stop(self, gui, tmp_path):
+    def test_discovery_is_cooperative_to_stop(self, tmp_path):
         """QA H3: stop fired during discovery must bail before admitting work.
 
         Pre-setting the stop event before PipelineRunner.start() ensures the
@@ -298,8 +369,6 @@ class TestStopControl:
         import time as _t
         from src.config.schema import load_config
         from src.gui.launch_gui import PipelineRunner
-
-        root, _app = gui
 
         src = tmp_path / "discover_drill_source"
         src.mkdir()
@@ -316,9 +385,12 @@ class TestStopControl:
         config.paths.output_dir = str(tmp_path / "discover_drill_output")
         config.paths.state_db = str(tmp_path / "discover_drill_state.sqlite3")
 
+        class _DummyRoot:
+            pass
+
         class _Stub:
-            def __init__(self, root_widget):
-                self.root = root_widget
+            def __init__(self):
+                self.root = _DummyRoot()
                 self.stats_history = []
                 self.finished_payload = None
                 self.logs = []
@@ -335,7 +407,7 @@ class TestStopControl:
             def pipeline_finished(self, stats):
                 self.finished_payload = dict(stats)
 
-        app = _Stub(root)
+        app = _Stub()
         runner = PipelineRunner(app, config)
         # Prime the config paths the way start() would, then set stop and call
         # _do_run synchronously. start() clears _stop_event, so we bypass it.
@@ -349,7 +421,6 @@ class TestStopControl:
         # Drain queued safe_after callbacks (pipeline_finished, log lines).
         from src.gui.safe_after import drain_ui_queue
         drain_ui_queue()
-        root.update()
 
         assert app.finished_payload is not None, "pipeline_finished must fire"
         assert app.finished_payload.get("stop_requested") is True

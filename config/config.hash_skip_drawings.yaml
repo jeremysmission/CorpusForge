@@ -1,3 +1,4 @@
+# PRESET / LEGACY PROFILE CONFIG — not the live runtime config.
 # CorpusForge Profile -- Hash and skip drawing-heavy formats for faster rebuild prep
 
 paths:

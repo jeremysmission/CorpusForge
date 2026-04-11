@@ -424,6 +424,12 @@ class Pipeline:
             )
             stats.checkpoint_dir = str(self.chunk_checkpoint.root)
             stats.checkpointed_files = len(resume.source_paths)
+            live_embed_during_parse = (
+                self.config.embed.enabled and not self.config.enrich.enabled
+            )
+            live_embed_pending = list(resume.chunks) if live_embed_during_parse else []
+            live_vector_batches: list[np.ndarray] = []
+
             all_chunks = list(resume.chunks)
             parsed_source_paths = list(resume.source_paths)
             all_docs = list(resume.docs)
@@ -443,17 +449,30 @@ class Pipeline:
 
             if parse_files:
                 self._emit_stage("parse", stats.files_parsed, total_parse_files, "Starting parse...")
+                on_chunks_ready = None
+                if live_embed_during_parse:
+                    def _on_chunks_ready(new_chunks: list[dict]) -> None:
+                        live_embed_pending.extend(new_chunks)
+                        self._flush_live_embed_batches(
+                            live_embed_pending,
+                            live_vector_batches,
+                            stats,
+                        )
+
+                    on_chunks_ready = _on_chunks_ready
                 if self.workers > 1 and len(parse_files) > 1:
                     new_chunks, new_docs, new_source_paths = self._parallel_parse_and_chunk(
                         parse_files,
                         stats,
                         total_files=total_parse_files,
+                        on_chunks_ready=on_chunks_ready,
                     )
                 else:
                     new_chunks, new_docs, new_source_paths = self._parse_and_chunk_sequential(
                         parse_files,
                         stats,
                         total_files=total_parse_files,
+                        on_chunks_ready=on_chunks_ready,
                     )
                 all_chunks.extend(new_chunks)
                 all_docs.extend(new_docs)
@@ -492,7 +511,24 @@ class Pipeline:
             )
 
             # Stage 6: Embed (GPU batch with token-budget packing + OOM backoff)
-            if self.config.embed.enabled and not stats.stop_requested:
+            if live_embed_during_parse and not stats.stop_requested:
+                self.chunk_checkpoint.set_status("embedding")
+                prior_vectors = sum(len(batch) for batch in live_vector_batches)
+                pending_vectors = np.empty((0, self._get_embedder().dim), dtype=np.float16)
+                if live_embed_pending:
+                    pending_vectors = self._embed_chunks(live_embed_pending, stats)
+                if live_vector_batches:
+                    if len(pending_vectors):
+                        live_vector_batches.append(np.asarray(pending_vectors, dtype=np.float16))
+                    vectors = self._combine_live_vector_batches(
+                        live_vector_batches,
+                        self._get_embedder().dim,
+                    )
+                    stats.vectors_created = prior_vectors + len(pending_vectors)
+                    self._emit_stats(stats)
+                else:
+                    vectors = pending_vectors
+            elif self.config.embed.enabled and not stats.stop_requested:
                 self.chunk_checkpoint.set_status("embedding")
                 vectors = self._embed_chunks(all_chunks, stats)
                 # If a stop fired mid-embed, vectors may be shorter than chunks.
@@ -505,14 +541,31 @@ class Pipeline:
                     all_chunks = all_chunks[: len(vectors)]
                     stats.chunks_created = len(all_chunks)
             elif self.config.embed.enabled and stats.stop_requested:
-                logger.warning(
-                    "Stop fired before embed (embed enabled) — preserving %d checkpointed "
-                    "chunks on disk, but writing no export to avoid chunk/vector mismatch.",
-                    len(all_chunks),
-                )
-                all_chunks = []
-                stats.chunks_created = 0
-                vectors = np.empty((0, 768), dtype=np.float16)
+                completed_live_vectors = sum(len(batch) for batch in live_vector_batches)
+                if live_embed_during_parse and completed_live_vectors > 0:
+                    vectors = self._combine_live_vector_batches(
+                        live_vector_batches,
+                        self._get_embedder().dim,
+                    )
+                    if completed_live_vectors < len(all_chunks):
+                        logger.warning(
+                            "Stop honored during live parse/embed: trimming chunks %d -> %d "
+                            "to match already-embedded prefix.",
+                            len(all_chunks), completed_live_vectors,
+                        )
+                        all_chunks = all_chunks[:completed_live_vectors]
+                    stats.chunks_created = len(all_chunks)
+                    stats.vectors_created = len(vectors)
+                else:
+                    logger.warning(
+                        "Stop fired before embed (embed enabled) — preserving %d checkpointed "
+                        "chunks on disk, but writing no export to avoid chunk/vector mismatch.",
+                        len(all_chunks),
+                    )
+                    live_vector_batches.clear()
+                    all_chunks = []
+                    stats.chunks_created = 0
+                    vectors = np.empty((0, 768), dtype=np.float16)
             else:
                 logger.info("Embedding disabled — chunk-only export.")
                 vectors = np.empty((0, 768), dtype=np.float16)
@@ -794,6 +847,7 @@ class Pipeline:
         stats: RunStats,
         *,
         total_files: int | None = None,
+        on_chunks_ready: callable | None = None,
     ) -> tuple[list[dict], list[ParsedDocument], list[str]]:
         """
         Parse files in parallel using ThreadPoolExecutor.
@@ -904,6 +958,8 @@ class Pipeline:
                             )
                             all_chunks.extend(new_chunks)
                             parsed_source_paths.extend(new_sources)
+                            if on_chunks_ready and new_chunks:
+                                on_chunks_ready(new_chunks)
                         else:
                             logger.warning("Empty parse: %s", fp_done.name)
                             stats.files_failed += 1
@@ -1032,6 +1088,7 @@ class Pipeline:
         stats: RunStats,
         *,
         total_files: int | None = None,
+        on_chunks_ready: callable | None = None,
     ) -> tuple[list[dict], list[ParsedDocument], list[str]]:
         """Sequential parse+chunk fallback with per-document checkpoint flush."""
         parsed_docs = []
@@ -1064,6 +1121,8 @@ class Pipeline:
                     )
                     all_chunks.extend(new_chunks)
                     parsed_source_paths.extend(new_sources)
+                    if on_chunks_ready and new_chunks:
+                        on_chunks_ready(new_chunks)
                 else:
                     logger.warning("Empty parse result: %s", file_path)
                     stats.files_failed += 1
@@ -1161,3 +1220,63 @@ class Pipeline:
         self._emit_stage("embed", stats.vectors_created, total, f"{rate:.0f} chunks/sec")
         self._emit_stats(stats)
         return vectors
+
+    def _flush_live_embed_batches(
+        self,
+        pending_chunks: list[dict],
+        vector_batches: list[np.ndarray],
+        stats: RunStats,
+        *,
+        force: bool = False,
+    ) -> None:
+        """Embed pending chunks incrementally during parse using embed_flush_batch."""
+        if not pending_chunks:
+            return
+
+        embedder = None
+        while pending_chunks and (
+            len(pending_chunks) >= self.embed_flush_batch or force
+        ):
+            if self._check_stop(
+                stats,
+                "Stop requested during live embed flush. Preserving checkpoint; no export will be written.",
+            ):
+                return
+
+            batch_size = min(len(pending_chunks), self.embed_flush_batch)
+            batch = pending_chunks[:batch_size]
+            del pending_chunks[:batch_size]
+
+            if embedder is None:
+                self.chunk_checkpoint.set_status("embedding")
+                embedder = self._get_embedder()
+
+            embed_start = time.time()
+            texts = [c.get("enriched_text") or c["text"] for c in batch]
+            batch_vectors = embedder.embed_batch(texts)
+            batch_vectors = np.asarray(batch_vectors, dtype=np.float16)
+            vector_batches.append(batch_vectors)
+            stats.vectors_created += len(batch_vectors)
+
+            total_known = max(stats.chunks_created, stats.vectors_created)
+            rate = len(batch_vectors) / max(time.time() - embed_start, 0.01)
+            self._emit_stage(
+                "embed",
+                stats.vectors_created,
+                total_known,
+                f"GPU live flush {stats.vectors_created}/{total_known} vectors "
+                f"({rate:.0f} chunks/sec)",
+            )
+            self._emit_stats(stats)
+
+    def _combine_live_vector_batches(
+        self,
+        vector_batches: list[np.ndarray],
+        dim: int,
+    ) -> np.ndarray:
+        """Concatenate live-embedded batches into the final export array."""
+        if not vector_batches:
+            return np.empty((0, dim), dtype=np.float16)
+        if len(vector_batches) == 1:
+            return vector_batches[0]
+        return np.concatenate(vector_batches, axis=0)

@@ -66,6 +66,13 @@ def test_corpusforge_status_bar_shows_worker_count(root):
     assert app._status_labels["workers"].cget("text") == "Pipeline workers: 20 logical threads"
 
 
+def test_corpusforge_status_bar_defaults_to_live_runtime_config(root):
+    config = load_config()
+    app = CorpusForgeApp(root, config=config)
+    root.update_idletasks()
+    assert app._status_labels["config"].cget("text") == "Runtime: config/config.yaml"
+
+
 def test_save_settings_log_calls_out_live_runtime_config(root):
     config = load_config()
     app = CorpusForgeApp(root, config=config, config_path="config/config.yaml")
