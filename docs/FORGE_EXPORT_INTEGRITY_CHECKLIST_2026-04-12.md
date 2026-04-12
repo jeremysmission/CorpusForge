@@ -9,6 +9,7 @@ Audience: operator validating a fresh Forge desktop export before any real Hybri
 Provide one lightweight handoff gate for a large Forge export.
 
 This checklist is designed for full production exports where loading the entire corpus into memory just to audit it is unnecessary risk.
+It is a count/integrity gate, not per-row chunk schema validation.
 
 Tonight's mandatory gate is:
 
@@ -84,9 +85,17 @@ What the helper checks:
 - `skip_manifest.json` readability
 - non-empty `run_report.txt`
 - `chunks.jsonl` line count
+- `vectors.npy` is a readable 2D array
 - `vectors.npy` row count and dimension using memory-mapped I/O
 - `entities.jsonl` line count
 - agreement between manifest counts and file-backed counts
+
+What it does not check:
+
+- per-row chunk JSON schema
+- V2 import semantics
+
+Those are covered downstream by the HybridRAG_V2 `--dry-run` import step.
 
 Optional structured evidence artifact:
 
@@ -194,6 +203,7 @@ Any of these is true:
 Any of these is true:
 
 - missing required artifacts
+- malformed non-2D `vectors.npy`
 - manifest/chunk/vector counts do not align
 - V2 dry-run rejects the export
 - no fresh export directory was written

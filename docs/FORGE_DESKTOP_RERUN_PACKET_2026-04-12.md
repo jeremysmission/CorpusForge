@@ -244,6 +244,17 @@ Mandatory result:
 RESULT: PASS
 ```
 
+What this helper is for:
+
+- export artifact presence
+- export count/dimension integrity
+- basic manifest/skip-manifest readability
+
+What it is not for:
+
+- per-row chunk schema validation
+- V2 import behavior validation
+
 Optional evidence artifact:
 
 ```powershell
@@ -264,7 +275,7 @@ Next document:
 Do not skip this step. The desktop rerun is not complete until:
 
 - export artifacts are present
-- chunk/vector/manifest counts align
+- chunk/vector/manifest integrity checks pass
 - the V2 dry-run import passes
 
 ## First Operator Action Once Install Correctness Is Confirmed

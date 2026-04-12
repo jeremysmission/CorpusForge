@@ -4,12 +4,14 @@ Lightweight integrity gate for a Forge export package.
 Checks:
   - required artifact presence
   - chunks.jsonl line count == manifest.chunk_count == vectors.npy row count
+  - vectors.npy is a readable 2D array
   - manifest.vector_dim == vectors.npy dimension
   - entities.jsonl line count == manifest.entity_count
   - skip_manifest.json parses and its total matches counts_by_reason
   - run_report.txt exists and is non-empty
 
 Designed for large exports where a full in-memory audit is unnecessary.
+This is a count/integrity gate, not per-row chunk schema validation.
 
 Usage:
   python scripts/check_export_integrity.py --export-dir data/production_output/export_YYYYMMDD_HHMM
@@ -143,11 +145,22 @@ def check_export_integrity(export_dir: Path) -> dict[str, Any]:
 
     try:
         vectors = np.load(vectors_path, mmap_mode="r")
-        vector_rows = int(vectors.shape[0])
-        vector_dim = int(vectors.shape[1]) if getattr(vectors, "ndim", 0) == 2 else -1
+        vector_ndim = int(getattr(vectors, "ndim", -1))
+        vector_shape = tuple(int(x) for x in getattr(vectors, "shape", ()))
+        if vector_ndim != 2:
+            issues.append(
+                f"vectors.npy must be a 2D array; got ndim={vector_ndim} shape={vector_shape}"
+            )
+            vector_rows = -1
+            vector_dim = -1
+        else:
+            vector_rows = int(vectors.shape[0])
+            vector_dim = int(vectors.shape[1])
         vector_dtype = str(vectors.dtype)
     except Exception as exc:
         issues.append(f"vectors.npy unreadable: {exc}")
+        vector_ndim = -1
+        vector_shape = ()
         vector_rows = -1
         vector_dim = -1
         vector_dtype = "unreadable"
@@ -238,6 +251,8 @@ def check_export_integrity(export_dir: Path) -> dict[str, Any]:
         "counts": {
             "chunks_jsonl_lines": chunk_lines,
             "entities_jsonl_lines": entity_lines,
+            "vectors_ndim": vector_ndim,
+            "vectors_shape": list(vector_shape),
             "vectors_rows": vector_rows,
             "vectors_dim": vector_dim,
             "vectors_dtype": vector_dtype,
@@ -274,7 +289,8 @@ def print_human_report(report: dict[str, Any], *, redirect_from: str | None = No
     print(f"  manifest.chunk_count     {manifest.get('chunk_count')}")
     print(f"  chunks.jsonl lines       {counts.get('chunks_jsonl_lines')}")
     print(f"  manifest.vector_dim      {manifest.get('vector_dim')}")
-    print(f"  vectors.npy shape        {counts.get('vectors_rows')} x {counts.get('vectors_dim')}")
+    print(f"  vectors.npy ndim         {counts.get('vectors_ndim')}")
+    print(f"  vectors.npy shape        {counts.get('vectors_shape')}")
     print(f"  vectors.npy dtype        {counts.get('vectors_dtype')}")
     print(f"  manifest.entity_count    {manifest.get('entity_count')}")
     print(f"  entities.jsonl lines     {counts.get('entities_jsonl_lines')}")
