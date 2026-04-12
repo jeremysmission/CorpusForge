@@ -292,10 +292,14 @@ class SkipManager:
 
     def get_skip_manifest(self) -> dict:
         """Return the full skip report."""
+        deferred_formats = self._build_deferred_format_summary()
         return {
             "total_skipped": len(self._skipped),
+            "count": len(self._skipped),
             "counts_by_reason": dict(self._reason_counts),
             "files": self._skipped,
+            "skipped_files": self._skipped,
+            "deferred_formats": deferred_formats,
         }
 
     def write_skip_manifest(self, output_dir: str | Path) -> Path:
@@ -318,6 +322,23 @@ class SkipManager:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _build_deferred_format_summary(self) -> list[dict]:
+        """Expose deferred format counts in the legacy V2-friendly shape."""
+        ext_counts: dict[str, int] = defaultdict(int)
+        for entry in self._skipped:
+            ext = Path(str(entry.get("path", ""))).suffix.lower()
+            if ext in self._deferred_exts:
+                ext_counts[ext] += 1
+
+        rows = []
+        for ext, count in sorted(ext_counts.items(), key=lambda item: (-item[1], item[0])):
+            rows.append({
+                "extension": ext.lstrip("."),
+                "count": count,
+                "reason": self._deferred_exts.get(ext, ""),
+            })
+        return rows
 
     @staticmethod
     def _is_encrypted(file_path: Path, ext: str) -> bool:

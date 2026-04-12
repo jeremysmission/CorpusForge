@@ -464,6 +464,28 @@ def test_image_skip_visible_in_skip_manifest(tmp_path):
         assert entry["sha256"] and len(entry["sha256"]) == 64
 
 
+def test_skip_manifest_includes_legacy_v2_aliases(tmp_path):
+    sm = _make_skip_manager(tmp_path, ocr_mode="auto")
+    files = []
+    for i in range(2):
+        f = tmp_path / f"drawing_{i}.dwf"
+        f.write_text("defer me", encoding="utf-8")
+        files.append(f)
+
+    for fp in files:
+        skip, reason = sm.should_skip(fp, fp.stat().st_size)
+        assert skip is True
+        sm.record_skip(fp, reason)
+
+    manifest = sm.get_skip_manifest()
+    assert manifest["count"] == 2
+    assert len(manifest["skipped_files"]) == 2
+    assert manifest["skipped_files"][0]["path"] == manifest["files"][0]["path"]
+    assert manifest["deferred_formats"] == [
+        {"extension": "dwf", "count": 2, "reason": "Design Web Format"},
+    ]
+
+
 # --- ocr_mode gate matrix (explicit grid) ---
 
 @pytest.mark.parametrize(
