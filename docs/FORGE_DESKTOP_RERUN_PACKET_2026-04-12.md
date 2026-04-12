@@ -38,9 +38,10 @@ Do these steps once install correctness is confirmed:
 2. confirm the live runtime config still matches the approved Phase 1 settings
 3. launch a headless full rerun from the raw source tree with `--full-reindex`
 4. capture the newest `export_YYYYMMDD_HHMM` directory under `data\production_output`
-5. run the handoff gates in [FORGE_EXPORT_INTEGRITY_CHECKLIST_2026-04-12.md](./FORGE_EXPORT_INTEGRITY_CHECKLIST_2026-04-12.md)
+5. run `scripts/check_export_integrity.py` against that export
+6. run the remaining handoff gates in [FORGE_EXPORT_INTEGRITY_CHECKLIST_2026-04-12.md](./FORGE_EXPORT_INTEGRITY_CHECKLIST_2026-04-12.md)
 
-If step 5 fails, stop there. Do not move into a real V2 import on that export.
+If step 5 or step 6 fails, stop there. Do not move into a real V2 import on that export.
 
 ## Optional Later
 
@@ -229,6 +230,32 @@ Write-Host "Newest export: $export"
 Use that exact path in the integrity checklist.
 
 ## Step 5: Run The Integrity Checklist
+
+Run the helper first:
+
+```powershell
+cd C:\CorpusForge
+.\.venv\Scripts\python.exe .\scripts\check_export_integrity.py --export-dir $export
+```
+
+Mandatory result:
+
+```text
+RESULT: PASS
+```
+
+Optional evidence artifact:
+
+```powershell
+cd C:\CorpusForge
+.\.venv\Scripts\python.exe .\scripts\check_export_integrity.py `
+  --export-dir $export `
+  --output-json (Join-Path $export 'integrity_report_2026-04-12.json')
+```
+
+Then continue with the checklist document.
+
+## Step 6: Run The Integrity Checklist
 
 Next document:
 
