@@ -1,3 +1,9 @@
+@REM === NON-PROGRAMMER GUIDE ===
+@REM Purpose: Replace CPU-only torch with the official CUDA-enabled workstation build.
+@REM How to follow: Run this after INSTALL_WORKSTATION.bat if the machine has an NVIDIA GPU.
+@REM Inputs: Repo-local .venv plus internet or proxy access to download.pytorch.org.
+@REM Outputs: CUDA torch installed in .venv and a verification check against the detected GPU.
+@REM ============================
 @echo off
 setlocal enabledelayedexpansion
 title CorpusForge -- Install CUDA Torch (Workstation)

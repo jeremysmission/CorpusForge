@@ -382,6 +382,9 @@ def run_document_dedup(
     duplicate_files = sum(1 for row in decisions if row.status == "duplicate")
     current_group = ""
     current_group_size = 0
+    # FIXME: These fields are only filled when `on_group` is provided,
+    # which means callback-free runs can return blank progress metadata
+    # even after successfully processing groups.
     if on_group and total_groups > 0 and processed_groups > 0:
         current_group = stem_key
         current_group_size = len(group_paths)

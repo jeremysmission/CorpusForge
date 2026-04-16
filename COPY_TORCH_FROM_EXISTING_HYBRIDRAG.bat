@@ -1,3 +1,9 @@
+@REM === NON-PROGRAMMER GUIDE ===
+@REM Purpose: Reuse a working local torch install from another HybridRAG-style repo when internet installs fail.
+@REM How to follow: Double-click this file, or pass an existing source .venv path as the first argument.
+@REM Inputs: This repo plus tools\copy_torch_from_existing_hybridrag.ps1. Optional source venv path.
+@REM Outputs: Torch packages copied into this repo's .venv so CorpusForge can use the same local build.
+@REM ============================
 @echo off
 title CorpusForge -- Copy Torch From Existing HybridRAG
 setlocal EnableExtensions

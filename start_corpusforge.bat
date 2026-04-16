@@ -1,3 +1,9 @@
+@REM === NON-PROGRAMMER GUIDE ===
+@REM Purpose: Launch the CorpusForge desktop GUI with the repo's local Python environment.
+@REM How to follow: Double-click this file after the workstation setup is complete.
+@REM Inputs: Repo root with .venv, config files, and the GUI launcher module in place.
+@REM Outputs: The operator desktop application window and any startup logs shown in the console.
+@REM ============================
 @echo off
 title CorpusForge Pipeline GUI
 setlocal EnableExtensions EnableDelayedExpansion

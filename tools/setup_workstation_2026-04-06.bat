@@ -1,3 +1,10 @@
+@REM === NON-PROGRAMMER GUIDE ===
+@REM Purpose: Thin launcher that starts the main PowerShell workstation setup script with policy bypass.
+@REM How to follow: Run this file from the repo root when preparing a new CorpusForge machine.
+@REM Inputs: This wrapper plus setup_workstation_2026-04-06.ps1 in the same tools folder.
+@REM Outputs: Delegates to the full installer and returns its exit code.
+@REM Suspect: This wrapper uses HYBRIDRAG_NO_PAUSE while several other wrappers use CORPUSFORGE_NO_PAUSE.
+@REM ============================
 @echo off
 title CorpusForge Workstation Setup
 setlocal EnableExtensions

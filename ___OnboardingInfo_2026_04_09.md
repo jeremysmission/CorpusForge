@@ -9,11 +9,11 @@ the source-of-truth map wins.
 
 If you are onboarding after the V2 QA Workbench / retrieval-readiness push, start here before older sprint notes:
 
-1. `C:\Users\jerem\HYBRIDRAG_LOCAL_ONLY\NEXT_COORDINATOR_HANDOVER_2026-04-15.md`
-2. `C:\Users\jerem\HYBRIDRAG_LOCAL_ONLY\DEMO_READINESS_MAP_AND_NEXT_STEPS_2026-04-15.md`
-3. `C:\Users\jerem\HYBRIDRAG_LOCAL_ONLY\V2_AND_FORGE_PROMOTION_SPRINT_PLAN_2026-04-15.md`
+1. `{USER_HOME}\HYBRIDRAG_LOCAL_ONLY\NEXT_COORDINATOR_HANDOVER_2026-04-15.md`
+2. `{USER_HOME}\HYBRIDRAG_LOCAL_ONLY\DEMO_READINESS_MAP_AND_NEXT_STEPS_2026-04-15.md`
+3. `{USER_HOME}\HYBRIDRAG_LOCAL_ONLY\V2_AND_FORGE_PROMOTION_SPRINT_PLAN_2026-04-15.md`
 4. `C:\HybridRAG_V2\docs\FORGE_TO_V2_TYPED_METADATA_MIGRATION_PLAN_2026-04-13.md`
-5. `C:\Users\jerem\HYBRIDRAG_LOCAL_ONLY\SEMI_STRUCTURED_IMPLEMENTATION_PLAN_2026-04-15.md`
+5. `{USER_HOME}\HYBRIDRAG_LOCAL_ONLY\SEMI_STRUCTURED_IMPLEMENTATION_PLAN_2026-04-15.md`
 
 Current reality:
 
@@ -30,7 +30,7 @@ Current reality:
 ## Important
 
 - The real repos are in the `C:\` drive root.
-- Any `C:\Users\jerem\codex_tmp\...` repo copy is a study or recovery clone, not a canonical implementation root.
+- Any `{USER_HOME}\codex_tmp\...` repo copy is a study or recovery clone, not a canonical implementation root.
 - `docs/SPRINT_SYNC.md` is a planning board, not the canonical readiness or operator truth source.
 - The preferred Forge -> V2 operator handoff now uses `scripts/stage_forge_import.py`.
 - `scripts/import_embedengine.py` is still the underlying import engine, but it is no longer the preferred first-line operator entrypoint.

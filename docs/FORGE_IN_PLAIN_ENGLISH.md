@@ -134,7 +134,7 @@ For the V2 side of the handoff:
 ## Common things people get wrong
 
 1. **Editing the wrong config.** The live runtime config is `C:\CorpusForge\config\config.yaml`. `config.local.yaml` is not part of the live path anymore. The GUI "Save Settings" button writes to `config.yaml` directly.
-2. **Running from a clone.** Any `C:\Users\jerem\codex_tmp\...` copy of CorpusForge is a study or recovery clone, not canonical. Edits there do not land.
+2. **Running from a clone.** Any `{USER_HOME}\codex_tmp\...` copy of CorpusForge is a study or recovery clone, not canonical. Edits there do not land.
 3. **Skipping the precheck.** It takes under a minute and will save hours if OCR or disk is broken.
 4. **Assuming Poppler is installed.** It frequently is not. Check the precheck output, not assumptions.
 5. **Running in the wrong Python.** Use the repo-local `.venv\Scripts\python.exe`, never the system Python. QA and local validation require the repo-local venv.

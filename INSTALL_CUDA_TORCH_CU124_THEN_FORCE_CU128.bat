@@ -1,3 +1,9 @@
+@REM === NON-PROGRAMMER GUIDE ===
+@REM Purpose: Try a compatibility bootstrap path for torch, then force the final CUDA 12.8 wheel line.
+@REM How to follow: Use this only when the normal CUDA torch installer is not getting the workstation onto the cu128 lane.
+@REM Inputs: Repo-local .venv plus internet or proxy access to PyPI and download.pytorch.org.
+@REM Outputs: Torch reinstalled in .venv with extra recovery steps aimed at stubborn workstation setups.
+@REM ============================
 @echo off
 setlocal enabledelayedexpansion
 title CorpusForge -- Torch Bootstrap (cu124 then force cu128)

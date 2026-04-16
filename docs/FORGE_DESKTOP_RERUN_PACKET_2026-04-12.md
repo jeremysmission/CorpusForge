@@ -56,7 +56,7 @@ These are not required for the desktop rerun tonight:
 
 This packet does not solve these downstream blockers:
 
-- Beast Tier 2 CUDA OOM loop
+- primary workstation Tier 2 CUDA OOM loop
 - clean Tier 1 rerun in V2
 - clean demo-ready aggregation claims
 - richer Forge metadata emission for family-aware retrieval

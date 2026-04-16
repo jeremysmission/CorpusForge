@@ -3,7 +3,7 @@
 > WARNING: Planning board only. This file is unsafe as current readiness, demo, operator, or recovery truth.
 > Use `C:\HybridRAG_V2\docs\SOURCE_OF_TRUTH_MAP_2026-04-12.md`, `C:\HybridRAG_V2\docs\REBOOT_HANDOVER_2026-04-13.md`, and `C:\HybridRAG_V2\docs\SPRINT_SLICE_PRODUCT_COMPLETION_2026-04-13.md` instead.
 
-**Last Updated:** 2026-04-13 | **Updated By:** Codex — added the product-completion master slice and linked it without replacing the active eval-GUI slice.
+**Last Updated:** 2026-04-13 | **Updated By:** CoPilot+ — added the product-completion master slice and linked it without replacing the active eval-GUI slice.
 **Demo Target:** 2026-05-02
 **Update Rule:** Every agent updates ALL 3 copies at end of sprint session (review board + both repos)
 

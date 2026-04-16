@@ -4,7 +4,7 @@
 
 This is the Forge-side visibility pointer for unattended work while the user is away.
 
-The active Beast-side critical path is currently in `HybridRAG_V2`, not Forge.
+The active primary workstation-side critical path is currently in `HybridRAG_V2`, not Forge.
 
 ## Active Execution Reference
 
@@ -30,4 +30,4 @@ Primary Forge references:
 
 ## Short Summary
 
-Forge-side integrity and rerun instructions are already in place. The current Beast-side blocker is the V2 Tier 1 shadow-run approval path.
+Forge-side integrity and rerun instructions are already in place. The current primary workstation-side blocker is the V2 Tier 1 shadow-run approval path.

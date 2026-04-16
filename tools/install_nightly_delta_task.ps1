@@ -1,3 +1,14 @@
+<#
+.SYNOPSIS
+    Install the Windows Scheduled Task that runs CorpusForge nightly delta ingest.
+
+.DESCRIPTION
+    This script creates a once-per-day task in Windows Task Scheduler. In
+    plain terms, it tells Windows when to wake up this repo's Python
+    script, which config file to use, and whether to require canary checks
+    or skip the main pipeline stage.
+#>
+
 param(
     [string]$TaskName = "CorpusForge Nightly Delta Ingest",
     [string]$RepoRoot = "C:\CorpusForge",
