@@ -259,6 +259,34 @@ function Resolve-NativeCommandPath {
     return $null
 }
 
+function Set-PersistentRuntimeEnvVar {
+    param(
+        [string]$Name,
+        [string]$Value
+    )
+    if ([string]::IsNullOrWhiteSpace($Value)) { return }
+
+    $currentUserValue = [Environment]::GetEnvironmentVariable($Name, "User")
+    if ($currentUserValue -ne $Value) {
+        [Environment]::SetEnvironmentVariable($Name, $Value, "User")
+        Write-Ok "Persisted ${Name} for future shells: $Value"
+    } else {
+        Write-Info "${Name} already persisted for future shells"
+    }
+
+    Set-Item -Path "Env:$Name" -Value $Value
+}
+
+function Test-CommandOnPath {
+    param([string]$CommandName)
+    try {
+        $null = Get-Command $CommandName -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-WithRetry {
     param(
         [scriptblock]$Action,
@@ -603,7 +631,7 @@ try {
 # ============================================================
 # 11. Check OCR toolchain
 # ============================================================
-Write-Step "Checking OCR toolchain"
+Write-Step "Checking OCR toolchain and runtime wiring"
 $tesseractPath = Resolve-NativeCommandPath -CommandName "tesseract.exe" -CandidatePaths @(
     "C:\Program Files\Tesseract-OCR\tesseract.exe",
     "C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"
@@ -615,13 +643,29 @@ $popplerPath = Resolve-NativeCommandPath -CommandName "pdftoppm.exe" -CandidateP
 )
 if ($tesseractPath) {
     Write-Ok "Tesseract found: $tesseractPath"
+    if (-not (Test-CommandOnPath -CommandName "tesseract.exe")) {
+        Write-Warn "Tesseract is not on PATH -- persisting TESSERACT_CMD so runtime OCR still works"
+    }
+    Set-PersistentRuntimeEnvVar -Name "TESSERACT_CMD" -Value $tesseractPath
 } else {
-    Write-Warn "Tesseract not found -- scanned PDF OCR will be degraded"
+    $existingTesseractEnv = [Environment]::GetEnvironmentVariable("TESSERACT_CMD", "User")
+    if ($existingTesseractEnv) {
+        Write-Warn "User TESSERACT_CMD points to a missing path: $existingTesseractEnv"
+    }
+    Write-Warn "Tesseract not found -- image OCR will degrade until Tesseract is installed or TESSERACT_CMD points to a valid tesseract.exe"
 }
 if ($popplerPath) {
     Write-Ok "Poppler pdftoppm found: $popplerPath"
+    if (-not (Test-CommandOnPath -CommandName "pdftoppm.exe")) {
+        Write-Warn "pdftoppm is not on PATH -- persisting HYBRIDRAG_POPPLER_BIN so scanned-PDF OCR can find it"
+    }
+    Set-PersistentRuntimeEnvVar -Name "HYBRIDRAG_POPPLER_BIN" -Value (Split-Path -Parent $popplerPath)
 } else {
-    Write-Warn "Poppler not found -- pdf2image OCR fallback will fail"
+    $existingPopplerEnv = [Environment]::GetEnvironmentVariable("HYBRIDRAG_POPPLER_BIN", "User")
+    if ($existingPopplerEnv) {
+        Write-Warn "User HYBRIDRAG_POPPLER_BIN points to a missing directory: $existingPopplerEnv"
+    }
+    Write-Warn "Poppler not found -- scanned-PDF OCR is unavailable until pdftoppm.exe is installed or HYBRIDRAG_POPPLER_BIN points to it"
 }
 
 # ============================================================
@@ -649,6 +693,8 @@ Write-Ok "CUDA_VISIBLE_DEVICES=0, PYTHONUTF8=1, NO_PROXY=localhost,127.0.0.1"
 Write-Info "Project root: $ProjectRoot"
 Write-Info "pip.ini: $PipIni"
 Write-Info "Python: $VenvPython"
+Write-Info "TESSERACT_CMD: $env:TESSERACT_CMD"
+Write-Info "HYBRIDRAG_POPPLER_BIN: $env:HYBRIDRAG_POPPLER_BIN"
 
 # ============================================================
 # 13. Smoke test -- Embedder with CUDA

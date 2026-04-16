@@ -20,6 +20,7 @@ import os
 import numpy as np
 
 from .batch_manager import BatchManager
+from src.util import skip_signal
 
 logger = logging.getLogger(__name__)
 
@@ -201,49 +202,55 @@ class Embedder:
         """
         all_vectors = []
 
-        for batch in self.batch_manager.create_batches(texts):
-            while True:
-                try:
-                    result = self._model.encode(
-                        batch,
-                        batch_size=len(batch),
-                        show_progress_bar=False,
-                        convert_to_numpy=True,
-                        normalize_embeddings=True,
-                    )
-                    all_vectors.append(np.asarray(result, dtype=np.float32))
-                    break
-                except RuntimeError as exc:
-                    if "out of memory" not in str(exc).lower():
-                        raise
-                    if self.batch_manager.max_batch_size <= self.batch_manager.min_batch_size:
-                        raise
-
-                    old_size = self.batch_manager.max_batch_size
-                    self.batch_manager.reduce_batch_size()
-                    logger.warning(
-                        "OOM backoff: batch %d -> %d",
-                        old_size, self.batch_manager.max_batch_size,
-                    )
-
+        with skip_signal.watching("embed OOM backoff"):
+            for batch in self.batch_manager.create_batches(texts):
+                while True:
                     try:
-                        import torch
-                        torch.cuda.empty_cache()
-                    except ImportError:
-                        pass
-
-                    # Re-batch this chunk of texts with smaller size
-                    sub_batches = self.batch_manager.create_batches(batch)
-                    for sub in sub_batches:
                         result = self._model.encode(
-                            sub,
-                            batch_size=len(sub),
+                            batch,
+                            batch_size=len(batch),
                             show_progress_bar=False,
                             convert_to_numpy=True,
                             normalize_embeddings=True,
                         )
                         all_vectors.append(np.asarray(result, dtype=np.float32))
-                    break
+                        break
+                    except RuntimeError as exc:
+                        if "out of memory" not in str(exc).lower():
+                            raise
+                        if self.batch_manager.max_batch_size <= self.batch_manager.min_batch_size:
+                            raise
+                        if skip_signal.pressed():
+                            logger.warning(
+                                "embed: skip requested during OOM backoff, re-raising to abort this batch"
+                            )
+                            raise
+
+                        old_size = self.batch_manager.max_batch_size
+                        self.batch_manager.reduce_batch_size()
+                        logger.warning(
+                            "OOM backoff: batch %d -> %d",
+                            old_size, self.batch_manager.max_batch_size,
+                        )
+
+                        try:
+                            import torch
+                            torch.cuda.empty_cache()
+                        except ImportError:
+                            pass
+
+                        # Re-batch this chunk of texts with smaller size
+                        sub_batches = self.batch_manager.create_batches(batch)
+                        for sub in sub_batches:
+                            result = self._model.encode(
+                                sub,
+                                batch_size=len(sub),
+                                show_progress_bar=False,
+                                convert_to_numpy=True,
+                                normalize_embeddings=True,
+                            )
+                            all_vectors.append(np.asarray(result, dtype=np.float32))
+                        break
 
         if len(all_vectors) == 1:
             return all_vectors[0]

@@ -94,26 +94,37 @@ This is resume-capable, but not a perfect mid-file checkpoint system.
 
 ## Environment Checks To Confirm Before A Big Run
 
-Run these in PowerShell:
+Preferred readiness check:
 
 ```powershell
-where.exe tesseract
+cd C:\CorpusForge
+.\PRECHECK_WORKSTATION_700GB.bat
+```
+
+Manual fallback probe if you need the raw machine state:
+
+```powershell
+Test-Path 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+& 'C:\Program Files\Tesseract-OCR\tesseract.exe' --version
 where.exe pdftoppm
-tesseract --version
-pdftoppm -h
 Write-Host "TESSERACT_CMD=$env:TESSERACT_CMD"
 Write-Host "HYBRIDRAG_POPPLER_BIN=$env:HYBRIDRAG_POPPLER_BIN"
 Write-Host "HYBRIDRAG_OCR_MODE=$env:HYBRIDRAG_OCR_MODE"
 Write-Host "HYBRIDRAG_DOCLING_MODE=$env:HYBRIDRAG_DOCLING_MODE"
 ```
 
-What matters:
+What matters in the precheck output:
 
-- `Tesseract` matters for image OCR
-- `Poppler` plus `Tesseract` matter for scanned-PDF OCR
-- these matter for `CorpusForge`, not for V2 directly
+- `Image OCR runtime` should show a usable Tesseract path.
+- `Scanned-PDF OCR runtime` should show a usable `pdftoppm.exe` path.
+- these matter for `CorpusForge`, not for V2 directly.
 
-If Poppler is missing, the run can still succeed, but scanned PDFs degrade.
+Current machine truth:
+
+- Tesseract exists at `C:\Program Files\Tesseract-OCR\tesseract.exe` but may not be on PATH.
+- Poppler / `pdftoppm.exe` is not currently discoverable.
+
+If Poppler is missing, the run can still succeed, but scanned-PDF OCR is unavailable and image-only PDFs degrade to non-OCR parsing.
 
 ## What To Deliver After The Run Finishes
 
@@ -134,19 +145,43 @@ That folder should contain:
 - `skip_manifest.json`
 - `READ_ME_BEFORE_USE.txt`
 
-## Current Morning V2 Import Command
+## Current Morning V2 Intake Path
 
-For the clean Run 6 export, use:
+Preferred operator path for the clean Run 6 export:
 
 ```powershell
 cd C:\HybridRAG_V2
-.venv\Scripts\python.exe scripts\import_embedengine.py --source C:\CorpusForge\data\production_output\export_20260409_0720 --create-index
+
+# 1. Stage-only plan
+.\.venv\Scripts\python.exe scripts\stage_forge_import.py `
+  --source-root C:\CorpusForge\data\production_output `
+  --select latest `
+  --mode plan
+
+# 2. Canary dry run
+.\.venv\Scripts\python.exe scripts\stage_forge_import.py `
+  --source C:\CorpusForge\data\production_output\export_20260409_0720 `
+  --canary-limit 2000 `
+  --mode dry-run
+
+# 3. Full import
+.\.venv\Scripts\python.exe scripts\stage_forge_import.py `
+  --source C:\CorpusForge\data\production_output\export_20260409_0720 `
+  --mode import `
+  --create-index
 ```
 
 No `--exclude-source-glob` filter is needed for Run 6.
+
+Direct import engine only when intentionally bypassing staging:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\import_embedengine.py --source C:\CorpusForge\data\production_output\export_20260409_0720 --create-index
+```
 
 ## If You Need The Full Detailed Runbook
 
 See:
 
 - [OPERATOR_700GB_INGEST_RUNBOOK_2026-04-09.md](C:/CorpusForge/docs/OPERATOR_700GB_INGEST_RUNBOOK_2026-04-09.md)
+- `C:\HybridRAG_V2\docs\V2_STAGING_IMPORT_RUNBOOK_2026-04-09.md`

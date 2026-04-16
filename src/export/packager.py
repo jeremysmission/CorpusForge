@@ -11,6 +11,12 @@ Output structure:
 A symlink 'latest' points to the most recent successful export.
 
 All file writes use encoding="utf-8", newline="\\n" per repo rules.
+
+This module is the Forge side of the Forge -> V2 export contract.
+Any change to the fields written here must be reconciled with
+`docs/FORGE_V2_METADATA_CONTRACT_2026-04-12.md` and the V2 importer
+at `C:\\HybridRAG_V2\\scripts\\stage_forge_import.py`.
+New readers should start with `docs/FORGE_IN_PLAIN_ENGLISH.md`.
 """
 
 from __future__ import annotations

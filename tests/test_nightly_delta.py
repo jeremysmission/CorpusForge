@@ -1,3 +1,5 @@
+"""Regression tests for nightly delta ingest behavior."""
+
 import json
 import subprocess
 import sys

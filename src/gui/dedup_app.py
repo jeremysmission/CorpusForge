@@ -1,3 +1,5 @@
+"""Standalone desktop app for the dedup recovery stage."""
+
 from __future__ import annotations
 
 import time

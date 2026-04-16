@@ -9,6 +9,11 @@ Architecture ported from V1 (HybridRAG3 src/core/indexer.py):
   - Token-budget batching + OOM backoff in embedder
 
 V1 achieved 60-200 chunks/sec sustained with this pattern.
+
+For a plain-English overview of what Forge does and what it outputs
+for HybridRAG V2, see `docs/FORGE_IN_PLAIN_ENGLISH.md`. This module
+is the authoritative stage-by-stage implementation; the plain-English
+doc is the operator-facing summary.
 """
 
 from __future__ import annotations

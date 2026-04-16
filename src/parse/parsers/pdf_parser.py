@@ -9,12 +9,62 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 from src.parse.parsers.docling_bridge import extract_with_docling, get_docling_mode
 from src.parse.parsers.txt_parser import ParsedDocument
 
 logger = logging.getLogger(__name__)
+_WARNED_RUNTIME_ISSUES: set[str] = set()
+
+
+def _warn_once(key: str, message: str) -> None:
+    if key in _WARNED_RUNTIME_ISSUES:
+        return
+    logger.warning(message)
+    _WARNED_RUNTIME_ISSUES.add(key)
+
+
+def _resolve_tesseract_cmd() -> tuple[str | None, str]:
+    env_path = os.getenv("TESSERACT_CMD", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path, "env:TESSERACT_CMD"
+
+    found = shutil.which("tesseract") or shutil.which("tesseract.exe")
+    if found:
+        return found, "PATH"
+
+    for candidate in (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ):
+        if Path(candidate).exists():
+            return candidate, "fallback path"
+    return None, "missing"
+
+
+def _resolve_poppler_bin() -> tuple[str | None, str]:
+    env_dir = os.getenv("HYBRIDRAG_POPPLER_BIN", "").strip()
+    if env_dir:
+        candidate = Path(env_dir) / "pdftoppm.exe"
+        if candidate.exists():
+            return str(candidate.parent), "env:HYBRIDRAG_POPPLER_BIN"
+
+    found = shutil.which("pdftoppm") or shutil.which("pdftoppm.exe")
+    if found:
+        return str(Path(found).parent), "PATH"
+
+    for candidate in (
+        r"C:\tools\poppler\Library\bin\pdftoppm.exe",
+        r"C:\Program Files\poppler\Library\bin\pdftoppm.exe",
+        r"C:\Program Files\poppler\bin\pdftoppm.exe",
+        r"C:\poppler\Library\bin\pdftoppm.exe",
+        r"C:\poppler\bin\pdftoppm.exe",
+    ):
+        if Path(candidate).exists():
+            return str(Path(candidate).parent), "fallback path"
+    return None, "missing"
 
 def _ocr_mode() -> str:
     return os.getenv("HYBRIDRAG_OCR_MODE", "auto")
@@ -128,10 +178,39 @@ class PdfParser:
             from pdf2image import convert_from_path
             import pytesseract
 
-            poppler_bin = os.getenv("HYBRIDRAG_POPPLER_BIN", "")
-            kwargs = {"dpi": _ocr_dpi()}
-            if poppler_bin:
-                kwargs["poppler_path"] = poppler_bin
+            tesseract_cmd, tesseract_source = _resolve_tesseract_cmd()
+            if not tesseract_cmd:
+                _warn_once(
+                    "pdf_tesseract_missing",
+                    "PDF OCR unavailable: no usable Tesseract binary found. "
+                    "Install Tesseract, add it to PATH, or set TESSERACT_CMD.",
+                )
+                return ""
+            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+            if tesseract_source == "fallback path":
+                _warn_once(
+                    "pdf_tesseract_fallback",
+                    f"PDF OCR using fallback Tesseract path: {tesseract_cmd}",
+                )
+
+            poppler_bin, poppler_source = _resolve_poppler_bin()
+            if not poppler_bin:
+                _warn_once(
+                    "pdf_poppler_missing",
+                    "Scanned-PDF OCR unavailable: no usable pdftoppm.exe found. "
+                    "Install Poppler, add it to PATH, or set HYBRIDRAG_POPPLER_BIN.",
+                )
+                return ""
+            if poppler_source == "fallback path":
+                _warn_once(
+                    "pdf_poppler_fallback",
+                    f"PDF OCR using fallback Poppler path: {poppler_bin}",
+                )
+
+            kwargs = {
+                "dpi": _ocr_dpi(),
+                "poppler_path": poppler_bin,
+            }
 
             images = convert_from_path(str(path), **kwargs)
             pages = []

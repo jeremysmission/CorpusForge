@@ -1,3 +1,11 @@
+"""Recovery-stage document deduplication.
+
+This module decides which file to keep when several files appear to be
+versions of the same document. It normalizes extracted text, compares
+candidate copies, keeps the strongest canonical file, and writes an
+audit trail so an operator can understand the decision later.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -87,6 +95,8 @@ def normalize_extracted_text(text: str) -> str:
     if not text:
         return ""
 
+    # Normalize Unicode and line endings first so comparison focuses on
+    # content rather than formatting quirks from different file sources.
     text = unicodedata.normalize("NFKC", text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
@@ -98,6 +108,8 @@ def normalize_extracted_text(text: str) -> str:
         if not line:
             continue
         lowered = line.lower()
+        # Page counters and print stamps often change between copies, so
+        # they are treated as noise instead of real document content.
         if any(pattern.match(lowered) for pattern in PAGE_PATTERNS):
             continue
         cleaned_lines.append(lowered)
@@ -108,6 +120,8 @@ def normalize_extracted_text(text: str) -> str:
     counts = Counter(cleaned_lines)
     filtered_lines = [
         line for line in cleaned_lines
+        # Repeated short lines are usually headers or footers repeated on
+        # every page. Removing them makes duplicate checks more accurate.
         if not (counts[line] >= 3 and len(line) <= 120)
     ]
     return "\n".join(filtered_lines or cleaned_lines)
@@ -178,6 +192,8 @@ def classify_same_stem_group(
     if not docs:
         return []
 
+    # Put the strongest candidates first so later files are compared
+    # against the best available version of the document.
     docs = sorted(docs, key=_canonical_sort_key, reverse=True)
     canonical_docs: list[FingerprintedDocument] = []
     duplicate_pairs: dict[str, tuple[FingerprintedDocument, str, float]] = {}
@@ -185,10 +201,13 @@ def classify_same_stem_group(
     exact_hash_map: dict[str, FingerprintedDocument] = {}
 
     for doc in docs:
+        # Weak parses are kept by default because there is not enough text
+        # to make a safe duplicate decision.
         if doc.normalized_chars < min_chars or not doc.normalized_hash:
             canonical_docs.append(doc)
             continue
 
+        # Exact normalized hashes are the most trustworthy duplicate signal.
         exact_match = exact_hash_map.get(doc.normalized_hash)
         if exact_match is not None:
             duplicate_pairs[str(doc.path)] = (
@@ -202,6 +221,8 @@ def classify_same_stem_group(
         for canonical in canonical_docs:
             if canonical.normalized_chars < min_chars or not canonical.normalized_hash:
                 continue
+            # Near-duplicate matching handles cases like an extra signature
+            # page or the same document saved in a different format.
             similarity = score_similarity(doc.normalized_text, canonical.normalized_text)
             if similarity >= similarity_threshold:
                 duplicate_pairs[str(doc.path)] = (
@@ -311,6 +332,7 @@ def run_document_dedup(
     start_time = time.time()
     files = discover_files(input_path, extensions)
     groups = group_paths_by_stem(files)
+    # Single-file families do not need comparison work.
     candidate_groups = {
         stem: paths for stem, paths in groups.items()
         if len(paths) > 1
@@ -321,6 +343,7 @@ def run_document_dedup(
     ]
 
     decisions: list[DedupDecision] = []
+    # A group with only one file is automatically the canonical copy.
     decisions.extend(make_singleton_decision(path) for path in singleton_paths)
 
     processed_groups = 0
@@ -449,6 +472,8 @@ def write_index(
         row for row in rows if row.status == "duplicate"
     ]
 
+    # This plain text list is the simplest output for downstream steps:
+    # it tells later tooling exactly which files survived dedup.
     with open(canonical_list_path, "w", encoding="utf-8", newline="\n") as handle:
         for path in canonical_paths:
             handle.write(path + "\n")

@@ -1,11 +1,58 @@
+@REM === NON-PROGRAMMER GUIDE ===
+@REM Purpose: Run the critical end-to-end operator gate across CorpusForge and HybridRAG V2.
+@REM How to follow: Double-click this file from Explorer, or run it from cmd.exe / PowerShell.
+@REM Inputs: Repo root with .venv and tools\run_critical_e2e_gate.py present. V2 repo at C:\HybridRAG_V2.
+@REM Outputs: PASS/FAIL console result and report under data\critical_e2e_gate\<timestamp>\.
+@REM Skip pause: set CORPUSFORGE_NO_PAUSE=1 for unattended runs.
+@REM ============================
 @echo off
-setlocal
-cd /d "%~dp0"
+title CorpusForge Critical E2E Gate
+setlocal EnableExtensions EnableDelayedExpansion
+for /f "tokens=2 delims=:." %%A in ('chcp') do set "_PREV_CP=%%A"
+set "_PREV_CP=%_PREV_CP: =%"
+chcp 65001 >nul 2>&1
 
-if not exist ".venv\Scripts\python.exe" (
-  echo ERROR: CorpusForge virtual environment not found at .venv\Scripts\python.exe
-  exit /b 2
+cd /d "%~dp0"
+set "PROJECT_ROOT=%CD%"
+set "PYTHON=%PROJECT_ROOT%\.venv\Scripts\python.exe"
+set "SCRIPT=%PROJECT_ROOT%\tools\run_critical_e2e_gate.py"
+
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+set "NO_PROXY=localhost,127.0.0.1"
+set "no_proxy=localhost,127.0.0.1"
+set "PYTHONPATH=%PROJECT_ROOT%"
+
+if not exist "%PYTHON%" (
+  echo [FAIL] Missing repo-local Python:
+  echo        %PYTHON%
+  echo        Run INSTALL_WORKSTATION.bat first.
+  set "_EXITCODE=2"
+  goto :cleanup
 )
 
-".venv\Scripts\python.exe" "tools\run_critical_e2e_gate.py" %*
-exit /b %errorlevel%
+if not exist "%SCRIPT%" (
+  echo [FAIL] Critical E2E gate script not found:
+  echo        %SCRIPT%
+  set "_EXITCODE=2"
+  goto :cleanup
+)
+
+"%PYTHON%" "%SCRIPT%" %*
+set "_EXITCODE=%ERRORLEVEL%"
+
+:cleanup
+if not "%_EXITCODE%"=="0" (
+  echo.
+  echo [FAIL] Critical E2E gate exited with code %_EXITCODE%.
+  echo        0 = all gates PASS
+  echo        2 = at least one gate FAILED
+  echo        3 = all gates PASS but V2 live query BLOCKED (missing LLM config)
+  if /i not "%CORPUSFORGE_NO_PAUSE%"=="1" pause >nul
+) else (
+  echo.
+  echo [PASS] Critical E2E gate completed successfully.
+  if /i not "%CORPUSFORGE_NO_PAUSE%"=="1" pause >nul
+)
+if defined _PREV_CP chcp %_PREV_CP% >nul 2>&1
+endlocal & exit /b %_EXITCODE%

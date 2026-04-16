@@ -1,1 +1,1 @@
-# CorpusForge GUI package
+"""Desktop user interface package."""

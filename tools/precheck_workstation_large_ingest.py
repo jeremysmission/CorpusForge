@@ -51,33 +51,43 @@ def _command_version(command: str, args: list[str]) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def _resolve_tesseract() -> str | None:
+def _resolve_tesseract() -> tuple[str | None, str]:
     env_path = os.getenv("TESSERACT_CMD", "").strip()
     if env_path and Path(env_path).exists():
-        return env_path
-    found = shutil.which("tesseract")
+        return env_path, "env:TESSERACT_CMD"
+    found = shutil.which("tesseract") or shutil.which("tesseract.exe")
     if found:
-        return found
+        return found, "PATH"
     candidates = [
         r"C:\Program Files\Tesseract-OCR\tesseract.exe",
         r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
     ]
     for candidate in candidates:
         if Path(candidate).exists():
-            return candidate
-    return None
+            return candidate, "fallback path"
+    return None, "missing"
 
 
-def _resolve_pdftoppm() -> str | None:
+def _resolve_pdftoppm() -> tuple[str | None, str]:
     poppler_bin = os.getenv("HYBRIDRAG_POPPLER_BIN", "").strip()
     if poppler_bin:
         candidate = Path(poppler_bin) / "pdftoppm.exe"
         if candidate.exists():
-            return str(candidate)
-    found = shutil.which("pdftoppm")
+            return str(candidate), "env:HYBRIDRAG_POPPLER_BIN"
+    found = shutil.which("pdftoppm") or shutil.which("pdftoppm.exe")
     if found:
-        return found
-    return None
+        return found, "PATH"
+    candidates = [
+        r"C:\tools\poppler\Library\bin\pdftoppm.exe",
+        r"C:\Program Files\poppler\Library\bin\pdftoppm.exe",
+        r"C:\Program Files\poppler\bin\pdftoppm.exe",
+        r"C:\poppler\Library\bin\pdftoppm.exe",
+        r"C:\poppler\bin\pdftoppm.exe",
+    ]
+    for candidate in candidates:
+        if Path(candidate).exists():
+            return candidate, "fallback path"
+    return None, "missing"
 
 
 def _disk_free_gb(path: Path) -> float:
@@ -198,21 +208,59 @@ def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]
     else:
         results.append(CheckResult("PASS", "CUDA torch", "not required for this run shape"))
 
-    tesseract_path = _resolve_tesseract()
-    if tesseract_path:
-        ok, proof = _command_version(tesseract_path, ["--version"])
-        level = "PASS" if ok else "WARNING"
-        results.append(CheckResult(level, "Tesseract", f"{tesseract_path} | {proof}"))
-    else:
-        results.append(CheckResult("WARNING", "Tesseract", "not found (image OCR will degrade)"))
+    ocr_mode = str(config.parse.ocr_mode).strip().lower()
 
-    pdftoppm_path = _resolve_pdftoppm()
-    if pdftoppm_path:
-        ok, proof = _command_version(pdftoppm_path, ["-h"])
-        level = "PASS" if ok else "WARNING"
-        results.append(CheckResult(level, "Poppler pdftoppm", f"{pdftoppm_path} | {proof}"))
+    tesseract_path, tesseract_source = _resolve_tesseract()
+    if ocr_mode == "skip":
+        results.append(CheckResult("PASS", "Image OCR runtime", "not required because OCR mode=skip"))
+    elif tesseract_path:
+        ok, proof = _command_version(tesseract_path, ["--version"])
+        level = "PASS" if ok else ("FAIL" if ocr_mode == "force" else "WARNING")
+        env_note = ""
+        if tesseract_source == "fallback path" and not os.getenv("TESSERACT_CMD", "").strip():
+            env_note = " | runtime uses fallback path because TESSERACT_CMD is not set"
+        results.append(
+            CheckResult(
+                level,
+                "Image OCR runtime",
+                f"Tesseract via {tesseract_source}: {tesseract_path} | {proof}{env_note}",
+            )
+        )
     else:
-        results.append(CheckResult("WARNING", "Poppler pdftoppm", "not found (scanned-PDF OCR will degrade)"))
+        level = "FAIL" if ocr_mode == "force" else "WARNING"
+        results.append(
+            CheckResult(
+                level,
+                "Image OCR runtime",
+                "no usable Tesseract found on PATH, TESSERACT_CMD, or fallback locations; image OCR will degrade",
+            )
+        )
+
+    pdftoppm_path, pdftoppm_source = _resolve_pdftoppm()
+    if ocr_mode == "skip":
+        results.append(CheckResult("PASS", "Scanned-PDF OCR runtime", "not required because OCR mode=skip"))
+    elif pdftoppm_path:
+        ok, proof = _command_version(pdftoppm_path, ["-h"])
+        level = "PASS" if ok else ("FAIL" if ocr_mode == "force" else "WARNING")
+        env_note = ""
+        if pdftoppm_source == "fallback path" and not os.getenv("HYBRIDRAG_POPPLER_BIN", "").strip():
+            env_note = " | runtime uses fallback path because HYBRIDRAG_POPPLER_BIN is not set"
+        results.append(
+            CheckResult(
+                level,
+                "Scanned-PDF OCR runtime",
+                f"pdftoppm via {pdftoppm_source}: {pdftoppm_path} | {proof}{env_note}",
+            )
+        )
+    else:
+        level = "FAIL" if ocr_mode == "force" else "WARNING"
+        results.append(
+            CheckResult(
+                level,
+                "Scanned-PDF OCR runtime",
+                "no usable pdftoppm.exe found on PATH, HYBRIDRAG_POPPLER_BIN, or fallback locations; scanned-PDF OCR is unavailable",
+            )
+        )
 
     output_free_gb = _disk_free_gb(output_dir)
     if output_free_gb < 20:

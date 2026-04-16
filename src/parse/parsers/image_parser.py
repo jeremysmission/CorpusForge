@@ -11,12 +11,39 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 from src.parse.parsers.docling_bridge import extract_with_docling, get_docling_mode
 from src.parse.parsers.txt_parser import ParsedDocument
 
 logger = logging.getLogger(__name__)
+_WARNED_RUNTIME_ISSUES: set[str] = set()
+
+
+def _warn_once(key: str, message: str) -> None:
+    if key in _WARNED_RUNTIME_ISSUES:
+        return
+    logger.warning(message)
+    _WARNED_RUNTIME_ISSUES.add(key)
+
+
+def _resolve_tesseract_cmd() -> tuple[str | None, str]:
+    env_path = os.getenv("TESSERACT_CMD", "").strip()
+    if env_path and Path(env_path).exists():
+        return env_path, "env:TESSERACT_CMD"
+
+    found = shutil.which("tesseract") or shutil.which("tesseract.exe")
+    if found:
+        return found, "PATH"
+
+    for candidate in (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ):
+        if Path(candidate).exists():
+            return candidate, "fallback path"
+    return None, "missing"
 
 
 class ImageParser:
@@ -65,10 +92,34 @@ class ImageParser:
                 file_size=path.stat().st_size if path.exists() else 0,
             )
 
-        # Configure tesseract path from env if set
-        tesseract_cmd = os.getenv("TESSERACT_CMD")
-        if tesseract_cmd:
-            pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+        tesseract_cmd, tesseract_source = _resolve_tesseract_cmd()
+        if not tesseract_cmd:
+            _warn_once(
+                "image_tesseract_missing",
+                "Image OCR unavailable: no usable Tesseract binary found. "
+                "Install Tesseract, add it to PATH, or set TESSERACT_CMD.",
+            )
+            if docling_mode == "fallback":
+                text = extract_with_docling(path)
+            if text:
+                quality = self._score_quality(text)
+            else:
+                text = self._metadata_fallback(path)
+                quality = 0.1 if text else 0.0
+            return ParsedDocument(
+                source_path=str(path),
+                text=text,
+                parse_quality=quality,
+                file_ext=path.suffix.lower(),
+                file_size=path.stat().st_size if path.exists() else 0,
+            )
+
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+        if tesseract_source == "fallback path":
+            _warn_once(
+                "image_tesseract_fallback",
+                f"Image OCR using fallback Tesseract path: {tesseract_cmd}",
+            )
 
         try:
             img = Image.open(path)

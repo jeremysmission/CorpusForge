@@ -1,3 +1,5 @@
+"""Regression tests for file-state and skip-accounting behavior."""
+
 from pathlib import Path
 import sys
 

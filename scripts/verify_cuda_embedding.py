@@ -63,7 +63,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     mode = embedder.mode
     if mode == "cuda":
-        print(f"[CHECK] Embedder mode: {mode} ✓")
+        print(f"[CHECK] Embedder mode: {mode} [PASS]")
     else:
         print(f"[FAIL] Embedder mode: {mode} -- expected cuda, got fallback")
         if mode == "onnx":
@@ -103,7 +103,7 @@ def main() -> int:
     shape_ok = vectors_1.shape == (100, embedder.dim)
 
     if shape_ok and rate_1 > 0:
-        print(f"[CHECK] Batch 1: {len(texts_100)} texts in {elapsed_1:.2f}s = {rate_1:.0f} chunks/sec ✓")
+        print(f"[CHECK] Batch 1: {len(texts_100)} texts in {elapsed_1:.2f}s = {rate_1:.0f} chunks/sec [PASS]")
     else:
         print(f"[FAIL] Batch 1: shape={vectors_1.shape}, expected=(100, {embedder.dim})")
         print(f"VERDICT: FAIL -- batch 1 produced wrong output shape")
@@ -123,7 +123,7 @@ def main() -> int:
     shape_ok_2 = vectors_2.shape == (500, embedder.dim)
 
     if shape_ok_2 and rate_2 > 0:
-        print(f"[CHECK] Batch 2: {len(texts_500)} texts in {elapsed_2:.2f}s = {rate_2:.0f} chunks/sec ✓")
+        print(f"[CHECK] Batch 2: {len(texts_500)} texts in {elapsed_2:.2f}s = {rate_2:.0f} chunks/sec [PASS]")
     else:
         print(f"[FAIL] Batch 2: shape={vectors_2.shape}, expected=(500, {embedder.dim})")
         print(f"VERDICT: FAIL -- batch 2 produced wrong output shape")

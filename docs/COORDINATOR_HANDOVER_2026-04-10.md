@@ -1,5 +1,8 @@
 # Coordinator Handover — 2026-04-10
 
+> WARNING: Historical cross-repo handover. Useful context, but not the current source of truth for readiness, recovery, or operator posture.
+> Start instead with `C:\HybridRAG_V2\docs\SOURCE_OF_TRUTH_MAP_2026-04-12.md` and `C:\HybridRAG_V2\docs\REBOOT_HANDOVER_2026-04-13.md`.
+
 Purpose: preserve the cross-repo state before reset, separate durable work from local-only work, and define the next clean 4-lane split.
 
 ## Repo anchors
@@ -155,10 +158,10 @@ Required checks:
 
 ## First files to open after reset
 
-1. `C:\CorpusForge\docs\COORDINATOR_HANDOVER_2026-04-10.md`
-2. `C:\CorpusForge\docs\HANDOVER_2026-04-09.md`
-3. `C:\CorpusForge\docs\SPRINT_SYNC.md`
-4. `C:\HybridRAG_V2\docs\SPRINT_SYNC.md`
+1. `C:\HybridRAG_V2\docs\SOURCE_OF_TRUTH_MAP_2026-04-12.md`
+2. `C:\HybridRAG_V2\docs\REBOOT_HANDOVER_2026-04-13.md`
+3. `C:\HybridRAG_V2\docs\COORDINATOR_CONTINUITY_NOTES_2026-04-13.md`
+4. `C:\CorpusForge\docs\HANDOVER_2026-04-09.md`
 5. `C:\CorpusForge\___OnboardingInfo_2026_04_09.md`
 
 Signed: CoPilot+ | Coordinator | 2026-04-10 MDT

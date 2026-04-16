@@ -1,3 +1,5 @@
+"""Regression tests for the Forge-to-V2 export metadata contract."""
+
 from __future__ import annotations
 
 import json

@@ -11,8 +11,24 @@
 ### Step 1: Open CorpusForge GUI
 ```
 cd C:\CorpusForge
-.venv\Scripts\python.exe scripts/boot.py
+.\start_corpusforge.bat
 ```
+
+Health-only preflight:
+
+```powershell
+cd C:\CorpusForge
+.\.venv\Scripts\python.exe scripts\boot.py
+```
+
+Large-run readiness check:
+
+```powershell
+cd C:\CorpusForge
+.\PRECHECK_WORKSTATION_700GB.bat
+```
+
+If the precheck warns on `Scanned-PDF OCR runtime`, the dedup pass can still proceed, but image-only PDFs will not OCR during parsing.
 
 ### Step 2: Configure for Dedup-Only
 In the **Settings** panel:

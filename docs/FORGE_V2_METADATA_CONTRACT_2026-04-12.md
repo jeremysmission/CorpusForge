@@ -1,5 +1,10 @@
 # Forge -> V2 Metadata Contract — 2026-04-12
 
+> **Plain-English TL;DR:**
+> This doc describes exactly which fields CorpusForge writes into `chunks.jsonl`, `entities.jsonl`, `manifest.json`, and `skip_manifest.json`, and which of those fields HybridRAG V2 actually consumes today. Read this when you are adding a new metadata field, debugging an import mismatch, or deciding whether a change needs a full re-ingest or only an incremental fix.
+>
+> New readers should start with [`FORGE_IN_PLAIN_ENGLISH.md`](FORGE_IN_PLAIN_ENGLISH.md) for the overall Forge picture before diving into this contract.
+
 ## Purpose
 
 Tight-scope audit of the CorpusForge export surface that HybridRAG_V2 actually consumes today, plus the smallest safe contract fix worth landing on the Forge side.

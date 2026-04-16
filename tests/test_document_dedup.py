@@ -1,3 +1,5 @@
+"""Regression tests for document-family dedup decisions."""
+
 from pathlib import Path
 import sys
 

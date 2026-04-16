@@ -1,3 +1,5 @@
+"""Regression tests for final pipeline export statistics."""
+
 from __future__ import annotations
 
 import sys

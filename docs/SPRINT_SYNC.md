@@ -1,6 +1,9 @@
 # Unified Sprint Plan — CorpusForge + HybridRAG V2
 
-**Last Updated:** 2026-04-10 | **Updated By:** reviewer — Sprint 9.4 nightly delta / scheduler / admin plan packet posted, board synced, and targeted design-lane verification completed (`tests/test_nightly_delta.py`, `tests/test_stage_forge_import.py`).
+> WARNING: Planning board only. This file is unsafe as current readiness, demo, operator, or recovery truth.
+> Use `C:\HybridRAG_V2\docs\SOURCE_OF_TRUTH_MAP_2026-04-12.md`, `C:\HybridRAG_V2\docs\REBOOT_HANDOVER_2026-04-13.md`, and `C:\HybridRAG_V2\docs\SPRINT_SLICE_PRODUCT_COMPLETION_2026-04-13.md` instead.
+
+**Last Updated:** 2026-04-13 | **Updated By:** Codex — added the product-completion master slice and linked it without replacing the active eval-GUI slice.
 **Demo Target:** 2026-05-02
 **Update Rule:** Every agent updates ALL 3 copies at end of sprint session (review board + both repos)
 
@@ -20,6 +23,23 @@
 - `{USER_HOME}\AgentTeam\war_rooms\HybridRAG3_Educational\SPRINT_SYNC.md` (canonical)
 - `C:\CorpusForge\docs\SPRINT_SYNC.md`
 - `C:\HybridRAG_V2\docs\SPRINT_SYNC.md`
+
+## 2026-04-13 Product Completion Addendum
+
+- Master product-completion slice:
+  - `C:\HybridRAG_V2\docs\SPRINT_SLICE_PRODUCT_COMPLETION_2026-04-13.md`
+- Active concurrent slice that remains in force:
+  - `C:\HybridRAG_V2\docs\SPRINT_SLICE_EVAL_GUI_2026-04-13.md`
+- Immediate order:
+  - `PC.1` measurement truth and stable reruns
+  - `PC.2` retrieval and router burn-down
+  - `PC.3` demo-safe packet freeze
+  - `PC.4` and `PC.5` structured and tabular substrate
+  - `PC.7` and `PC.8` cross-repo freeze, operator packet, and demo-machine proof
+- Guardrail:
+  - aggregation stays off-stage until the product-completion slice closes the tabular and aggregation gates
+- Benchmark rule:
+  - do not rewrite the 400-pack for score gain; query-pack work now means demo curation, robustness variants, and gold-reference tightening
 
 ---
 

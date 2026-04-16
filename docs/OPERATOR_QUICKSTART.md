@@ -35,6 +35,20 @@ python scripts/audit_corpus.py
 python scripts/run_pipeline.py --input "C:\path\to\source\files" --log-file logs/nightly.log
 ```
 
+## Before A Large Or OCR-Sensitive Run
+
+```bash
+cd C:\CorpusForge
+PRECHECK_WORKSTATION_700GB.bat
+```
+
+Interpretation:
+
+- `RESULT: PASS` with no OCR warnings means the workstation can attempt image OCR and scanned-PDF OCR.
+- `RESULT: PASS` with a warning on `Scanned-PDF OCR runtime` means the run can still proceed, but image-only PDFs will not OCR until Poppler is installed or `HYBRIDRAG_POPPLER_BIN` points to a valid `pdftoppm.exe`.
+- `Image OCR runtime` should show a usable Tesseract path, even if Tesseract is installed off-PATH.
+- For heavy GPU work, pick the lesser-used GPU. If both are free and the job is intense, prefer GPU 1 on this machine.
+
 ## Run with Specific Options
 
 ```bash
@@ -61,6 +75,12 @@ schtasks /run /tn "CorpusForge Nightly"
 ```
 
 ## Launch GUI
+
+```bash
+start_corpusforge.bat
+```
+
+Health-only preflight:
 
 ```bash
 python scripts/boot.py
@@ -140,9 +160,21 @@ What to look for:
 ## Feed Export to HybridRAG V2
 
 ```bash
-# From HybridRAG V2 repo:
-python scripts/import_embedengine.py --source "C:\CorpusForge\data\output\latest"
+# Preferred operator path from HybridRAG V2 repo:
+python scripts/stage_forge_import.py --source-root "C:\CorpusForge\data\production_output" --select latest --mode plan
+python scripts/stage_forge_import.py --source-root "C:\CorpusForge\data\production_output" --select latest --canary-limit 2000 --mode dry-run
+python scripts/stage_forge_import.py --source "C:\CorpusForge\data\production_output\export_YYYYMMDD_HHMM" --mode import --create-index
 ```
+
+Direct import engine only when intentionally bypassing staging:
+
+```bash
+python scripts/import_embedengine.py --source "C:\CorpusForge\data\production_output\export_YYYYMMDD_HHMM" --create-index
+```
+
+Canonical staging runbook:
+
+- `C:\HybridRAG_V2\docs\V2_STAGING_IMPORT_RUNBOOK_2026-04-09.md`
 
 ## Config Files
 
@@ -159,6 +191,12 @@ Legacy note: `config/config.local.yaml` is not part of the live mainline runtime
 - `HYBRIDRAG_POPPLER_BIN` — directory containing `pdftoppm.exe`
 - `HYBRIDRAG_DOCLING_MODE` — optional override: `off` | `fallback` | `prefer`
 - `CORPUSFORGE_INSTALL_DOCLING=1` — installer flag for the optional Docling dev dependency
+
+Current workstation note:
+
+- Tesseract may be installed at `C:\Program Files\Tesseract-OCR\tesseract.exe` even when `where.exe tesseract` returns nothing.
+- Precheck and runtime OCR now resolve that fallback path directly.
+- Scanned-PDF OCR still requires a discoverable `pdftoppm.exe` or a valid `HYBRIDRAG_POPPLER_BIN`.
 
 Preferred control path:
 

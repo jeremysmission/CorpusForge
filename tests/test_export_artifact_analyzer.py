@@ -1,3 +1,5 @@
+"""Regression tests for export artifact inspection logic."""
+
 import json
 from pathlib import Path
 

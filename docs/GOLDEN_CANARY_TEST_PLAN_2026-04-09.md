@@ -9,7 +9,8 @@ This is not a synthetic benchmark plan. It is an operator and QA plan built arou
 - Active Forge runtime config: `C:\CorpusForge\config\config.yaml`
 - GUI Save Settings target: `C:\CorpusForge\config\config.yaml`
 - Current clean reference export: `C:\CorpusForge\data\production_output\export_20260409_0720`
-- Current morning/basic V2 import entrypoint: `C:\HybridRAG_V2\scripts\import_embedengine.py`
+- Current preferred V2 import entrypoint: `C:\HybridRAG_V2\scripts\stage_forge_import.py`
+- Underlying direct importer: `C:\HybridRAG_V2\scripts\import_embedengine.py`
 - Legacy note: `config/config.local.yaml` is not part of the live mainline runtime path
 
 ## Test Levels

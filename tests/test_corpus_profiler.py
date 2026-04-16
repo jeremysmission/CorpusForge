@@ -1,3 +1,5 @@
+"""Regression tests for corpus profiling summaries."""
+
 from pathlib import Path
 
 from src.analysis.corpus_profiler import build_markdown_report, profile_source_tree

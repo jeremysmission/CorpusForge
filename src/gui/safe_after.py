@@ -19,6 +19,13 @@
 #   drain_ui_queue()
 # ============================================================================
 
+"""Safe scheduling helper for Tkinter UI callbacks.
+
+Tkinter expects the main UI thread to be the one touching widgets. This
+module queues background-thread updates so the main thread can apply them
+later without corrupting the GUI state.
+"""
+
 import logging
 import os
 import queue as _queue_mod

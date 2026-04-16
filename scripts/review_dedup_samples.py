@@ -1,3 +1,10 @@
+"""Build a reviewer-friendly snapshot of dedup decisions.
+
+This script turns raw dedup output into reports a human can inspect. It
+shows which file was kept in each document family, which files were
+treated as duplicates, and which cases still deserve manual review.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -10,8 +17,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
-
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 @dataclass

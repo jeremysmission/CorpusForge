@@ -1,3 +1,5 @@
+"""Regression tests for running the pipeline from an explicit input list."""
+
 from __future__ import annotations
 
 from pathlib import Path

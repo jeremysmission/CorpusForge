@@ -44,6 +44,11 @@ if not "%_EXITCODE%"=="0" (
   echo.
   echo [FAIL] Workstation precheck exited with code %_EXITCODE%.
   if /i not "%CORPUSFORGE_NO_PAUSE%"=="1" pause >nul
+  goto :finish
 )
+echo.
+echo [OK] Workstation precheck finished. Review RESULT and any warnings above.
+if /i not "%CORPUSFORGE_NO_PAUSE%"=="1" pause >nul
+:finish
 if defined _PREV_CP chcp %_PREV_CP% >nul 2>&1
 endlocal & exit /b %_EXITCODE%

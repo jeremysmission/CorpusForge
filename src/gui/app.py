@@ -6,6 +6,12 @@
 # Thread-safe: all widget updates routed through safe_after.
 # ============================================================================
 
+"""Main operator-facing desktop application.
+
+This file assembles the primary window, places the panels on screen, and
+connects user actions like Start or Stop to the rest of the pipeline.
+"""
+
 from __future__ import annotations
 
 import logging

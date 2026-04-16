@@ -22,6 +22,8 @@
 #   Tertiary (Tertiary.TButton): 12x6 padding, subtle -- Stop
 # ============================================================================
 
+"""Shared fonts, colors, and ttk styles for the desktop UI."""
+
 from tkinter import ttk
 
 FONT_FAMILY = "Segoe UI"
