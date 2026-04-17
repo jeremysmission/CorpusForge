@@ -1,7 +1,10 @@
 @REM === NON-PROGRAMMER GUIDE ===
-@REM Purpose: Launch the CorpusForge desktop GUI with the repo's local Python environment.
-@REM How to follow: Double-click this file after the workstation setup is complete.
-@REM Inputs: Repo root with .venv, config files, and the GUI launcher module in place.
+@REM What this does: Daily one-click launcher for the Forge desktop GUI using the repo's .venv Python.
+@REM When to run: Every time the operator wants to open the Forge application. This is the normal "run Forge" entrypoint.
+@REM Operator view: Console shows [INFO] lines and the GUI window opens. Any failure prints [FAIL] with next-step instructions.
+@REM Prerequisites: INSTALL_WORKSTATION.bat has been run at least once and .venv\Scripts\python.exe exists.
+@REM Flags: --detach launches GUI without holding the console; --dry-run prints resolved paths and exits.
+@REM Inputs:  Repo root with .venv, config files, and the GUI launcher module in place.
 @REM Outputs: The operator desktop application window and any startup logs shown in the console.
 @REM ============================
 @echo off
@@ -23,6 +26,7 @@ REM    --detach   Launch the GUI without keeping this console open.
 REM    --dry-run  Print resolved paths and exit without starting.
 REM ================================================================
 
+REM Bind to the repo-local .venv Python (python.exe = console, pythonw.exe = detached/no-console) and the GUI entrypoint.
 set "PROJECT_ROOT=%CD%"
 set "VENV_PYTHON=%PROJECT_ROOT%\.venv\Scripts\python.exe"
 set "VENV_PYTHONW=%PROJECT_ROOT%\.venv\Scripts\pythonw.exe"
@@ -33,6 +37,7 @@ set "GUI_MODE=terminal"
 set "DRY_RUN=0"
 set "PASSTHROUGH_ARGS="
 
+REM Parse operator flags (--detach, --terminal, --dry-run). Anything else is forwarded to the GUI.
 :parse_args
 if "%~1"=="" goto after_parse_args
 if /I "%~1"=="--detach" (
@@ -56,6 +61,7 @@ goto parse_args
 
 :after_parse_args
 
+REM Default launcher = console python; detached mode swaps to pythonw so Windows doesn't keep a black console window.
 set "LAUNCH_EXE=%VENV_PYTHON%"
 if /I "%GUI_MODE%"=="detached" set "LAUNCH_EXE=%VENV_PYTHONW%"
 

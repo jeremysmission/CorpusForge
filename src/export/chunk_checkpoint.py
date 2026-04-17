@@ -1,8 +1,19 @@
 """
 Durable chunk checkpointing for long-running Forge pipeline runs.
 
-This keeps parsed/chunked work on disk before final export so a crash or
-operator stop before embed does not throw away hours of parse/chunk effort.
+Plain-English role
+------------------
+Cross-cutting crash safety for stages 4-7 of the pipeline.
+
+As soon as a file is parsed and chunked, this module writes the
+resulting chunks (and the document text) into an append-only
+``_checkpoint_active`` folder inside the export directory. If the run
+crashes or the operator hits stop before export, Forge can resume on
+the next run and skip any files that were already parsed and chunked.
+
+The checkpoint is deleted once the final export is written
+successfully. A ``checkpoint_manifest.json`` file records the current
+stage status so an operator can see where a partial run stopped.
 """
 
 from __future__ import annotations
@@ -30,12 +41,19 @@ class CheckpointResume:
 
 
 class ChunkCheckpoint:
-    """Append-only JSONL checkpoint for parsed sources and chunks."""
+    """Append-only JSONL checkpoint for parsed sources and chunks.
+
+    One instance lives per pipeline run and owns the
+    ``_checkpoint_active`` folder inside the export directory. It
+    handles begin/resume, per-document append, periodic fsync, and
+    cleanup after a successful export.
+    """
 
     _SYNC_EVERY_DOCS = 10
     _SYNC_EVERY_SECONDS = 2.0
 
     def __init__(self, output_dir: str):
+        """Remember where the checkpoint folder should live on disk."""
         self.output_dir = Path(output_dir)
         self.root = self.output_dir / "_checkpoint_active"
         self.manifest_path = self.root / "checkpoint_manifest.json"
@@ -50,6 +68,7 @@ class ChunkCheckpoint:
 
     @staticmethod
     def _normalize_path(value: Path | str) -> str:
+        """Return path string with forward slashes for cross-platform comparison."""
         return str(value).replace("\\", "/")
 
     def begin_run(
@@ -194,6 +213,7 @@ class ChunkCheckpoint:
         self._docs_since_sync = 0
 
     def _load_manifest(self) -> dict | None:
+        """Read the checkpoint manifest JSON from disk, or None if missing."""
         if not self.manifest_path.exists():
             return None
         try:
@@ -206,6 +226,7 @@ class ChunkCheckpoint:
         current_norms: dict[str, Path],
         current_hashes: dict[str, str],
     ) -> list[ParsedDocument]:
+        """Rehydrate parsed documents from the checkpoint that still match today's files."""
         docs: list[ParsedDocument] = []
         for payload in self._iter_jsonl(self.docs_path):
             norm = self._normalize_path(payload.get("source_path", ""))
@@ -227,6 +248,7 @@ class ChunkCheckpoint:
         return docs
 
     def _load_chunks(self, resumed_norms: set[str]) -> list[dict]:
+        """Replay chunks whose source file is part of the resumed set."""
         chunks: list[dict] = []
         for chunk in self._iter_jsonl(self.chunks_path):
             if self._normalize_path(chunk.get("source_path", "")) in resumed_norms:
@@ -234,6 +256,7 @@ class ChunkCheckpoint:
         return chunks
 
     def _iter_jsonl(self, path: Path):
+        """Yield one JSON record per line, tolerant of a half-written tail."""
         if not path.exists():
             return
         with open(path, encoding="utf-8") as f:
@@ -248,6 +271,7 @@ class ChunkCheckpoint:
                     continue
 
     def _write_manifest(self, *, status: str) -> None:
+        """Atomically write the checkpoint manifest describing current stage status."""
         payload = {
             "schema_version": 1,
             "signature": self._signature,
@@ -267,12 +291,14 @@ class ChunkCheckpoint:
         os.replace(tmp, self.manifest_path)
 
     def _should_sync(self) -> bool:
+        """Decide whether enough docs or time have passed to force an fsync."""
         return (
             self._docs_since_sync >= self._SYNC_EVERY_DOCS
             or (time.time() - self._last_sync) >= self._SYNC_EVERY_SECONDS
         )
 
     def _fsync_path(self, path: Path) -> None:
+        """Force the OS to flush file contents to disk for durability."""
         if not path.exists():
             return
         with open(path, "a", encoding="utf-8", newline="\n") as f:

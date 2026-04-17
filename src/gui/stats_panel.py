@@ -1,4 +1,13 @@
-"""Stats panel -- live pipeline statistics UI extracted from CorpusForgeApp."""
+"""Stats panel -- live pipeline statistics UI extracted from CorpusForgeApp.
+
+This is the "Live Stats" group in the main Forge window. It is the
+operator's dashboard while a run is active: it shows files processed,
+chunks created, the current stage and its progress, elapsed time,
+files/sec, chunks/sec, and an ETA. It is read-only - nothing here
+starts, stops, or reconfigures the pipeline. The pipeline background
+thread calls :meth:`StatsPanel.update_stats` through ``safe_after`` to
+refresh these numbers from the main UI thread.
+"""
 from __future__ import annotations
 
 import time
@@ -9,6 +18,7 @@ from .theme import DARK, FONT, FONT_BOLD, current_theme
 
 
 def _format_elapsed(seconds: float) -> str:
+    """Format a seconds count as a human-readable H:MM:SS or M:SS string."""
     seconds = max(0, int(seconds))
     h, remainder = divmod(seconds, 3600)
     m, s = divmod(remainder, 60)
@@ -18,7 +28,14 @@ def _format_elapsed(seconds: float) -> str:
 
 
 class StatsPanel:
-    """Two-column live statistics panel with stage-aware progress."""
+    """The Live Stats panel - read-only dashboard of an in-progress run.
+
+    Shows the running totals (files found, parsed, skipped, failed;
+    chunks created/enriched; vectors created) on the left, and run
+    metadata (current stage, current file, elapsed time, throughput,
+    ETA) on the right. All numbers are pushed from the pipeline's
+    background thread through ``safe_after``.
+    """
 
     def __init__(self, parent: ttk.LabelFrame, root: tk.Tk,
                  progress_var: tk.DoubleVar, progress_label: tk.Label):
@@ -32,6 +49,7 @@ class StatsPanel:
         self._build(parent)
 
     def _build(self, parent):
+        """Lay out the left (counters) and right (metadata) stat rows."""
         t = current_theme()
 
         left = ttk.Frame(parent)
@@ -81,11 +99,13 @@ class StatsPanel:
             self._stat_labels[key] = val
 
     def start_timer(self):
+        """Begin ticking the Elapsed label once per second."""
         self._start_time = time.time()
         self._running = True
         self._tick()
 
     def stop_timer(self):
+        """Stop the Elapsed ticker when a run ends."""
         self._running = False
         if self._timer_id is not None:
             try:
@@ -95,6 +115,7 @@ class StatsPanel:
             self._timer_id = None
 
     def _tick(self):
+        """Internal: update the Elapsed label and re-schedule itself."""
         if not self._running or self._start_time is None:
             return
         elapsed = time.time() - self._start_time
@@ -163,6 +184,7 @@ class StatsPanel:
                     self._stat_labels["eta"].configure(text="--")
 
     def update_stage_progress(self, stage: str, current: int, total: int, detail: str = ""):
+        """Update the current stage name, progress ratio, and detail text."""
         stage_map = {
             "discover": "Discover (CPU/IO)",
             "dedup": "Dedup (CPU/IO)",
@@ -191,6 +213,7 @@ class StatsPanel:
             self._progress_label.configure(text="Stopping safely...")
 
     def update_current_file(self, filename: str):
+        """Display the name of the file currently being processed."""
         display = filename
         if len(display) > 60:
             display = "..." + display[-57:]

@@ -1,9 +1,18 @@
 """Recovery-stage document deduplication.
 
-This module decides which file to keep when several files appear to be
-versions of the same document. It normalizes extracted text, compares
-candidate copies, keeps the strongest canonical file, and writes an
-audit trail so an operator can understand the decision later.
+Plain-English role
+------------------
+A specialized dedup pass, separate from the fast stage-2 deduplicator.
+When the corpus has lots of near-duplicates (same document saved as
+.docx, .pdf, and a scan, or with slight "_v2" variations), this module
+parses each candidate, normalizes its text, compares the normalized
+versions, and chooses one canonical copy per family. Everything it
+decides is written to a SQLite index plus JSON audit files so an
+operator can review the dedup decisions after the fact.
+
+Inputs  : a folder of mixed files, plus parse dispatcher access.
+Outputs : a canonical file list, a duplicates JSONL with reasoning,
+          and a summary JSON report.
 """
 
 from __future__ import annotations
@@ -39,6 +48,8 @@ PAGE_PATTERNS = (
 
 @dataclass
 class FingerprintedDocument:
+    """One parsed candidate document plus its fingerprint information."""
+
     path: Path
     ext: str
     stem_key: str
@@ -51,6 +62,8 @@ class FingerprintedDocument:
 
 @dataclass
 class DedupDecision:
+    """One canonical-or-duplicate decision for a single file with its reasoning."""
+
     path: str
     status: str
     canonical_path: str
@@ -66,6 +79,8 @@ class DedupDecision:
 
 @dataclass
 class DedupRunStats:
+    """Summary counters for one recovery-dedup pass."""
+
     files_seen: int
     candidate_groups: int
     singleton_files: int
@@ -133,6 +148,7 @@ def hash_normalized_text(text: str) -> str:
 
 
 def _word_shingles(text: str, size: int = 5) -> set[str]:
+    """Return the set of overlapping N-word sequences from ``text``."""
     tokens = WORD_RE.findall(text)
     if not tokens:
         return set()
@@ -145,10 +161,12 @@ def _word_shingles(text: str, size: int = 5) -> set[str]:
 
 
 def _line_units(text: str) -> set[str]:
+    """Return the set of non-empty lines that make up ``text``."""
     return {line for line in text.splitlines() if line}
 
 
 def _containment(left: set[str], right: set[str]) -> float:
+    """Ratio of shared items between the two sets, 0.0 when either is empty."""
     if not left or not right:
         return 0.0
     return len(left & right) / max(1, min(len(left), len(right)))
@@ -178,6 +196,7 @@ def parse_document(path: Path, dispatcher: ParseDispatcher) -> FingerprintedDocu
 
 
 def _canonical_sort_key(doc: FingerprintedDocument) -> tuple[float, int, int, str]:
+    """Sort key that ranks candidate docs best-first for canonical selection."""
     ext_rank = {".docx": 3, ".doc": 2, ".pdf": 1}.get(doc.ext, 0)
     return (doc.parse_quality, ext_rank, doc.normalized_chars, str(doc.path).lower())
 
@@ -282,6 +301,7 @@ def classify_same_stem_group(
 
 
 def group_paths_by_stem(paths: Iterable[Path]) -> dict[str, list[Path]]:
+    """Group files by their normalized stem so related copies cluster together."""
     grouped: dict[str, list[Path]] = defaultdict(list)
     for path in paths:
         grouped[build_stem_key(path)].append(path)

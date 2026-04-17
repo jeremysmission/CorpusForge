@@ -1,4 +1,16 @@
-"""Corpus profiling helpers for source-tree adaptation work."""
+"""Corpus profiling helpers for source-tree adaptation work.
+
+Plain-English role
+------------------
+Offline tool. An operator points this at a raw source folder (before a
+pipeline run) and gets back a summary of what is in there: which file
+extensions dominate, which folders are huge, how many OCR sidecars
+there are, which folders look like duplicate extract-this-archive
+trees, and a few plain-language recommendations for skip/defer policy.
+
+Used to plan how to configure Forge for a new corpus, not during a
+production run.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +41,7 @@ TOKEN_RE = re.compile(r"[a-z]{3,}")
 
 
 def _signal_names(file_name: str, ext: str, rel_posix: str) -> list[str]:
+    """Classify one file into named signals (OCR sidecar, image asset, etc.)."""
     lower_name = file_name.lower()
     signals: list[str] = []
     if lower_name.endswith("_djvu.txt"):
@@ -55,6 +68,7 @@ def _signal_names(file_name: str, ext: str, rel_posix: str) -> list[str]:
 
 
 def _tokenize_name(stem: str) -> list[str]:
+    """Break a file stem into useful lowercase tokens, dropping stopwords."""
     tokens = TOKEN_RE.findall(stem.lower())
     return [token for token in tokens if token not in STOP_TOKENS]
 
@@ -66,6 +80,7 @@ def _folder_profile(
     signal_counts: Counter,
     top_n: int,
 ) -> dict:
+    """Summarize one top-level folder's extension mix and noise ratios."""
     image_count = sum(ext_counts[ext] for ext in IMAGE_EXTENSIONS)
     drawing_count = sum(ext_counts[ext] for ext in DRAWING_EXTENSIONS)
     archive_count = sum(ext_counts[ext] for ext in ARCHIVE_EXTENSIONS)

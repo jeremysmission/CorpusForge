@@ -1,17 +1,32 @@
 """
 Verify parallel pipeline speedup: workers=1 vs workers=8.
 
-Tests:
-  1. Parse + chunk throughput at workers=1 (sequential baseline)
-  2. Parse + chunk throughput at workers=8 (parallel)
-  3. Speedup factor (parallel / sequential)
-  4. Chunk integrity: all chunks have valid chunk_id and text
+What it does for the operator:
+  Runs Forge twice against the same small test set -- once with one worker
+  (sequential baseline), then with eight workers (parallel). Prints chunk
+  counts, elapsed time, throughput, and the parallel speedup factor.
+
+  It ALSO checks that both runs produced the same number of chunks and
+  files parsed (pipeline must be deterministic). Any mismatch fails the
+  test.
+
+When to run it:
+  - After changing worker / threading code in src/
+  - As a smoke test when reviewing a pull request that touches the pipeline
+  - Before trusting a big overnight run on new hardware
+
+Notes:
+  - Uses a small golden corpus if available, otherwise generates 20
+    synthetic .txt files in a temp folder.
+  - Forces embed device to CPU and disables enrichment so this test is
+    purely about parse + chunk parallelism (no GPU, no Ollama needed).
+  - CUDA throughput is covered separately by verify_cuda_embedding.py.
+
+Outputs: PASS/FAIL verdict and a comparison table printed to stdout.
+Exit codes: 0 = PASS, 1 = FAIL (mismatch, zero chunks, or parallel slower).
 
 Usage:
   python scripts/verify_parallel_pipeline.py
-
-Embed device forced to CPU — this test measures parse parallelism only.
-CUDA verification is a separate script.
 """
 
 from __future__ import annotations
@@ -159,6 +174,7 @@ def validate_chunks(stats: RunStats, label: str) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
+    """Run Forge with 1 worker, then with 8 workers, compare outputs, and print PASS/FAIL."""
     print("=" * 64)
     print("  CorpusForge — Parallel Pipeline Verification")
     print("=" * 64)

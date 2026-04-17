@@ -1,4 +1,14 @@
-"""Regression tests for corpus profiling summaries."""
+"""Regression tests for corpus profiling summaries.
+
+Plain-English summary for operators:
+Before a full ingest, Forge can profile the source tree and give the
+operator a human-readable summary: what file types are in there, how
+many OCR sidecars look like junk, how many scan-named images, how many
+filenames cue 'encrypted', and which subfolders look like duplicate
+bundles. If these tests fail, operators could plan a run blind —
+missing the signal that a big chunk of the corpus is duplicate
+bundles or OCR garbage.
+"""
 
 from pathlib import Path
 
@@ -6,6 +16,7 @@ from src.analysis.corpus_profiler import build_markdown_report, profile_source_t
 
 
 def test_profile_source_tree_detects_sidecars_and_duplicate_folders(tmp_path: Path) -> None:
+    """Protects the profiler's signal detection — sidecars, scan-named images, encrypted-named PDFs, and duplicate folder bundles must all be counted."""
     root = tmp_path / "source"
     root.mkdir()
 
@@ -35,6 +46,7 @@ def test_profile_source_tree_detects_sidecars_and_duplicate_folders(tmp_path: Pa
 
 
 def test_build_markdown_report_renders_duplicate_section(tmp_path: Path) -> None:
+    """Protects the human-readable profile report — the markdown output must include the sections operators rely on for planning."""
     root = tmp_path / "source"
     root.mkdir()
     leaf = root / "engineering_docs"

@@ -1,8 +1,35 @@
-"""Build a reviewer-friendly snapshot of dedup decisions.
+"""
+Build a reviewer-friendly snapshot of dedup decisions.
 
-This script turns raw dedup output into reports a human can inspect. It
-shows which file was kept in each document family, which files were
-treated as duplicates, and which cases still deserve manual review.
+What it does for the operator:
+  Takes the raw output of a dedup run (either document_dedup_* folder
+  or a chunk-dedup folder) and produces human-readable review artifacts:
+  Markdown, JSONL, and CSV. For each "family" of near-duplicate docs it
+  shows which file was KEPT (canonical), which were treated as duplicates,
+  and which families deserve a second look from a human reviewer.
+
+  Use this to spot-check dedup choices before they are frozen into the
+  canonical_files.txt that drives ingest.
+
+When to run it:
+  - After build_document_dedup_index.py, to spot-check the canonical picks
+  - When a dedup run flags a family that looks wrong in the summary
+  - As a reviewer step before handing canonical_files.txt to the pipeline
+
+Inputs:
+  --dedup-dir     Directory containing dedup_report.json plus either
+                  duplicate_files.jsonl (document dedup) or chunks.jsonl
+                  (chunk dedup).
+  --output-dir    Optional output path (defaults to <dedup-dir>/review_<ts>).
+  --limit         Maximum families to include (default 20).
+  --sort          How to order families (largest | similarity | path).
+  --raw-chunks    Optional path to the pre-dedup chunks.jsonl used to
+                  recover metadata for chunk-dedup duplicate members.
+
+Outputs (all under the output directory):
+  dedup_review_report.md      Human-readable review report
+  dedup_review_rows.jsonl     One row per family-member pair
+  dedup_review_rows.csv       Same rows, spreadsheet-friendly
 """
 
 from __future__ import annotations
@@ -21,6 +48,7 @@ from typing import Iterable
 
 @dataclass
 class ReviewMember:
+    """One file (or chunk) that belongs to a dedup 'family' -- either the canonical or a duplicate."""
     member_id: str
     path: str
     preview: str
@@ -36,6 +64,7 @@ class ReviewMember:
 
 @dataclass
 class ReviewFamily:
+    """A group of near-duplicate documents / chunks that share a single canonical representative."""
     family_id: str
     canonical_path: str
     canonical_ext: str
@@ -46,26 +75,31 @@ class ReviewFamily:
 
     @property
     def duplicate_count(self) -> int:
+        """Number of members that were flagged as duplicates of the canonical."""
         return sum(1 for member in self.members if member.status == "duplicate")
 
     @property
     def family_size(self) -> int:
+        """Total members in the family, including the canonical."""
         return len(self.members)
 
     @property
     def max_similarity(self) -> float:
+        """Highest similarity score among members (1.0 for exact matches)."""
         if not self.members:
             return 1.0
         return max(member.similarity for member in self.members)
 
     @property
     def min_similarity(self) -> float:
+        """Lowest similarity score among members (closer to 0 = looser family)."""
         if not self.members:
             return 1.0
         return min(member.similarity for member in self.members)
 
 
 def parse_args() -> argparse.Namespace:
+    """Read and validate CLI flags for the dedup review run."""
     parser = argparse.ArgumentParser(description="Review dedup samples from existing recovery outputs.")
     parser.add_argument(
         "--dedup-dir",
@@ -98,6 +132,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def clean_preview(text: str, limit: int = 180) -> str:
+    """Collapse whitespace and truncate a chunk text to a short preview string."""
     if not text:
         return ""
     text = " ".join(text.replace("\r", " ").replace("\n", " ").split())
@@ -107,15 +142,18 @@ def clean_preview(text: str, limit: int = 180) -> str:
 
 
 def markdown_escape(text: str) -> str:
+    """Escape characters that would break a Markdown table cell (newlines, pipes)."""
     return (text or "").replace("|", "\\|").replace("\r", " ").replace("\n", " ")
 
 
 def load_json(path: Path) -> dict:
+    """Load a JSON file from disk into a dict."""
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
 
 def load_jsonl(path: Path) -> list[dict]:
+    """Load a JSON-lines file into a list of dicts, skipping empty lines."""
     rows: list[dict] = []
     with path.open("r", encoding="utf-8") as handle:
         for raw in handle:
@@ -126,6 +164,7 @@ def load_jsonl(path: Path) -> list[dict]:
 
 
 def load_sqlite_rows(db_path: Path, canonical_paths: Iterable[str]) -> dict[str, list[dict]]:
+    """Pull full metadata rows from document_dedup.sqlite3 for the given canonical paths."""
     family_map: dict[str, list[dict]] = defaultdict(list)
     if not db_path.exists():
         return family_map
@@ -153,6 +192,7 @@ def load_sqlite_rows(db_path: Path, canonical_paths: Iterable[str]) -> dict[str,
 
 
 def recommend_family(canonical_ext: str, members: list[ReviewMember]) -> tuple[str, list[str]]:
+    """Decide whether the canonical pick looks safe, or whether a human should review it."""
     flags: list[str] = []
     ext_set = {member.ext.lower() for member in members if member.ext}
     if ".docx" in ext_set and canonical_ext != ".docx":
@@ -170,6 +210,7 @@ def recommend_family(canonical_ext: str, members: list[ReviewMember]) -> tuple[s
 
 
 def build_document_review_families(dedup_dir: Path) -> list[ReviewFamily]:
+    """Read a document-dedup output folder and return the list of families (canonical + duplicates)."""
     sqlite_path = dedup_dir / "document_dedup.sqlite3"
     dup_path = dedup_dir / "duplicate_files.jsonl"
     if not dup_path.exists():
@@ -253,6 +294,7 @@ def build_document_review_families(dedup_dir: Path) -> list[ReviewFamily]:
 
 
 def load_chunk_map(chunks_path: Path) -> dict[str, dict]:
+    """Read a chunks.jsonl file and return it keyed by chunk_id for fast lookup."""
     chunk_map: dict[str, dict] = {}
     with chunks_path.open("r", encoding="utf-8") as handle:
         for raw in handle:
@@ -265,6 +307,7 @@ def load_chunk_map(chunks_path: Path) -> dict[str, dict]:
 
 
 def resolve_raw_chunks_path(dedup_dir: Path, explicit: str) -> Path | None:
+    """Find the pre-dedup chunks.jsonl (if any) so duplicate members can be shown with their text."""
     if explicit:
         raw_chunks = Path(explicit).resolve()
         return raw_chunks if raw_chunks.exists() else None
@@ -278,6 +321,7 @@ def resolve_raw_chunks_path(dedup_dir: Path, explicit: str) -> Path | None:
 
 
 def build_chunk_lookup(dedup_chunks_path: Path, raw_chunks_path: Path | None) -> dict[str, dict]:
+    """Merge pre-dedup and post-dedup chunk maps so every chunk_id can be displayed with its metadata."""
     chunk_map: dict[str, dict] = {}
     if raw_chunks_path and raw_chunks_path.exists():
         chunk_map.update(load_chunk_map(raw_chunks_path))
@@ -294,6 +338,7 @@ def chunk_member_from_row(
     dedup_reason: str,
     fallback_source: str = "",
 ) -> ReviewMember:
+    """Build one ReviewMember from a chunk row plus its dedup-decision context."""
     source_path = chunk_row.get("source_path") or fallback_source or f"[missing metadata] {chunk_id}"
     preview = clean_preview(chunk_row.get("text", ""), 180)
     text_length = int(chunk_row.get("text_length", len(chunk_row.get("text", ""))))
@@ -313,6 +358,7 @@ def chunk_member_from_row(
 
 
 def build_chunk_review_families(dedup_report_path: Path, chunks_path: Path, raw_chunks_path: Path | None) -> list[ReviewFamily]:
+    """Read a chunk-dedup output folder and return the list of sampled chunk-level families."""
     report = load_json(dedup_report_path)
     sample_clusters = report.get("sample_clusters", [])
     chunk_map = build_chunk_lookup(chunks_path, raw_chunks_path)
@@ -371,6 +417,7 @@ def build_chunk_review_families(dedup_report_path: Path, chunks_path: Path, raw_
 
 
 def sort_families(families: list[ReviewFamily], mode: str) -> list[ReviewFamily]:
+    """Sort families by the operator-chosen mode: largest, similarity, or path."""
     if mode == "path":
         return sorted(families, key=lambda item: item.canonical_path.lower())
     if mode == "similarity":
@@ -379,6 +426,7 @@ def sort_families(families: list[ReviewFamily], mode: str) -> list[ReviewFamily]
 
 
 def write_outputs(output_dir: Path, families: list[ReviewFamily], source_label: str) -> tuple[Path, Path, Path]:
+    """Write the Markdown, JSONL, and CSV review files and return their paths."""
     output_dir.mkdir(parents=True, exist_ok=True)
     md_path = output_dir / "dedup_review_report.md"
     jsonl_path = output_dir / "dedup_review_rows.jsonl"
@@ -475,6 +523,7 @@ def write_outputs(output_dir: Path, families: list[ReviewFamily], source_label: 
 
 
 def main() -> None:
+    """Load a dedup output folder, build review families, write the reports, and print their paths."""
     args = parse_args()
     dedup_dir = Path(args.dedup_dir).resolve()
     if not dedup_dir.exists():

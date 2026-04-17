@@ -1,4 +1,14 @@
-"""Transfer panel -- bulk file transfer UI component extracted from CorpusForgeApp."""
+"""Transfer panel -- bulk file transfer UI component extracted from CorpusForgeApp.
+
+This is the "Bulk Transfer" group in the main Forge window. An
+operator uses it to copy raw source files from a shared drive or
+exchange folder into a local staging folder before running the
+pipeline. The transfer is a straight file copy - no parsing or
+chunking happens here. It controls one preparatory stage: staging.
+The copy itself runs in a background thread
+(:class:`TransferRunner` in ``launch_gui.py``); this panel only
+displays progress (files copied, MB transferred, speed, ETA).
+"""
 from __future__ import annotations
 
 import tkinter as tk
@@ -9,6 +19,7 @@ from .safe_after import safe_after
 
 
 def _format_elapsed(seconds: float) -> str:
+    """Format a seconds count as a human-readable H:MM:SS or M:SS string."""
     seconds = max(0, int(seconds))
     h, remainder = divmod(seconds, 3600)
     m, s = divmod(remainder, 60)
@@ -18,7 +29,13 @@ def _format_elapsed(seconds: float) -> str:
 
 
 class TransferPanel:
-    """Bulk Transfer panel -- source/dest paths, start/stop, live progress."""
+    """The Bulk Transfer panel - copy raw source files into staging.
+
+    Lets the operator pick a "From" folder and a "To" (staging)
+    folder, then click "Start Transfer". A background worker performs
+    the copy; this panel shows files copied, MB transferred, speed,
+    and ETA while the copy is running.
+    """
 
     def __init__(self, parent: ttk.LabelFrame, root: tk.Tk,
                  on_transfer_start=None, on_transfer_stop=None,
@@ -31,6 +48,7 @@ class TransferPanel:
         self._build(parent)
 
     def _build(self, parent):
+        """Assemble the From/To pickers, action buttons, and stat row."""
         t = current_theme()
 
         row0 = ttk.Frame(parent)
@@ -116,16 +134,19 @@ class TransferPanel:
             self._transfer_stat_labels[key] = val
 
     def _browse_transfer_source(self):
+        """Open a folder picker for the transfer source (From) folder."""
         path = filedialog.askdirectory(title="Select Transfer Source")
         if path:
             self.transfer_src_var.set(path)
 
     def _browse_transfer_dest(self):
+        """Open a folder picker for the transfer destination (To) folder."""
         path = filedialog.askdirectory(title="Select Transfer Destination")
         if path:
             self.transfer_dest_var.set(path)
 
     def _on_start_click(self):
+        """Handle the Start Transfer button - begin a bulk file copy."""
         if self._running:
             return
         self._running = True
@@ -138,6 +159,7 @@ class TransferPanel:
             )
 
     def _on_stop_click(self):
+        """Handle the Stop button - ask the transfer thread to exit cleanly."""
         if self._on_transfer_stop:
             self._on_transfer_stop()
         if self._append_log:

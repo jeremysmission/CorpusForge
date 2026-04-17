@@ -10,6 +10,26 @@
 
 This file assembles the primary window, places the panels on screen, and
 connects user actions like Start or Stop to the rest of the pipeline.
+
+What the operator sees when this file runs:
+    * A title bar reading "CorpusForge Pipeline Monitor".
+    * A Bulk Transfer panel for copying files into a staging folder.
+    * A Pipeline Control panel with Source/Output folder pickers,
+      "Start Pipeline", "Run Precheck", and "Stop Safely" buttons, and
+      a progress bar.
+    * A Settings panel (worker counts, chunk size, enrichment on/off).
+    * A Dedup-Only panel for running only the duplicate-detection pass.
+    * A Live Stats panel (files parsed, chunks created, ETA, etc.).
+    * A scrolling Pipeline Log panel.
+    * A bottom status bar summarizing the active config file.
+
+Pipeline stages controlled from this window:
+    discover -> dedup -> parse -> chunk -> (enrich) -> (embed) ->
+    (extract) -> export.
+
+Start Pipeline hands work to a background thread so the window stays
+responsive; Stop Safely asks that background thread to finish its
+in-flight file and package whatever is already done.
 """
 
 from __future__ import annotations
@@ -35,7 +55,15 @@ _MAX_LOG_LINES = 2000
 
 
 class CorpusForgeApp:
-    """Main CorpusForge GUI window."""
+    """The main Forge window an operator uses to run a full ingest.
+
+    Think of this class as the "control panel" of Forge: it holds every
+    other panel (transfer, settings, stats, log) together, keeps track
+    of whether a run is in progress, and relays button clicks down to
+    the pipeline code running in a background thread. It does not do
+    any parsing, chunking, or embedding itself - those happen elsewhere
+    and only report back here through thread-safe update methods.
+    """
 
     def __init__(
         self,
@@ -80,44 +108,57 @@ class CorpusForgeApp:
     # Settings var delegation (tests and _on_start_click access these)
     # ------------------------------------------------------------------
 
+    # These pass-through properties let tests and callbacks read the
+    # Settings-panel values without knowing the panel structure.
+
     @property
     def workers_var(self):
+        """Number of parallel pipeline workers chosen by the operator."""
         return self._settings_panel.workers_var
 
     @property
     def chunk_size_var(self):
+        """Target chunk size (characters) chosen by the operator."""
         return self._settings_panel.chunk_size_var
 
     @property
     def overlap_var(self):
+        """Chunk overlap size (characters) chosen by the operator."""
         return self._settings_panel.overlap_var
 
     @property
     def ocr_var(self):
+        """OCR mode chosen by the operator (skip/auto/force)."""
         return self._settings_panel.ocr_var
 
     @property
     def embed_var(self):
+        """Whether the embedding stage is enabled for the next run."""
         return self._settings_panel.embed_var
 
     @property
     def enrich_var(self):
+        """Whether the enrichment stage is enabled for the next run."""
         return self._settings_panel.enrich_var
 
     @property
     def extract_var(self):
+        """Whether the entity-extraction stage is enabled for the next run."""
         return self._settings_panel.extract_var
 
     @property
     def enrich_concurrent_var(self):
+        """Maximum number of concurrent enrichment calls."""
         return self._settings_panel.enrich_concurrent_var
 
     @property
     def extract_batch_var(self):
+        """Batch size used by the entity-extraction stage."""
         return self._settings_panel.extract_batch_var
 
     @property
     def embed_batch_var(self):
+        """Batch size used by the embedding stage on the GPU."""
         return self._settings_panel.embed_batch_var
 
     # ------------------------------------------------------------------
@@ -125,6 +166,7 @@ class CorpusForgeApp:
     # ------------------------------------------------------------------
 
     def _setup_window(self):
+        """Set the window title, size, and background color."""
         t = current_theme()
         self.root.title("CorpusForge Pipeline Monitor")
         self.root.geometry("920x760")
@@ -141,6 +183,7 @@ class CorpusForgeApp:
     # ------------------------------------------------------------------
 
     def _build_ui(self):
+        """Create every panel and place it into the main window."""
         t = current_theme()
 
         shell = ttk.Frame(self.root)
@@ -369,16 +412,19 @@ class CorpusForgeApp:
     # ------------------------------------------------------------------
 
     def _browse_source(self):
+        """Open a folder picker so the operator can pick the source folder."""
         path = filedialog.askdirectory(title="Select Source Folder")
         if path:
             self.source_var.set(path)
 
     def _browse_output(self):
+        """Open a folder picker so the operator can pick the export folder."""
         path = filedialog.askdirectory(title="Select Output Folder")
         if path:
             self.output_var.set(path)
 
     def _on_start_click(self):
+        """Handle the Start Pipeline button - kick off a Forge run."""
         if self._running:
             return
 
@@ -435,6 +481,10 @@ class CorpusForgeApp:
             )
 
     def _on_stop_click(self):
+        """Handle the Stop Safely button - ask the running pipeline to finish cleanly."""
+        # Stop Safely is wired to the pipeline's stop_event so the
+        # background run can finish its current file/stage, package the
+        # completed work, and exit without losing progress.
         if self._on_stop:
             self._on_stop()
         self.stop_btn.configure(state=tk.DISABLED, text="Stopping...")
@@ -450,6 +500,7 @@ class CorpusForgeApp:
         )
 
     def _on_precheck_click(self):
+        """Handle the Run Precheck button - validate settings before a real run."""
         if self._on_precheck:
             self._on_precheck(
                 source=self.source_var.get(),
@@ -458,22 +509,27 @@ class CorpusForgeApp:
             )
 
     def _on_scroll_content_configure(self, _event=None):
+        """Resize the scroll region whenever the inner content grows."""
         self._scroll_canvas.configure(scrollregion=self._scroll_canvas.bbox("all"))
 
     def _on_scroll_canvas_configure(self, event):
+        """Keep the inner content as wide as the visible canvas."""
         self._scroll_canvas.itemconfigure(self._scroll_window, width=event.width)
 
     def _bind_mousewheel(self, _event=None):
+        """Enable mousewheel scrolling while the cursor is over the window."""
         if not self._mousewheel_bound:
             self.root.bind_all("<MouseWheel>", self._on_mousewheel, add="+")
             self._mousewheel_bound = True
 
     def _unbind_mousewheel(self, _event=None):
+        """Disable mousewheel scrolling when the cursor leaves the window."""
         if self._mousewheel_bound:
             self.root.unbind_all("<MouseWheel>")
             self._mousewheel_bound = False
 
     def _on_mousewheel(self, event):
+        """Scroll the main view in response to mousewheel ticks."""
         self._scroll_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     # ------------------------------------------------------------------
@@ -481,6 +537,7 @@ class CorpusForgeApp:
     # ------------------------------------------------------------------
 
     def _set_running(self, running: bool):
+        """Lock or unlock buttons/inputs based on whether a run is active."""
         self._running = running
         if running:
             self.start_btn.configure(state=tk.DISABLED)
@@ -504,26 +561,36 @@ class CorpusForgeApp:
     # ------------------------------------------------------------------
     # Public update methods (called via safe_after from bg thread)
     # ------------------------------------------------------------------
+    # The pipeline runs in a background thread. It cannot touch Tkinter
+    # widgets directly, so every progress update below is routed here
+    # through safe_after, which queues the call for the main UI thread.
 
     def update_stats(self, stats: dict):
+        """Refresh the Live Stats panel with a new stats snapshot."""
         self._stats_panel.update_stats(stats)
 
     def update_stage_progress(self, stage: str, current: int, total: int, detail: str = ""):
+        """Update the current pipeline stage and its progress fraction."""
         self._stats_panel.update_stage_progress(stage, current, total, detail)
 
     def update_current_file(self, filename: str):
+        """Display the name of the file currently being processed."""
         self._stats_panel.update_current_file(filename)
 
     def update_transfer_stats(self, stats: dict):
+        """Refresh the Bulk Transfer panel from a transfer stats dict."""
         self._transfer_panel.update_transfer_stats(stats)
 
     def transfer_finished(self, stats: dict, message: str = ""):
+        """Called when the bulk transfer thread finishes."""
         self._transfer_panel.transfer_finished(stats, message)
 
     def update_dedup_only_stats(self, stats: dict):
+        """Refresh the Dedup-Only panel from a dedup stats dict."""
         self._dedup_only_panel.update_dedup_only_stats(stats)
 
     def dedup_only_finished(self, stats: dict, message: str = ""):
+        """Called when the dedup-only thread finishes."""
         self._dedup_only_panel.dedup_only_finished(stats, message)
 
     def append_log(self, message: str, level: str = "INFO"):
@@ -616,9 +683,11 @@ class CorpusForgeApp:
         self._update_status_bar()
 
     def _display_config_path(self) -> str:
+        """Return the active config file path to show in the status bar."""
         return self.config_path or "config/config.yaml"
 
     def _current_worker_count(self) -> int:
+        """Return the worker count currently shown in the Settings panel."""
         if hasattr(self, "_settings_panel"):
             try:
                 return int(self._settings_panel.workers_var.get())
@@ -629,6 +698,7 @@ class CorpusForgeApp:
         return 0
 
     def _current_defer_count(self) -> int:
+        """Return how many extensions are deferred for this run."""
         if self._config is not None:
             try:
                 return len(self._config.parse.defer_extensions)
@@ -637,6 +707,7 @@ class CorpusForgeApp:
         return 0
 
     def _collect_current_settings(self) -> dict:
+        """Bundle the current Settings-panel values into a dict for precheck."""
         return {
             "pipeline": {"workers": int(self.workers_var.get())},
             "parse": {"ocr_mode": str(self.ocr_var.get())},

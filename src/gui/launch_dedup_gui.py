@@ -1,4 +1,21 @@
-"""Recovery-stage dedup GUI entry point."""
+"""Recovery-stage dedup GUI entry point.
+
+This launcher opens the standalone Recovery Dedup window (see
+:mod:`src.gui.dedup_app`). An operator uses it when a previous run
+produced a corpus with near-duplicate PDF/DOC/DOCX families - this GUI
+walks the source tree, groups documents that look alike, picks one
+canonical file per family, and writes out a canonical file list plus a
+duplicate audit trail. It does **not** run the full Forge pipeline; it
+is a cleanup pass before the real chunking run.
+
+What the operator sees when this file runs:
+    * A smaller window titled "CorpusForge Recovery Dedup".
+    * Source/Output folder pickers, similarity threshold, min-chars,
+      and worker count fields.
+    * Start Recovery / Stop buttons and a progress bar across
+      "families".
+    * A Recovery Stats panel and a scrolling Recovery Log.
+"""
 
 from __future__ import annotations
 
@@ -26,13 +43,14 @@ _DEFAULT_CONFIG = "config/config.yaml"
 
 
 class GUILogHandler(logging.Handler):
-    """Routes logging messages to the recovery GUI."""
+    """Bridge that forwards log records into the Recovery Dedup log panel."""
 
     def __init__(self, app: DedupRecoveryApp):
         super().__init__()
         self.app = app
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Format the log record and queue it for the main UI thread."""
         try:
             safe_after(
                 self.app.root,
@@ -46,7 +64,12 @@ class GUILogHandler(logging.Handler):
 
 
 class DedupRunner:
-    """Runs the recovery-stage dedup pass in a background thread."""
+    """Background worker that runs the recovery-stage dedup pass.
+
+    Walks the source tree, groups PDF/DOC/DOCX files that share a stem
+    (looks like the same document), scores similarity, and produces
+    canonical/duplicate lists plus a SQLite index.
+    """
 
     def __init__(self, app: DedupRecoveryApp, config: ForgeConfig):
         self.app = app
@@ -63,6 +86,7 @@ class DedupRunner:
         min_chars: str,
         workers: str,
     ) -> None:
+        """Start the recovery dedup pass in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
@@ -81,9 +105,11 @@ class DedupRunner:
         self._thread.start()
 
     def stop(self) -> None:
+        """Request a safe stop for the recovery dedup pass."""
         self._stop_event.set()
 
     def _run(self, *, source: str, output: str, similarity_threshold: str, min_chars: str, workers: str) -> None:
+        """Thread body - parse input settings, run dedup, write outputs."""
         try:
             threshold_value = float(similarity_threshold)
             min_chars_value = int(min_chars)
@@ -159,16 +185,19 @@ class DedupRunner:
 
     @property
     def is_alive(self) -> bool:
+        """True while the recovery dedup thread is still running."""
         return self._thread is not None and self._thread.is_alive()
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse the command-line arguments for this launcher."""
     parser = argparse.ArgumentParser(description="CorpusForge recovery dedup GUI")
     parser.add_argument("--config", default=_DEFAULT_CONFIG, help="Path to config YAML.")
     return parser.parse_args()
 
 
 def main() -> None:
+    """Launch the Recovery Dedup GUI as a standalone application."""
     args = parse_args()
     config = load_config(args.config)
     logging.basicConfig(
@@ -193,7 +222,9 @@ def main() -> None:
     gui_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
     logging.getLogger().addHandler(gui_handler)
 
+    # Drain the cross-thread GUI queue every 50ms on the main thread.
     def pump_queue() -> None:
+        """Pull any pending GUI updates off the safe_after queue."""
         drain_ui_queue()
         root.after(50, pump_queue)
 

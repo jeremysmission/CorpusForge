@@ -1,4 +1,11 @@
-"""DOCX parser — extracts text from Word documents via python-docx."""
+"""
+DOCX parser -- reads modern Microsoft Word (.docx) files.
+
+Plain English: opens a Word document and pulls out the body paragraphs
+as clean text. Uses the ``python-docx`` library. If the file is corrupt
+or the library isn't available, the parser logs the issue and returns
+an empty document -- it never crashes the Forge pipeline.
+"""
 
 from __future__ import annotations
 
@@ -11,9 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 class DocxParser:
-    """Parse .docx files using python-docx."""
+    """Extract body text from modern Word .docx documents."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .docx file and return its paragraphs as clean text."""
         path = Path(file_path)
         try:
             from docx import Document

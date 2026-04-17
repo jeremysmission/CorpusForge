@@ -1,6 +1,12 @@
 """
 Export packager — builds the package consumed by HybridRAG V2.
 
+Plain-English role
+------------------
+Stage 9, the last stage. Once embed and (optionally) extract have
+finished, this module writes the timestamped export folder that
+V2 picks up. It is the hand-off point between Forge and V2.
+
 Output structure:
   data/output/export_YYYYMMDD_HHMM/
     chunks.jsonl        — chunk text, metadata, enriched_text
@@ -30,9 +36,10 @@ import numpy as np
 
 
 class Packager:
-    """Builds the export package for V2 consumption."""
+    """Builds the timestamped export folder that V2 later imports."""
 
     def __init__(self, output_dir: str = "data/output"):
+        """Remember where timestamped exports should be written."""
         self.output_dir = Path(output_dir)
 
     def export(

@@ -1,14 +1,34 @@
 """
-CorpusForge CLI bulk transfer — atomic copy with SHA-256 verification.
+CorpusForge CLI bulk transfer -- atomic copy with SHA-256 verification.
+
+What it does for the operator:
+  Copies files from a source folder (local drive, USB, network share) to a
+  local "staging" folder. Every file is hashed so already-copied files are
+  skipped on subsequent runs, and partial copies never corrupt the
+  destination. This is the "get the bytes local first" step, before ingest.
+
+When to run it:
+  - Before running the pipeline on data from a slow/network source
+  - To bring a nightly drop from a share onto the local workstation
+  - Anytime you need verified copies with a resumable progress log
+
+Inputs:
+  --source   Source directory (local, UNC share, external drive)
+  --dest     Destination staging directory
+  --workers  Parallel copy threads (default 4; raise for fast storage)
+
+Outputs:
+  Live progress line in the terminal and a final summary:
+  files copied / skipped / failed, bytes moved, elapsed time, errors.
 
 Usage:
   python scripts/run_transfer.py --source "D:\\production" --dest "data/staging"
   python scripts/run_transfer.py --source "\\\\server\\share" --dest "data/staging" --workers 8
 
-Exit codes:
-  0 = success (all files copied or skipped)
-  1 = error (source not found, config error)
-  2 = partial (some files failed)
+Exit codes (read by automation / schedulers):
+  0 = success (all files copied or skipped as duplicates)
+  1 = error (source not found, config error -- operator must fix)
+  2 = partial (some files failed; review the errors list in the summary)
 """
 
 import argparse
@@ -24,6 +44,7 @@ from src.download.syncer import BulkSyncer, TransferStats
 
 
 def _format_bytes(n: int) -> str:
+    """Format a byte count as a human-friendly string (e.g. '1.5 GB')."""
     if n >= 1024**3:
         return f"{n / 1024**3:.1f} GB"
     if n >= 1024**2:
@@ -34,6 +55,7 @@ def _format_bytes(n: int) -> str:
 
 
 def _format_elapsed(sec: float) -> str:
+    """Format a seconds value as H:MM:SS or M:SS for display."""
     sec = max(0, int(sec))
     h, rem = divmod(sec, 3600)
     m, s = divmod(rem, 60)
@@ -78,6 +100,7 @@ def _progress_callback(stats: TransferStats) -> None:
 
 
 def main() -> int:
+    """Parse CLI flags, run the bulk copy with progress, print a summary, and return an exit code."""
     parser = argparse.ArgumentParser(description="CorpusForge bulk file transfer")
     parser.add_argument("--source", required=True, help="Source directory")
     parser.add_argument("--dest", required=True, help="Destination staging directory")

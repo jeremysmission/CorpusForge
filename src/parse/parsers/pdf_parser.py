@@ -1,7 +1,24 @@
 """
-PDF parser — multi-stage extraction with OCR fallback.
+PDF parser -- the workhorse parser for .pdf documents.
 
-Pipeline: pypdf (fast) → pdfplumber (layout-aware) → Tesseract OCR (scanned).
+Plain English: PDFs are the single most common format in the corpus,
+and they come in two flavors: "digital" PDFs (the text is real and
+selectable) and "scanned" PDFs (the pages are just pictures of paper).
+To handle both, this parser tries increasingly heavier strategies until
+one returns enough usable text:
+
+  1. pypdf         -- fastest, works great on digital PDFs.
+  2. pdfplumber    -- layout-aware, better with tables and columns.
+  3. Docling       -- optional premium converter, if enabled.
+  4. Tesseract OCR -- last resort; renders each page to an image and
+                     runs OCR on it for scanned PDFs.
+
+OCR has its own safety knobs the operator can tune via environment
+variables (HYBRIDRAG_OCR_MODE, HYBRIDRAG_OCR_MAX_PAGES, _DPI, _LANG,
+_TRIGGER_MIN_CHARS, _TIMEOUT_S). Windows paths for the Tesseract and
+Poppler binaries are auto-discovered with clear one-time warnings when
+they're missing.
+
 Ported from V1 (src/parsers/pdf_parser.py + pdf_ocr_fallback.py).
 """
 
@@ -91,25 +108,27 @@ def _ocr_lang() -> str:
 
 
 class PdfParser:
-    """Parse PDF files with multi-stage extraction."""
+    """Extract text from PDFs, falling back through fast, layout-aware, and OCR stages."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .pdf file and return its text, escalating to OCR for scans if needed."""
         path = Path(file_path)
         text = ""
         quality = 0.0
+        # If a strategy returns fewer chars than this, we try the next strategy.
         trigger_min_chars = _ocr_trigger_min_chars()
         docling_mode = get_docling_mode()
 
         if docling_mode == "prefer":
             text = extract_with_docling(path)
 
-        # Stage 1: Try pypdf (fastest)
+        # Stage 1: Try pypdf (fastest, works on most digital PDFs)
         if len(text.strip()) < trigger_min_chars:
             pypdf_text = self._try_pypdf(path)
             if len(pypdf_text) > len(text):
                 text = pypdf_text
 
-        # Stage 2: Try pdfplumber if pypdf got nothing
+        # Stage 2: Try pdfplumber (better on tables/columns) if pypdf came up short
         if len(text.strip()) < trigger_min_chars:
             plumber_text = self._try_pdfplumber(path)
             if len(plumber_text) > len(text):
@@ -120,7 +139,7 @@ class PdfParser:
             if len(docling_text) > len(text):
                 text = docling_text
 
-        # Stage 3: OCR fallback for scanned PDFs
+        # Stage 3: OCR fallback -- used when the PDF is a scan (no real text)
         if len(text.strip()) < trigger_min_chars and _ocr_mode() != "skip":
             ocr_text = self._try_ocr(path)
             if len(ocr_text) > len(text):

@@ -1,13 +1,17 @@
 @REM === NON-PROGRAMMER GUIDE ===
-@REM Purpose: Runs the CorpusForge workstation installer with PowerShell bypass enabled.
-@REM How to follow: Double-click this file from Explorer, or run it from cmd.exe / PowerShell.
-@REM Inputs: Repo folder with tools\setup_workstation_2026-04-06.bat present.
+@REM What this does: One-click entrypoint that runs the full CorpusForge (Forge) workstation installer.
+@REM When to run: First thing on a fresh workstation, or after a venv rebuild. Not needed daily.
+@REM Operator view: Watch for [OK] / [FAIL] lines. Success exits 0 and prints [OK]. Any failure exits nonzero.
+@REM Prerequisites: Run from the CorpusForge repo root so tools\setup_workstation_2026-04-06.bat is found.
+@REM Inputs:  Repo folder with tools\setup_workstation_2026-04-06.bat present.
 @REM Outputs: .venv, installed packages, and a verified local workstation setup.
 @REM ============================
 @echo off
 title CorpusForge Workstation Install
 setlocal EnableExtensions
+REM Move into the folder this .bat lives in so relative paths resolve correctly.
 cd /d "%~dp0"
+REM Point at the real installer batch under tools\.
 set "SCRIPT=%~dp0tools\setup_workstation_2026-04-06.bat"
 
 echo [INFO] CorpusForge workstation install
@@ -19,6 +23,7 @@ if not exist "%SCRIPT%" (
   exit /b 1
 )
 
+REM Hand off to the real installer. EXIT_CODE mirrors whatever it returned.
 call "%SCRIPT%"
 set "EXIT_CODE=%ERRORLEVEL%"
 echo.

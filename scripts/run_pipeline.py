@@ -1,15 +1,41 @@
 """
-CorpusForge CLI entry point — headless-safe for overnight/scheduled runs.
+CorpusForge CLI entry point -- the main way an operator runs the Forge pipeline.
+
+What it does for the operator:
+  Takes a folder (or a pre-built list of files), walks each file through the
+  full ingest pipeline: hash -> dedup -> skip/defer -> parse -> chunk ->
+  enrich -> embed -> extract -> export. The final export folder contains
+  chunks.jsonl, vectors.npy, entities.jsonl, a manifest, and a run report.
+
+  This script is "headless-safe": no GUI, no prompts. Safe to schedule or
+  pipe to a log file for overnight / unattended runs.
+
+When to run it:
+  - Manual ingest of a staged source folder
+  - Inside an overnight Task Scheduler job
+  - Called from run_nightly_delta.py after a delta transfer
+
+Common flags:
+  --input            A folder or single file to ingest.
+  --input-list       A text file with one absolute path per line. Typically
+                     the canonical_files.txt produced by document dedup.
+  --config           Path to config YAML (defaults to config/config.yaml).
+  --log-file         Mirror logs to a file on top of stdout (recommended
+                     for overnight runs).
+  --full-reindex     Re-process everything, ignoring prior dedup state.
+                     Use with care, this wipes the "already indexed" shortcut.
+  --strip-enrichment Export raw chunk text only; turns enrichment off.
+  --strict-input-list  Abort if --input-list references missing paths.
 
 Usage:
   python scripts/run_pipeline.py --input data/source/
   python scripts/run_pipeline.py --input data/source/ --config config/config.yaml
   python scripts/run_pipeline.py --input-list canonical_files.txt --log-file logs/run.log
 
-Exit codes:
-  0 = success (chunks produced)
-  1 = error (no files, config error, pipeline crash)
-  2 = partial success (some files failed)
+Exit codes (read by automation / schedulers):
+  0 = success (chunks produced, no failures)
+  1 = error (no files, config error, pipeline crash -- operator must investigate)
+  2 = partial success (some files failed; review the error tail in the summary)
 """
 
 import argparse
@@ -31,6 +57,7 @@ from src.skip.skip_manager import load_deferred_extension_map
 
 
 def _discover_candidates(files: list[Path], supported: set[str], deferred: dict[str, str]) -> tuple[list[Path], Counter, Counter]:
+    """Split the input files into: things we'll process, things we'll defer, things we'll skip."""
     candidates: list[Path] = []
     deferred_counts: Counter = Counter()
     unsupported_counts: Counter = Counter()
@@ -49,6 +76,7 @@ def _discover_candidates(files: list[Path], supported: set[str], deferred: dict[
 
 
 def _format_counts(label: str, counts: Counter, deferred: dict[str, str] | None = None) -> list[str]:
+    """Build a short, human-readable breakdown ('ext: count') for printing to the terminal."""
     if not counts:
         return []
 
@@ -62,6 +90,7 @@ def _format_counts(label: str, counts: Counter, deferred: dict[str, str] | None 
 
 
 def _load_input_list(input_list_path: Path) -> tuple[list[Path], Counter, int]:
+    """Read a text file of file paths (one per line). Blank lines and '#' comments are ignored."""
     listed_files: list[Path] = []
     missing_counts: Counter = Counter()
     duplicate_entries = 0
@@ -93,6 +122,7 @@ def _load_input_list(input_list_path: Path) -> tuple[list[Path], Counter, int]:
 
 
 def main() -> int:
+    """Parse CLI flags, discover input files, run the Forge pipeline, print a summary, and return an exit code."""
     parser = argparse.ArgumentParser(description="CorpusForge pipeline (headless-safe)")
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument(
@@ -148,7 +178,9 @@ def main() -> int:
     )
     logger = logging.getLogger("run_pipeline")
 
-    # GPU selection before any CUDA operations
+    # GPU selection before any CUDA operations.
+    # This reads CUDA_VISIBLE_DEVICES (env var) and pins the compute GPU so
+    # the embed stage does not accidentally share the GPU driving the display.
     gpu_idx = apply_gpu_selection()
     logger.info("GPU %d selected for compute.", gpu_idx)
 

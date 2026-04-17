@@ -1,4 +1,14 @@
-"""Regression tests for file-state and skip-accounting behavior."""
+"""Regression tests for file-state and skip-accounting behavior.
+
+Plain-English summary for operators:
+Every source file Forge sees gets a row in the state database with a
+status: hashed, indexed, duplicate, deferred, unsupported. This file
+protects that accounting and the backfill script that can rebuild the
+state db from disk. If these tests fail, operators could see: files
+stuck in the wrong status, re-runs repeating hash work they already
+did, deferred files never retried once the policy changes, or the
+backfill script writing to state it should not touch.
+"""
 
 from pathlib import Path
 import sys
@@ -14,6 +24,7 @@ from scripts.backfill_skipped_file_state import backfill_file_state
 
 
 def test_skip_manager_records_deferred_file_in_state(tmp_path: Path) -> None:
+    """Protects the deferred-status accounting — a deferred file must land in the state DB with status 'deferred'."""
     state_db = tmp_path / "file_state.sqlite3"
     skip_yaml = tmp_path / "skip_list.yaml"
     skip_yaml.write_text(
@@ -41,6 +52,7 @@ def test_skip_manager_records_deferred_file_in_state(tmp_path: Path) -> None:
 
 
 def test_skip_manager_marks_deferred_by_extension_not_reason(tmp_path: Path) -> None:
+    """Protects against the status depending on the operator's reason text — it must depend on the extension classification instead."""
     state_db = tmp_path / "file_state.sqlite3"
     skip_yaml = tmp_path / "skip_list.yaml"
     skip_yaml.write_text(
@@ -68,6 +80,7 @@ def test_skip_manager_marks_deferred_by_extension_not_reason(tmp_path: Path) -> 
 
 
 def test_deduplicator_records_duplicate_state(tmp_path: Path) -> None:
+    """Protects duplicate accounting — '_1' copies must end up in the state DB with status 'duplicate'."""
     state_db = tmp_path / "file_state.sqlite3"
     first = tmp_path / "report.txt"
     dup = tmp_path / "report_1.txt"
@@ -88,6 +101,7 @@ def test_deduplicator_records_duplicate_state(tmp_path: Path) -> None:
 
 
 def test_deduplicator_persists_hashed_state_before_success(tmp_path: Path) -> None:
+    """Protects the 'hashed' status — a freshly hashed file goes into state DB before any success, so crashes do not lose the hash."""
     state_db = tmp_path / "file_state.sqlite3"
     file_path = tmp_path / "report.txt"
     file_path.write_text("fresh content", encoding="utf-8")
@@ -105,6 +119,7 @@ def test_deduplicator_persists_hashed_state_before_success(tmp_path: Path) -> No
 
 
 def test_deduplicator_reuses_hashed_state_after_interrupted_run(tmp_path: Path) -> None:
+    """Protects resume speed — an already-hashed file must not be rehashed on the next run, saving large amounts of I/O."""
     state_db = tmp_path / "file_state.sqlite3"
     file_path = tmp_path / "report.txt"
     file_path.write_text("fresh content", encoding="utf-8")
@@ -131,6 +146,7 @@ def test_deduplicator_reuses_hashed_state_after_interrupted_run(tmp_path: Path) 
 
 
 def test_deduplicator_retries_previously_deferred_file(tmp_path: Path) -> None:
+    """Protects deferred-to-active transitions — when a file was deferred before but is now eligible, dedup must include it again."""
     state_db = tmp_path / "file_state.sqlite3"
     file_path = tmp_path / "drawing.dxf"
     file_path.write_text("0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nEOF\n", encoding="utf-8")
@@ -148,6 +164,7 @@ def test_deduplicator_retries_previously_deferred_file(tmp_path: Path) -> None:
 
 
 def test_backfill_script_dry_run_reports_without_writing(tmp_path: Path) -> None:
+    """Protects the backfill-script dry-run — it must report what it would change without actually touching the state DB."""
     state_db = tmp_path / "file_state.sqlite3"
     skip_yaml = tmp_path / "skip_list.yaml"
     skip_yaml.write_text(

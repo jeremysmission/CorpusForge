@@ -1,4 +1,18 @@
-"""Convert all markdown docs to .docx format using python-docx."""
+"""
+Convert all markdown docs (*.md) under CorpusForge's docs/ folder to .docx.
+
+What it does for the operator:
+  Walks the docs/ folder and creates a matching .docx version for every
+  .md file, with basic styling (headings, bullets, tables, code blocks).
+  Useful when a non-technical reviewer wants Word-formatted docs to mark up.
+
+When to run it:
+  - Before sending docs/ to a reviewer who prefers Word
+  - After major documentation updates
+
+Inputs:  None. Hard-coded to look at the repo's docs/ folder.
+Outputs: A .docx file next to each .md (same stem, .docx extension).
+"""
 import re
 from pathlib import Path
 from docx import Document
@@ -107,6 +121,7 @@ def md_to_docx(md_path: Path, docx_path: Path):
 
 
 def main():
+    """Find every .md file under docs/ and convert each to a sibling .docx."""
     docs_dir = Path(__file__).parent.parent / 'docs'
     md_files = sorted(docs_dir.glob('*.md'))
 

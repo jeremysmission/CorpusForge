@@ -2,9 +2,36 @@
 """
 CorpusForge workstation precheck for large-ingest runs.
 
-Designed for operator use before pointing CorpusForge at a large source tree.
-Prints a clear readiness summary, writes a dated text report under logs/, and
-exits non-zero only on hard blockers.
+What it does for the operator:
+  A fast, no-side-effect readiness check BEFORE starting a large Forge
+  ingest. It inspects the config you plan to use, confirms Python version,
+  source / output / state paths, worker counts, CUDA status, OCR binaries,
+  free disk space, and proxy environment. Writes a dated text report under
+  logs/ and prints it to stdout.
+
+How to read the result:
+  PASS (exit 0)        The workstation looks ready. Proceed with ingest.
+  WARNING (exit 0)     Non-blocking issues (e.g., low but sufficient disk,
+                       OCR binary missing while OCR is "auto"). Review,
+                       then proceed with eyes open.
+  FAIL (exit 2)        A hard blocker (missing source path, torch cannot
+                       see CUDA with embed on). Fix it before ingesting.
+
+When to run it:
+  - Every time BEFORE starting a large, long-running ingest
+  - After changing config.yaml, environment variables, or OCR install
+  - As the first step of tools/run_critical_e2e_gate.py
+
+Inputs (all optional overrides layered on top of the config):
+  --config, --source, --output, --workers, --ocr-mode,
+  --embed-enabled, --enrich-enabled, --extract-enabled, --embed-batch-size.
+
+Env vars this tool reads:
+  TESSERACT_CMD            Full path to a tesseract.exe binary.
+  HYBRIDRAG_POPPLER_BIN    Folder containing pdftoppm.exe (for scanned PDFs).
+  HYBRIDRAG_OCR_MODE       OCR mode override (auto / force / skip).
+  HYBRIDRAG_DOCLING_MODE   Docling parser mode override.
+  HTTP_PROXY / HTTPS_PROXY / NO_PROXY  Snapshot included in the report.
 """
 
 from __future__ import annotations
@@ -27,16 +54,19 @@ from src.config.schema import load_config
 
 @dataclass
 class CheckResult:
+    """One precheck line: level (PASS/WARNING/FAIL), a short title, and the evidence / 'proof' string."""
     level: str
     title: str
     proof: str
 
 
 def _parse_bool(raw: str) -> bool:
+    """Convert a CLI-style string like '1' / 'true' / 'yes' / 'on' into a real bool."""
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _command_version(command: str, args: list[str]) -> tuple[bool, str]:
+    """Run an external tool's --version (or similar) and return (ok, first output line)."""
     try:
         proc = subprocess.run(
             [command, *args],
@@ -52,6 +82,7 @@ def _command_version(command: str, args: list[str]) -> tuple[bool, str]:
 
 
 def _resolve_tesseract() -> tuple[str | None, str]:
+    """Locate tesseract.exe: first env TESSERACT_CMD, then PATH, then common install paths."""
     env_path = os.getenv("TESSERACT_CMD", "").strip()
     if env_path and Path(env_path).exists():
         return env_path, "env:TESSERACT_CMD"
@@ -69,6 +100,7 @@ def _resolve_tesseract() -> tuple[str | None, str]:
 
 
 def _resolve_pdftoppm() -> tuple[str | None, str]:
+    """Locate pdftoppm.exe (from Poppler): first env HYBRIDRAG_POPPLER_BIN, then PATH, then common install paths."""
     poppler_bin = os.getenv("HYBRIDRAG_POPPLER_BIN", "").strip()
     if poppler_bin:
         candidate = Path(poppler_bin) / "pdftoppm.exe"
@@ -91,6 +123,7 @@ def _resolve_pdftoppm() -> tuple[str | None, str]:
 
 
 def _disk_free_gb(path: Path) -> float:
+    """Return free disk space (in GB) for the drive backing the given path."""
     probe = path
     if not probe.exists():
         probe = probe.parent
@@ -103,6 +136,7 @@ def _disk_free_gb(path: Path) -> float:
 
 
 def _resolve_runtime_config_path(config_arg: str | Path) -> Path:
+    """Resolve the config argument to an absolute path anchored at the project root if needed."""
     path = Path(config_arg)
     if not path.is_absolute():
         path = (PROJECT_ROOT / path).resolve()
@@ -110,6 +144,7 @@ def _resolve_runtime_config_path(config_arg: str | Path) -> Path:
 
 
 def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]:
+    """Apply CLI overrides to the loaded config and run every precheck; return the list of check results plus a settings summary."""
     runtime_config_path = _resolve_runtime_config_path(args.config)
     config = load_config(runtime_config_path)
 
@@ -298,6 +333,7 @@ def _collect_results(args: argparse.Namespace) -> tuple[list[CheckResult], dict]
 
 
 def _render_report(results: list[CheckResult], summary: dict, report_path: Path) -> str:
+    """Assemble the final text report (effective settings, env snapshot, per-check lines, and overall PASS/FAIL)."""
     fail_count = sum(1 for item in results if item.level == "FAIL")
     warn_count = sum(1 for item in results if item.level == "WARNING")
     overall = "FAIL" if fail_count else "PASS"
@@ -343,6 +379,7 @@ def _render_report(results: list[CheckResult], summary: dict, report_path: Path)
 
 
 def main() -> int:
+    """Parse CLI flags, run every precheck, write/print the report, and return 0 (PASS/WARN) or 2 (any FAIL)."""
     parser = argparse.ArgumentParser(
         description="Precheck a workstation before a large CorpusForge ingest."
     )

@@ -1,7 +1,10 @@
 @REM === NON-PROGRAMMER GUIDE ===
-@REM Purpose: Reuse a working local torch install from another HybridRAG-style repo when internet installs fail.
-@REM How to follow: Double-click this file, or pass an existing source .venv path as the first argument.
-@REM Inputs: This repo plus tools\copy_torch_from_existing_hybridrag.ps1. Optional source venv path.
+@REM What this does: Copies a known-good torch install from another local HybridRAG-style .venv into CorpusForge's .venv.
+@REM When to run: Only when download.pytorch.org is blocked (proxy, offline site) and another repo on this machine already has working CUDA torch.
+@REM Operator view: Delegates to a PowerShell helper. Success exits 0 with [OK]. Failure exits nonzero with [FAIL].
+@REM Prerequisites: Forge .venv already created (INSTALL_WORKSTATION.bat ran once). Source .venv on same machine with matching Python version.
+@REM Usage: Double-click, OR pass a source .venv path as the first argument, e.g. COPY_TORCH_FROM_EXISTING_HYBRIDRAG.bat C:\HybridRAG_V2\.venv
+@REM Inputs:  This repo plus tools\copy_torch_from_existing_hybridrag.ps1. Optional source venv path.
 @REM Outputs: Torch packages copied into this repo's .venv so CorpusForge can use the same local build.
 @REM ============================
 @echo off
@@ -9,6 +12,7 @@ title CorpusForge -- Copy Torch From Existing HybridRAG
 setlocal EnableExtensions
 cd /d "%~dp0"
 
+REM Locate the PowerShell helper; first arg, if provided, is an explicit source .venv path.
 set "SCRIPT=%~dp0tools\copy_torch_from_existing_hybridrag.ps1"
 set "SOURCE_VENV=%~1"
 
@@ -28,6 +32,7 @@ if defined SOURCE_VENV (
   echo [INFO] Auto-detecting source venv from common HybridRAG workstation paths.
 )
 
+REM Prefer PowerShell 7 (pwsh) if installed; fall back to Windows PowerShell otherwise. ExecutionPolicy Bypass is session-only.
 if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
   if defined SOURCE_VENV (
     "%ProgramFiles%\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT%" -SourceVenv "%SOURCE_VENV%"

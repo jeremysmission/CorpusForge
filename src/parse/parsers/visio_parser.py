@@ -1,9 +1,16 @@
 """
-Visio parser -- extracts text from .vsdx diagram files.
+Visio parser -- reads modern Microsoft Visio (.vsdx) diagrams.
 
-Extracts shape text, connector labels, and page titles.
+Plain English: opens a Visio diagram and pulls the readable text out of
+every shape, label, and grouped sub-shape on every page. Great for
+architecture drawings, flow charts, and network diagrams where the
+useful content is the text labels.
+
+Uses the optional ``vsdx`` library. If it isn't installed the parser
+returns empty text rather than failing, so the rest of the pipeline
+keeps moving.
+
 Ported from V1 (src/parsers/visio_parser.py).
-Dependencies: pip install vsdx (optional, graceful fallback).
 """
 
 from __future__ import annotations
@@ -17,9 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 class VisioParser:
-    """Parse Microsoft Visio .vsdx files."""
+    """Extract shape labels and page text from Microsoft Visio .vsdx diagrams."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .vsdx diagram and return all shape/page text."""
         path = Path(file_path)
         text = ""
         quality = 0.0

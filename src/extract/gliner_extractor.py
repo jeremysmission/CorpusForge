@@ -1,9 +1,17 @@
 """
 GLiNER2 entity extraction — zero-shot NER with concurrent batch inference.
 
-Extracts candidate entities from chunk text using GLiNER multi-v2.1.
-Uses concurrent workers (ThreadPoolExecutor), each processing batches via
-GLiNER's native model.inference(). Config-driven batch_size and max_concurrent.
+Plain-English role
+------------------
+Stage 8 of the pipeline, optional. For every chunk text, this module
+asks the GLiNER model "which of these labels appear in this text, and
+where?" — labels come from the config (part numbers, people, sites,
+dates, etc.). Each hit above the confidence threshold becomes one row
+in ``entities.jsonl`` inside the export folder so V2 can seed its
+knowledge graph.
+
+Runs on CPU. Uses a pool of worker threads, each calling GLiNER's
+native batched inference method.
 
 Output: list[dict] where each dict is one entity occurrence:
   {chunk_id, text, label, score, start, end}
@@ -43,6 +51,7 @@ class GlinerExtractor:
     """
 
     def __init__(self, config: ExtractorConfig | None = None):
+        """Store the extractor config; the GLiNER model loads lazily on first use."""
         self.config = config or ExtractorConfig()
         self._model = None
 

@@ -1,4 +1,12 @@
-"""PPTX parser — extracts text from PowerPoint presentations via python-pptx."""
+"""
+PPTX parser -- reads modern Microsoft PowerPoint (.pptx) presentations.
+
+Plain English: opens a slide deck and pulls the text from every shape
+on every slide. Each slide is tagged ``[SLIDE N]`` so operators can
+trace chunks back to the slide they came from. Uses the ``python-pptx``
+library; if the file is broken or the library is unavailable the parser
+logs the issue and returns empty text.
+"""
 
 from __future__ import annotations
 
@@ -11,9 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 class PptxParser:
-    """Parse .pptx files using python-pptx."""
+    """Extract slide text from modern PowerPoint .pptx decks."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .pptx deck and return all slide text in reading order."""
         path = Path(file_path)
         try:
             from pptx import Presentation

@@ -1,9 +1,17 @@
 """
-OpenDocument parser -- extracts text from .odt, .ods, .odp files.
+OpenDocument parser -- reads LibreOffice / OpenOffice files.
 
-These are ZIP archives containing XML (OASIS standard).
+Plain English: handles the open alternatives to Microsoft Office:
+  * .odt -- LibreOffice Writer documents
+  * .ods -- LibreOffice Calc spreadsheets
+  * .odp -- LibreOffice Impress presentations
+
+Under the hood these are ZIP archives containing XML. This parser opens
+the archive, reads the ``meta.xml`` for title/author metadata, then
+pulls the body text out of ``content.xml`` with tags stripped. Uses only
+Python's standard library so no extra installs are needed.
+
 Ported from V1 (src/parsers/opendocument_parser.py).
-Dependencies: stdlib only (zipfile + xml.etree).
 """
 
 from __future__ import annotations
@@ -20,9 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 class OpenDocumentParser:
-    """Parse OpenDocument files (.odt, .ods, .odp)."""
+    """Extract text and metadata from LibreOffice/OpenOffice files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an OpenDocument file and return its metadata + body text."""
         path = Path(file_path)
         text = ""
         quality = 0.0

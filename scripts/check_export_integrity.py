@@ -1,17 +1,39 @@
 """
 Lightweight integrity gate for a Forge export package.
 
-Checks:
-  - required artifact presence
-  - chunks.jsonl line count == manifest.chunk_count == vectors.npy row count
-  - vectors.npy is a readable 2D array
-  - manifest.vector_dim == vectors.npy dimension
-  - entities.jsonl line count == manifest.entity_count
-  - skip_manifest.json parses and its total matches counts_by_reason
-  - run_report.txt exists and is non-empty
+What it does for the operator:
+  A fast PASS / FAIL check on an export folder, designed for very large
+  exports where a full in-memory audit would be slow. It confirms that:
+    - All required artifact files are present
+    - chunks.jsonl line count matches manifest.chunk_count matches
+      vectors.npy row count (one vector per chunk, no drift)
+    - vectors.npy is a readable 2D array with the declared dimension
+    - entities.jsonl line count matches manifest.entity_count
+    - skip_manifest.json parses and its totals are internally consistent
+    - run_report.txt exists and is non-empty
 
-Designed for large exports where a full in-memory audit is unnecessary.
-This is a count/integrity gate, not per-row chunk schema validation.
+  This is a *count and integrity* gate, NOT a per-row schema check.
+  (Use audit_corpus.py or inspect_export_quality.py for deeper review.)
+
+How to read the result:
+  - PASS  -> the export is internally consistent and safe to hand off.
+  - FAIL  -> there's a real mismatch. Do NOT import into HybridRAG V2
+             until the listed issue is resolved.
+  - WARN  -> non-blocking inconsistencies (e.g. stats drift). Review,
+             but do not necessarily abort.
+
+When to run it:
+  - Immediately after a long ingest finishes
+  - Before copying/exporting to the GovCloud bucket or to V2
+
+Inputs:
+  --export-dir    Export folder path, or a "latest" redirect file.
+  --json          Emit JSON to stdout instead of the human-readable block.
+  --output-json   Also write the full JSON report to this file.
+
+Exit codes:
+  0 = PASS (ok to proceed)
+  1 = FAIL (integrity issue; must be fixed)
 
 Usage:
   python scripts/check_export_integrity.py --export-dir data/production_output/export_YYYYMMDD_HHMM
@@ -66,7 +88,7 @@ def resolve_export_dir(path_arg: str | Path) -> tuple[Path, str | None]:
 
 
 def count_jsonl_lines(path: Path) -> int:
-    """Count JSONL rows without loading the file into memory."""
+    """Count JSONL rows efficiently without loading the whole file into memory."""
     total = 0
     last_byte = b""
     with open(path, "rb", buffering=8 * 1024 * 1024) as handle:
@@ -82,11 +104,13 @@ def count_jsonl_lines(path: Path) -> int:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
+    """Load a JSON file from disk and return its contents as a dict."""
     with open(path, encoding="utf-8-sig") as handle:
         return json.load(handle)
 
 
 def check_export_integrity(export_dir: Path) -> dict[str, Any]:
+    """Run every integrity check against the given export folder and return a structured report dict."""
     issues: list[str] = []
     warnings: list[str] = []
     artifacts: dict[str, dict[str, Any]] = {}
@@ -265,6 +289,7 @@ def check_export_integrity(export_dir: Path) -> dict[str, Any]:
 
 
 def print_human_report(report: dict[str, Any], *, redirect_from: str | None = None) -> None:
+    """Print the integrity report in the operator-friendly text format (Artifacts / Counts / Warnings / Issues / RESULT)."""
     print("=" * 60)
     print("Forge Export Integrity Check")
     print("=" * 60)
@@ -315,6 +340,7 @@ def print_human_report(report: dict[str, Any], *, redirect_from: str | None = No
 
 
 def main() -> int:
+    """Parse CLI flags, run the integrity checks, print PASS/FAIL, and return an exit code (0=PASS, 1=FAIL)."""
     parser = argparse.ArgumentParser(description="Check Forge export integrity")
     parser.add_argument(
         "--export-dir",

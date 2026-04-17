@@ -1,9 +1,23 @@
 """
-Image OCR parser -- extracts text from images using Tesseract.
+Image parser -- pulls text out of images using OCR.
 
-Supports: .jpg, .jpeg, .png, .gif, .bmp, .tiff, .tif
-Requires: pillow + pytesseract + Tesseract binary installed.
-Graceful degradation: returns image metadata if OCR deps missing.
+Plain English: a lot of operational documents arrive as image files
+(photos of whiteboards, scanned memos, screenshots, phone captures).
+This parser runs Optical Character Recognition (OCR) on each image
+using Tesseract and returns whatever readable text it finds.
+
+Supported formats: .jpg, .jpeg, .png, .gif, .bmp, .tiff, .tif.
+
+Image preprocessing happens before OCR so accuracy is better: convert
+to grayscale, auto-contrast, sharpen, and threshold to black-and-white.
+Threshold is tunable via HYBRIDRAG_OCR_BIN_THRESHOLD.
+
+If Docling is set to "prefer", it runs first. If the required OCR
+libraries (Pillow, pytesseract) or the Tesseract binary itself are
+missing, the parser falls back to returning just the image's metadata
+(dimensions, color mode, file size) so the file still appears in the
+corpus rather than vanishing.
+
 Ported from V1 (src/parsers/image_parser.py).
 """
 
@@ -47,9 +61,10 @@ def _resolve_tesseract_cmd() -> tuple[str | None, str]:
 
 
 class ImageParser:
-    """Parse image files via Tesseract OCR with graceful fallback."""
+    """Run OCR on image files, falling back to metadata when OCR is unavailable."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an image and return OCR text, or image metadata if OCR isn't available."""
         path = Path(file_path)
         text = ""
         quality = 0.0

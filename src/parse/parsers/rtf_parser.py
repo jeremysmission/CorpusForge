@@ -1,4 +1,11 @@
-"""RTF parser — strips Rich Text Format markup via striprtf."""
+"""
+RTF parser -- reads Rich Text Format (.rtf) files.
+
+Plain English: RTF files look like text but are wrapped in markup codes.
+This parser uses the ``striprtf`` library to remove the codes and keep
+just the readable content. If the library isn't installed the parser
+degrades to returning the raw file contents rather than failing.
+"""
 
 from __future__ import annotations
 
@@ -11,9 +18,10 @@ logger = logging.getLogger(__name__)
 
 
 class RtfParser:
-    """Parse .rtf files using striprtf library."""
+    """Extract clean text from Rich Text Format (.rtf) files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Read an .rtf file and return its text with RTF codes removed."""
         path = Path(file_path)
         try:
             raw = path.read_text(encoding="utf-8-sig", errors="ignore")

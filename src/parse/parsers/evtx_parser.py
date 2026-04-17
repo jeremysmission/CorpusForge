@@ -1,9 +1,19 @@
 """
-Windows Event Log parser -- extracts event records from .evtx files.
+EVTX parser -- reads Windows Event Log (.evtx) files.
 
-Extracts timestamps, event IDs, providers, and data fields.
+Plain English: when Windows records system, security, or application
+events, they land in a binary .evtx file. This parser walks through
+each event and writes it out as a one-line summary containing the
+timestamp, Event ID, provider, and up to five data fields so the
+Forge pipeline can index events as searchable text.
+
+Safety: hard cap of 500 events per file to keep output sizes
+reasonable; anything beyond that is truncated with a visible note.
+
+Uses the optional ``python-evtx`` library. If it isn't installed the
+parser returns empty text rather than failing.
+
 Ported from V1 (src/parsers/evtx_parser.py).
-Dependencies: pip install python-evtx (optional, graceful fallback).
 """
 
 from __future__ import annotations
@@ -20,9 +30,10 @@ _MAX_EVENTS = 500
 
 
 class EvtxParser:
-    """Parse Windows .evtx event log files."""
+    """Extract searchable event records from Windows .evtx event logs."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a Windows .evtx log and return one text line per event."""
         path = Path(file_path)
         text = ""
         quality = 0.0

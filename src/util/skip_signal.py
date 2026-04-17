@@ -65,7 +65,7 @@ _instructions_shown = False
 
 
 def _is_interactive_tty() -> bool:
-    """True only on Windows with an attached console stdin."""
+    """True only on Windows with an attached console stdin (keypress detectable)."""
     if not _HAS_MSVCRT:
         return False
     try:

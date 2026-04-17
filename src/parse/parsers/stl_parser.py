@@ -1,10 +1,20 @@
 """
-STL parser -- extracts metadata from 3D mesh files.
+STL parser -- reads 3D mesh files used for CAD and 3D printing.
 
-STL files contain geometry only (no text). We extract structural
-metadata: triangle count, bounding box, volume estimate.
+Plain English: .stl files hold geometry only -- no text content exists
+to extract. Instead, this parser produces a human-readable description
+of the model so it's still searchable: solid name (for ASCII STLs),
+triangle and vertex counts, the bounding-box dimensions, X/Y/Z ranges,
+and an estimated volume.
+
+That way, a reviewer searching the corpus can still find a specific
+part by its dimensions or name even though the file itself has no
+prose.
+
+Uses the optional ``numpy-stl`` library. If it isn't installed the
+parser returns empty text rather than failing.
+
 Ported from V1 (src/parsers/stl_parser.py).
-Dependencies: pip install numpy-stl (optional, graceful fallback).
 """
 
 from __future__ import annotations
@@ -18,9 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 class StlParser:
-    """Parse STL 3D mesh files, extracting dimensional metadata."""
+    """Produce a searchable description (size, counts, bounds) for a .stl 3D model."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .stl 3D model and return a text summary of its geometry."""
         path = Path(file_path)
         text = ""
         quality = 0.0

@@ -1,4 +1,26 @@
-"""CorpusForge GUI entry point -- normal pipeline or recovery dedup GUI."""
+"""CorpusForge GUI entry point -- normal pipeline or recovery dedup GUI.
+
+This file is what ``start_corpusforge.bat`` hands off to. It is the
+launcher: it loads ``config/config.yaml``, picks a GPU, builds the main
+window from :mod:`src.gui.app`, and wires every button to the
+background worker classes defined here.
+
+What the operator sees when this file runs:
+    * The full Forge Pipeline Monitor window appears.
+    * An "INFO" log line confirms the active config, supported formats,
+      skip/defer counts, enrichment state, and worker count.
+
+Pipeline stages controlled here:
+    * Bulk Transfer  -> :class:`TransferRunner`
+    * Dedup-only     -> :class:`DedupOnlyRunner`
+    * Precheck       -> :class:`PrecheckRunner`
+    * Full pipeline  -> :class:`PipelineRunner` (discover, dedup, parse,
+      chunk, optional enrich/embed/extract, export)
+
+If ``--dedup`` is passed, this launcher forwards to
+:mod:`src.gui.launch_dedup_gui` instead, which opens the Recovery Dedup
+window.
+"""
 from __future__ import annotations
 
 import argparse
@@ -43,6 +65,7 @@ def _display_repo_relative(path_value: str | Path) -> str:
 
 
 def _discover_candidates(files: list[Path], supported: set[str], deferred: dict[str, str]) -> tuple[list[Path], Counter, Counter]:
+    """Split a file list into candidates, deferred formats, and unsupported."""
     candidates: list[Path] = []
     deferred_counts: Counter = Counter()
     unsupported_counts: Counter = Counter()
@@ -85,13 +108,19 @@ def _save_gui_settings_override(config_file: Path, settings: dict) -> Path:
 
 
 class GUILogHandler(logging.Handler):
-    """Routes logging output to the GUI log panel via safe_after."""
+    """Bridge that pushes Python log records into the GUI log panel.
+
+    Forge's pipeline uses the standard logging module. This handler
+    catches every log record and safely forwards it to the scrolling
+    Pipeline Log visible to the operator.
+    """
 
     def __init__(self, app: CorpusForgeApp):
         super().__init__()
         self.app = app
 
     def emit(self, record: logging.LogRecord):
+        """Format the log record and queue it for the main UI thread."""
         try:
             msg = self.format(record)
             safe_after(self.app.root, 0, self.app.append_log, msg, record.levelname)
@@ -100,7 +129,12 @@ class GUILogHandler(logging.Handler):
 
 
 class TransferRunner:
-    """Runs BulkSyncer in a background thread with GUI progress."""
+    """Background worker for the Bulk Transfer panel.
+
+    Copies raw files from a "From" folder into a "To" (staging) folder
+    in a background thread so the window stays responsive. Progress is
+    reported back into the GUI via ``safe_after``.
+    """
 
     def __init__(self, app, config):
         self.app = app
@@ -109,6 +143,7 @@ class TransferRunner:
         self._stop_event = threading.Event()
 
     def start(self, source: str, dest: str):
+        """Start a bulk transfer in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
@@ -119,9 +154,11 @@ class TransferRunner:
         self._thread.start()
 
     def stop(self):
+        """Request a safe stop for the bulk transfer."""
         self._stop_event.set()
 
     def _run(self, source: str, dest: str):
+        """Thread body - run BulkSyncer and route progress to the GUI."""
         from src.download.syncer import BulkSyncer
         try:
             source_path = Path(source).resolve()
@@ -159,11 +196,18 @@ class TransferRunner:
 
     @property
     def is_alive(self):
+        """True while the transfer thread is still running."""
         return self._thread is not None and self._thread.is_alive()
 
 
 class DedupOnlyRunner:
-    """Runs dedup-only pass in a background thread with GUI progress."""
+    """Background worker for the Dedup-Only panel.
+
+    Runs only the duplicate-detection pass (no parsing, no embedding).
+    It walks the source folder, hashes every file, writes a canonical
+    file list, and optionally copies deduplicated sources into a
+    portable folder for downstream use.
+    """
 
     def __init__(self, app, config):
         self.app = app
@@ -172,6 +216,7 @@ class DedupOnlyRunner:
         self._stop_event = threading.Event()
 
     def start(self, source: str, output: str, copy_sources: bool = True):
+        """Start a dedup-only scan in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
@@ -182,6 +227,7 @@ class DedupOnlyRunner:
         self._thread.start()
 
     def stop(self):
+        """Request a safe stop for the dedup-only scan."""
         self._stop_event.set()
 
     def _collect_canonical_files(self, deduplicator, scanned_files: list[Path]) -> list[Path]:
@@ -254,6 +300,7 @@ class DedupOnlyRunner:
             handle.write("\n".join(lines) + "\n")
 
     def _run(self, source: str, output: str, copy_sources: bool = True):
+        """Thread body - scan for duplicates and write dedup artifacts."""
         import time as _time
         from datetime import datetime
         from src.download.hasher import Hasher
@@ -380,11 +427,18 @@ class DedupOnlyRunner:
 
     @property
     def is_alive(self):
+        """True while the dedup-only thread is still running."""
         return self._thread is not None and self._thread.is_alive()
 
 
 class PrecheckRunner:
-    """Runs the workstation precheck tool in a background thread."""
+    """Background worker for the Run Precheck button.
+
+    Launches the workstation precheck tool as a subprocess so the
+    operator can confirm hardware, paths, and settings are healthy
+    before burning time on a long run. Output is streamed into the
+    Pipeline Log panel.
+    """
 
     def __init__(self, app: CorpusForgeApp, config_path: str):
         self.app = app
@@ -392,6 +446,7 @@ class PrecheckRunner:
         self._thread: threading.Thread | None = None
 
     def start(self, source: str, output: str, settings: dict):
+        """Start the precheck subprocess in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             safe_after(self.app.root, 0, self.app.append_log, "Precheck already running.", "WARNING")
             return
@@ -404,6 +459,7 @@ class PrecheckRunner:
         self._thread.start()
 
     def _run(self, *, source: str, output: str, settings: dict):
+        """Thread body - run the precheck CLI tool and stream its output."""
         tool_path = _PROJECT_ROOT / "tools" / "precheck_workstation_large_ingest.py"
         cmd = [
             sys.executable,
@@ -459,7 +515,14 @@ class PrecheckRunner:
 
 
 class PipelineRunner:
-    """Manages pipeline execution in a background thread."""
+    """Background worker for the Start Pipeline button.
+
+    Owns the full Forge ingest run (discover, dedup, parse, chunk,
+    optional enrich/embed/extract, export) on a background thread.
+    Progress, stage transitions, and final stats are pushed back into
+    the GUI through ``safe_after``. Stop Safely sets a threading.Event
+    that the pipeline polls, so the run bails out cleanly.
+    """
 
     def __init__(self, app: CorpusForgeApp, config: ForgeConfig):
         self.app = app
@@ -468,6 +531,7 @@ class PipelineRunner:
         self._thread: threading.Thread | None = None
 
     def start(self, source: str, output: str):
+        """Start a full pipeline run in a background thread."""
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
@@ -481,13 +545,18 @@ class PipelineRunner:
         self._thread.start()
 
     def stop(self):
+        """Request a safe stop - Stop Safely button wires here."""
+        # The pipeline checks _stop_event between files/stages and
+        # honors the request without losing finished work.
         self._stop_event.set()
 
     def _finish(self, msg, level="INFO", stats=None):
+        """Log a final message and notify the GUI that the run is over."""
         safe_after(self.app.root, 0, self.app.append_log, msg, level)
         safe_after(self.app.root, 0, self.app.pipeline_finished, stats or dict(_EMPTY_STATS))
 
     def _run(self):
+        """Thread body - wraps _do_run with crash reporting."""
         try:
             self._do_run()
         except Exception as exc:
@@ -495,6 +564,7 @@ class PipelineRunner:
             self._finish(f"Pipeline error: {exc}", "ERROR")
 
     def _do_run(self):
+        """Execute the full Forge pipeline and stream progress to the GUI."""
         from src.pipeline import Pipeline
         source_path = Path(self.config.paths.source_dirs[0])
         if not source_path.exists():
@@ -651,10 +721,12 @@ class PipelineRunner:
 
     @property
     def is_alive(self):
+        """True while the pipeline thread is still running."""
         return self._thread is not None and self._thread.is_alive()
 
 
 def _count_skip_list(config):
+    """Return how many formats live in the static skip list YAML."""
     try:
         import yaml
         p = Path(config.paths.skip_list)
@@ -667,6 +739,7 @@ def _count_skip_list(config):
 
 
 def main():
+    """Launch the Forge GUI. This is the function start_corpusforge.bat calls."""
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--config", default=_DEFAULT_CONFIG, help="Path to config YAML.")
     parser.add_argument("--dedup", action="store_true", help="Launch the dedup-only recovery GUI.")
@@ -773,7 +846,10 @@ def main():
         "%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
     logging.getLogger().addHandler(gui_handler)
 
+    # Every 50ms the main thread drains the thread-safe queue so any
+    # update a background worker enqueued via safe_after is applied.
     def pump_queue():
+        """Pull any pending GUI updates off the safe_after queue."""
         drain_ui_queue()
         root.after(50, pump_queue)
     pump_queue()

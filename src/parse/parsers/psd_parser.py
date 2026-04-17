@@ -1,8 +1,19 @@
 """
-Photoshop PSD parser -- extracts text layers and metadata.
+Photoshop PSD parser -- reads Adobe Photoshop .psd files.
 
-Ported from V1 and adapted to Forge's ParsedDocument interface.
-Dependency: psd-tools.
+Plain English: Photoshop documents are layered images with optional
+text layers (captions, labels, annotations). This parser opens the PSD
+and returns:
+
+  * Document dimensions and color mode
+  * All layer names
+  * The contents of every text layer it can find
+
+So an engineer searching the corpus can locate a diagram by a caption
+that lives inside its source Photoshop file.
+
+Uses the ``psd-tools`` library. If it isn't installed the parser
+returns empty text rather than failing.
 """
 
 from __future__ import annotations
@@ -13,9 +24,10 @@ from src.parse.parsers.txt_parser import ParsedDocument
 
 
 class PsdParser:
-    """Extract text layers and document metadata from Photoshop PSD files."""
+    """Extract layer names and text-layer contents from Photoshop .psd files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .psd file and return its layer names plus any text-layer contents."""
         path = Path(file_path)
 
         try:

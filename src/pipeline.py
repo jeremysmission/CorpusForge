@@ -1,10 +1,34 @@
 """
-Pipeline orchestrator — parallel parse → GPU batch embed → export.
+Pipeline orchestrator — parallel parse -> GPU batch embed -> export.
+
+Plain-English role
+------------------
+This module is the conductor of the whole Forge pipeline. Everything the
+operator sees in the GUI's progress bar and every artifact that ends up
+in the export folder is driven from the ``Pipeline`` class in this file.
+
+The pipeline runs the nine stages in order:
+
+    hash -> dedup -> skip -> parse -> chunk -> enrich -> embed ->
+    extract -> export
+
+Key behaviors operators should know:
+  - Parsing runs in a pool of worker threads (``workers`` in config)
+    with a stale-future watchdog so one bad file cannot wedge the run.
+  - Every completed file is written to a crash-safe checkpoint on disk
+    immediately, so a stop or crash before export does not throw away
+    work already parsed and chunked.
+  - Cooperative stop: when the operator clicks stop, Forge finishes
+    in-flight work at the nearest safe boundary, preserves the
+    checkpoint, and only writes an export folder if the finished
+    chunks and vectors stay aligned.
+  - Large corpora (>100K chunks) embed in sub-batches backed by a
+    memory-mapped file so the machine does not run out of RAM.
 
 Architecture ported from V1 (HybridRAG3 src/core/indexer.py):
   - ThreadPoolExecutor(N workers) for parallel file parsing
   - Prefetch 2x workers to keep the ready queue saturated
-  - Main thread drains parsed results → chunk → GPU batch embed
+  - Main thread drains parsed results -> chunk -> GPU batch embed
   - Stale future watchdog kills hung parsers
   - Token-budget batching + OOM backoff in embedder
 
@@ -48,7 +72,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RunStats:
-    """Tracks pipeline run statistics."""
+    """Live counters for one pipeline run.
+
+    The GUI and CLI read these fields to show progress and the final
+    run report. Every field is plain (files counted, chunks produced,
+    vectors created, seconds elapsed) so a non-programmer can read a
+    run report and understand exactly what happened.
+    """
 
     files_found: int = 0
     files_after_dedup: int = 0
@@ -72,6 +102,7 @@ class RunStats:
     format_coverage: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
+        """Serialize the live counters for the GUI/CLI progress panel."""
         return {
             "files_found": self.files_found,
             "files_after_dedup": self.files_after_dedup,
@@ -179,17 +210,61 @@ def _resolve_parser_mode(env_var: str, config_value: str, allowed: set[str]) -> 
 
 class Pipeline:
     """
-    Orchestrates all pipeline stages with parallel parsing.
+    The Forge orchestrator. One instance runs one corpus through the
+    nine-stage pipeline and writes an export folder for V2.
 
-    Architecture:
-      1. Hash & dedup (sequential, fast)
-      2. Skip check (sequential, fast)
-      3. Parallel parse: N worker threads parse files concurrently
-      4. Main thread: chunk → enrich → GPU batch embed → export
-      5. Stale future watchdog prevents hung parsers from blocking pipeline
+    Plain-English tour of what ``run()`` does, in the order it happens:
+
+        1. Hash and dedup (fast, sequential)
+           - Fingerprint every file with SHA-256 and drop files that
+             were already indexed in a previous run or that are exact
+             duplicates of other files in this batch.
+
+        2. Skip check
+           - For each surviving file, the skip manager decides whether
+             it is parseable (right format, not encrypted, not a temp
+             file, inside size limits). Skipped files are still hashed
+             and recorded in the skip manifest so nothing is hidden.
+
+        3 + 4 + 5 + 6. Parallel parse -> chunk -> (optional) live embed
+           - Worker threads parse files in parallel. Each parsed file is
+             chunked immediately and persisted to the checkpoint on disk
+             so a crash or stop does not throw away finished work.
+           - When enrichment is off, chunks flow to the GPU embedder
+             during parsing to keep the GPU warm.
+
+        7. Enrichment (optional)
+           - If enabled, the local phi4 model on Ollama writes a one-
+             paragraph preamble for each chunk describing where it sits
+             in the document. The preamble is prepended to the chunk
+             text before embedding and improves retrieval.
+
+        8. Embed
+           - Chunks (or enriched chunks) are converted to float16
+             vectors on the GPU in token-budget batches. Large corpora
+             use a memory-mapped file so RAM does not balloon.
+
+        9. Entity extraction (optional)
+           - GLiNER runs on CPU across all chunks to pull candidate
+             entities for V2's knowledge graph seeding.
+
+        10. Export
+           - Writes chunks.jsonl + vectors.npy + manifest.json +
+             skip_manifest.json + run_report.txt to a timestamped
+             export folder and updates the ``latest`` pointer.
+
+    Operator-facing features:
+      - Stale-future watchdog kills a hung parser after a configurable
+        timeout rather than wedging the run.
+      - Cooperative stop: if the operator clicks stop, Forge finishes
+        in-flight work at a safe boundary, preserves the checkpoint,
+        and only writes an export if chunks and vectors line up.
+      - Every run writes a human-readable ``run_report.txt`` and
+        appends a JSON summary to ``run_history.jsonl``.
     """
 
     def __init__(self, config: ForgeConfig):
+        """Wire up every subsystem the pipeline will need for one run."""
         self.config = config
         self.workers = config.pipeline.workers
 

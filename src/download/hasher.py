@@ -1,8 +1,16 @@
 """
 File hasher — SHA-256 content hashing with SQLite state tracking.
 
-Tracks file hashes across runs for incremental processing.
-Unchanged files (same hash) are skipped on subsequent runs.
+Plain-English role
+------------------
+Stage 1 of the pipeline. Every candidate file is fingerprinted with
+SHA-256. The fingerprint plus mtime and size are stored in a small
+SQLite database (``file_state.sqlite3``) so later stages can answer
+quickly: have we already indexed this file? Is it a duplicate of
+another file? Has it changed since last run?
+
+The hasher is also reused by the dedup, skip, and delta stages, which
+is why it lives in the ``download`` package alongside the syncer.
 """
 
 from __future__ import annotations
@@ -13,9 +21,10 @@ from pathlib import Path
 
 
 class Hasher:
-    """SHA-256 file hashing with SQLite-backed state tracking."""
+    """SHA-256 file hashing with a small SQLite table that remembers state across runs."""
 
     def __init__(self, state_db: str):
+        """Open (or create) the file_state SQLite database."""
         self.db_path = Path(state_db)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self.db_path))
@@ -23,6 +32,7 @@ class Hasher:
         self._init_schema()
 
     def _init_schema(self) -> None:
+        """Create the file_state table on first use."""
         self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS file_state (
                 path       TEXT PRIMARY KEY,
@@ -36,6 +46,7 @@ class Hasher:
 
     @staticmethod
     def _normalize_path(file_path: Path | str) -> str:
+        """Return path with forward slashes for consistent DB keys across OSes."""
         return str(file_path).replace("\\", "/")
 
     def hash_file(self, file_path: Path) -> str:
@@ -82,4 +93,5 @@ class Hasher:
         return [r["path"] for r in rows]
 
     def close(self) -> None:
+        """Close the underlying SQLite connection."""
         self._conn.close()

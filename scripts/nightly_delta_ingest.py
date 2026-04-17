@@ -1,10 +1,44 @@
 """
 Nightly delta ingest orchestrator for the stationary work desktop.
 
-Flow:
-  1. Scan source root and build an explicit manifest of new or changed files.
-  2. Copy only the delta subset into a local mirror on C:.
-  3. Hand that subset to the existing CorpusForge pipeline via --input-list.
+What it does for the operator:
+  The "one button" nightly ingest. Three steps, in order:
+
+    1. Scan the source share and build a JSON manifest of new or changed files.
+    2. Copy ONLY those new/changed files into the local mirror folder on C:.
+    3. Hand the mirrored file list to run_pipeline.py via --input-list.
+
+  Safety feature: if --require-canary is set (or the config enables it),
+  the run is aborted unless a known "canary" file is present in the delta
+  -- proof that the scanner is actually seeing the upstream share.
+
+When to run it:
+  - From a Windows scheduled task every night
+  - Manually, after a known upstream update
+  - With --skip-pipeline to preview what would be copied, without running
+    Forge
+
+Inputs:
+  --config         Base config YAML (default config/config.yaml).
+  --source-root    Override upstream source root (defaults to config).
+  --mirror-root    Override local mirror root (defaults to config).
+  --manifest-dir   Override manifest/report directory.
+  --max-files      Optional scan cap for proof / test runs.
+  --skip-pipeline  Stop after the local copy; do not run the pipeline.
+  --require-canary Fail if no canary file appears in the delta set.
+
+Outputs:
+  - Timestamped manifest JSON (what files are new/changed)
+  - Input-list .txt (paths fed to run_pipeline.py)
+  - Runtime config YAML used for this pipeline run
+  - Nightly report JSON (status + transfer + pipeline outcome)
+  - Log file under the configured pipeline log dir
+
+Exit codes:
+  0 = success (or no delta)
+  1 = pipeline failed
+  2 = transfer partial failure
+  3 = canary required but missing -- operator must investigate the share
 
 Usage:
   python scripts/nightly_delta_ingest.py --config config/config.yaml
@@ -31,16 +65,19 @@ from src.download.syncer import BulkSyncer
 
 
 def _run_id() -> str:
+    """Return a timestamp string used as the unique run id (YYYYMMDD_HHMMSS)."""
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def _write_lines(path: Path, lines: list[str]) -> Path:
+    """Write a list of strings as one-per-line to the given path."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     return path
 
 
 def _load_raw_config(config_path: Path) -> dict:
+    """Load the config YAML as a plain Python dict (not a validated ForgeConfig)."""
     if not config_path.exists():
         return {}
     with open(config_path, encoding="utf-8-sig") as f:
@@ -55,6 +92,7 @@ def _write_runtime_config(
     pipeline_output_dir: Path,
     pipeline_state_db: Path,
 ) -> Path:
+    """Write a one-off config YAML for this run, redirecting source/output/state paths to the nightly mirror."""
     raw = _load_raw_config(base_config_path)
     paths = raw.setdefault("paths", {})
     paths["source_dirs"] = [str(mirror_root)]
@@ -79,6 +117,7 @@ def run_nightly_delta_ingest(
     require_canary: bool | None = None,
     skip_pipeline: bool = False,
 ) -> dict:
+    """Do one end-to-end nightly delta: scan -> copy -> (optionally) run the pipeline. Returns a report dict."""
     config = load_config(config_path)
     nightly = config.nightly_delta
     run_id = _run_id()
@@ -210,6 +249,7 @@ def run_nightly_delta_ingest(
 
 
 def main() -> int:
+    """Parse CLI flags, run the nightly ingest, print a summary line, and return an exit code."""
     parser = argparse.ArgumentParser(description="Run the nightly delta ingest lane")
     parser.add_argument("--config", default="config/config.yaml", help="Path to base config YAML")
     parser.add_argument("--source-root", help="Override source root for this run")

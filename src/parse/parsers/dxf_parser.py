@@ -1,9 +1,17 @@
 """
-DXF parser -- extracts text from AutoCAD DXF drawing files.
+DXF parser -- reads AutoCAD DXF (.dxf) drawing files.
 
-Extracts TEXT, MTEXT entities, layer names, block text, and metadata.
+Plain English: DXF is the open exchange format AutoCAD uses for
+engineering drawings. A drawing is mostly geometry, but engineers
+embed plenty of searchable text: TEXT/MTEXT notes, attribute tags,
+dimension callouts, layer names, and block definitions. This parser
+pulls all of that out so the Forge pipeline can index drawings like
+any other document.
+
+Uses the optional ``ezdxf`` library. If it's missing or the file isn't
+a valid DXF, the parser returns empty text rather than crashing.
+
 Ported from V1 (src/parsers/dxf_parser.py).
-Dependencies: pip install ezdxf (optional, graceful fallback).
 """
 
 from __future__ import annotations
@@ -18,9 +26,10 @@ logger = logging.getLogger(__name__)
 
 
 class DxfParser:
-    """Parse AutoCAD DXF files."""
+    """Extract searchable text (labels, notes, layers) from AutoCAD .dxf files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .dxf drawing and return all embedded text."""
         path = Path(file_path)
         text = ""
         quality = 0.0

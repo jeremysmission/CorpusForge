@@ -22,7 +22,15 @@
 #   Tertiary (Tertiary.TButton): 12x6 padding, subtle -- Stop
 # ============================================================================
 
-"""Shared fonts, colors, and ttk styles for the desktop UI."""
+"""Shared fonts, colors, and ttk styles for the desktop UI.
+
+This file is the look-and-feel backbone for every Forge window. It
+does not show anything by itself - instead it defines the dark color
+palette, the font sizes, and the ttk button/combo/scrollbar styles
+that the other GUI files reuse so all of Forge looks consistent. An
+operator never interacts with this file directly; they only see its
+effect (dark background, blue accent buttons, Segoe UI text).
+"""
 
 from tkinter import ttk
 

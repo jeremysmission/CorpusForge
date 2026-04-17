@@ -2,11 +2,13 @@
 """
 Critical end-to-end operator gate across CorpusForge and HybridRAG V2.
 
-This script exists to prevent the exact failure mode that burned the 700GB run:
-critical workflows being "mostly validated" through narrow slices but not
-proven end-to-end on disk and across repo boundaries.
+What it does for the operator:
+  One button that runs the ENTIRE critical path end-to-end, across both
+  repos, using real files on disk. It exists to prevent the exact failure
+  mode that burned the 700GB run: workflows that were only "mostly
+  validated" on narrow slices and broke when exercised as a whole.
 
-Automated gate coverage:
+Automated gate coverage (each returns PASS or FAIL):
   1. Forge workstation precheck
   2. Forge dedup-only portable copy
   3. Forge normal embed-enabled pipeline export
@@ -16,9 +18,26 @@ Automated gate coverage:
   7. V2 retrieval smoke against imported data
   8. V2 API health and query endpoint status
 
-Output:
-  data/critical_e2e_gate/<timestamp>/report.json
-  data/critical_e2e_gate/<timestamp>/report.md
+How to read the result:
+  PASS (exit 0)     All gates green -- safe to proceed.
+  BLOCKED (exit 3)  Everything green EXCEPT the live /query endpoint,
+                    because an LLM key/endpoint is missing. Operator must
+                    configure OPENAI / Azure creds, then re-run.
+  FAIL (exit 2)     At least one gate actually failed. Read the report
+                    and fix the offending stage BEFORE any new ingest.
+
+When to run it:
+  - Before / after major code changes that touch the ingest pipeline
+  - As a pre-release gate before an overnight big run
+  - Any time a reviewer asks "is this really end-to-end clean?"
+
+Inputs:
+  --source    Forge source folder for the gate run.
+  --v2-root   HybridRAG V2 repo root (default C:\\HybridRAG_V2).
+
+Outputs:
+  data/critical_e2e_gate/<timestamp>/report.json  machine-readable report
+  data/critical_e2e_gate/<timestamp>/report.md    human-readable report
 """
 
 from __future__ import annotations
@@ -46,41 +65,51 @@ from src.pipeline import Pipeline
 
 @dataclass
 class GateResult:
+    """One gate's outcome: PASS/FAIL/BLOCKED, human summary, and machine 'proof' data."""
     status: str
     summary: str
     proof: dict
 
 
 class _ImmediateRoot:
+    """Stand-in for a tkinter root that runs scheduled callbacks immediately (used for headless gate runs)."""
     def after(self, _ms, fn, *args):
+        """Invoke fn(*args) right away instead of scheduling it for later."""
         fn(*args)
         return None
 
 
 class _DedupHarnessApp:
+    """Minimal in-memory stand-in for the GUI app, so the dedup-only runner can work headlessly inside this gate."""
     def __init__(self):
+        """Create empty log/stats buffers and a 'root' that runs callbacks immediately."""
         self.root = _ImmediateRoot()
         self.logs: list[tuple[str, str]] = []
         self.stats: dict = {}
         self.message: str = ""
 
     def append_log(self, message: str, level: str = "INFO"):
+        """Record a log line so the gate can inspect what the runner said."""
         self.logs.append((level, message))
 
     def update_dedup_only_stats(self, stats: dict):
+        """Receive interim stats from the dedup runner (called as it makes progress)."""
         self.stats = dict(stats)
 
     def dedup_only_finished(self, stats: dict, message: str = ""):
+        """Receive the final stats + message when the dedup runner finishes."""
         self.stats = dict(stats)
         self.message = message
 
 
 def _write_json(path: Path, payload: dict) -> None:
+    """Write a dict to disk as indented JSON (UTF-8, trailing newline)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def _run_precheck(source: Path, output_dir: Path) -> GateResult:
+    """Gate 1: shell out to the workstation precheck tool and return PASS/FAIL."""
     cmd = [
         str(PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"),
         str(PROJECT_ROOT / "tools" / "precheck_workstation_large_ingest.py"),
@@ -123,6 +152,8 @@ def _run_precheck(source: Path, output_dir: Path) -> GateResult:
 
 
 def _run_dedup_only(source: Path, output_root: Path) -> GateResult:
+    """Gate 2: run the dedup-only mode end-to-end and confirm it produced a portable copy folder."""
+    # CORPUSFORGE_HEADLESS=1 tells the GUI helpers to skip any tkinter calls.
     os.environ["CORPUSFORGE_HEADLESS"] = "1"
     app = _DedupHarnessApp()
     config = load_config(PROJECT_ROOT / "config" / "config.yaml")
@@ -161,6 +192,7 @@ def _run_dedup_only(source: Path, output_root: Path) -> GateResult:
 
 
 def _build_forge_config(source: Path, output_dir: Path, state_db: Path, *, embed_flush_batch: int) -> object:
+    """Build a Forge config tuned for the gate: 1 worker, embed on, enrich/extract off, isolated paths."""
     config = load_config(PROJECT_ROOT / "config" / "config.yaml")
     config.paths.source_dirs = [str(source)]
     config.paths.output_dir = str(output_dir)
@@ -175,6 +207,7 @@ def _build_forge_config(source: Path, output_dir: Path, state_db: Path, *, embed
 
 
 def _run_forge_normal(source: Path, run_root: Path) -> GateResult:
+    """Gate 3: run the full Forge pipeline once and confirm chunks, vectors, and live progress events."""
     output_dir = run_root / "output"
     state_db = run_root / "state.sqlite3"
     stage_events: list[tuple[str, int, int, str]] = []
@@ -235,6 +268,7 @@ def _run_forge_normal(source: Path, run_root: Path) -> GateResult:
 
 
 def _run_forge_stop_resume(source: Path, run_root: Path) -> GateResult:
+    """Gates 4+5: run Forge, request a stop mid-run, then run again and confirm it resumes from the checkpoint."""
     files = sorted([p for p in source.rglob("*") if p.is_file()])
     output_dir = run_root / "output"
     state_db = run_root / "state.sqlite3"
@@ -316,6 +350,7 @@ def _run_forge_stop_resume(source: Path, run_root: Path) -> GateResult:
 
 
 def _run_v2_gate(export_dir: Path, run_root: Path, v2_root: Path) -> GateResult:
+    """Gates 6-8: import the Forge export into V2, do a retrieval smoke, and hit the /health + /query endpoints."""
     python_exe = v2_root / ".venv" / "Scripts" / "python.exe"
     script = r"""
 from __future__ import annotations
@@ -443,6 +478,7 @@ print(json.dumps(payload))
 
 
 def _render_markdown(results: dict[str, GateResult], report_json: Path) -> str:
+    """Render the final gate results as a Markdown doc for a human reviewer."""
     lines = [
         "# Critical E2E Gate",
         "",
@@ -468,6 +504,7 @@ def _render_markdown(results: dict[str, GateResult], report_json: Path) -> str:
 
 
 def main() -> int:
+    """Run every gate in order, write the JSON + Markdown reports, and return 0 (PASS) / 2 (FAIL) / 3 (BLOCKED)."""
     parser = argparse.ArgumentParser(description="Run the critical operator E2E gate.")
     parser.add_argument(
         "--source",

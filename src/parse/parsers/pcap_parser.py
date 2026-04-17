@@ -1,9 +1,24 @@
 """
-PCAP parser -- extracts summary metadata from network captures.
+PCAP parser -- reads network packet captures (.pcap / .pcapng).
 
-Analyzes packet counts, protocol breakdown, IP addresses, and time range.
+Plain English: a PCAP file records network traffic captured by tools
+like Wireshark or tcpdump. The raw binary isn't useful text, so this
+parser produces a human-readable SUMMARY of the capture instead:
+
+  * Total packets analyzed.
+  * Time range (first to last packet, UTC).
+  * Protocol breakdown (TCP, UDP, ICMP, etc.).
+  * Top source and destination IP addresses.
+
+Both legacy .pcap and modern .pcapng formats are supported.
+
+Safety: analysis is capped at 10,000 packets per file so huge captures
+don't dominate the index.
+
+Uses the optional ``dpkt`` library. If it isn't installed the parser
+returns empty text rather than failing.
+
 Ported from V1 (src/parsers/pcap_parser.py).
-Dependencies: pip install dpkt (optional, graceful fallback).
 """
 
 from __future__ import annotations
@@ -22,9 +37,10 @@ _MAX_PACKETS = 10000
 
 
 class PcapParser:
-    """Parse PCAP/PCAPNG network capture files."""
+    """Produce a searchable summary (protocols, IPs, timing) for .pcap captures."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .pcap/.pcapng file and return a text summary of the traffic."""
         path = Path(file_path)
         text = ""
         quality = 0.0

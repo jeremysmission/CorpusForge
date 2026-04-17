@@ -1,5 +1,29 @@
 """
-verify_cuda_embedding.py — Verify CUDA embedding is active and benchmark throughput.
+verify_cuda_embedding.py -- Verify CUDA embedding is active and benchmark throughput.
+
+What it does for the operator:
+  A short, end-to-end sanity check that the embed stage is really using
+  the CUDA GPU (not silently falling back to ONNX CPU). It:
+    1. Imports and initializes the Embedder with device="cuda"
+    2. Confirms its reported mode is "cuda" (fails loudly if it is "onnx")
+    3. Prints the detected GPU name and total VRAM
+    4. Embeds 100 and then 500 sample texts to measure chunks/sec
+    5. Reports peak GPU memory usage
+    6. Prints a simple PASS / FAIL verdict with a chunks/sec number
+
+How to read the result:
+  PASS -> CUDA path is working, throughput value is good
+  FAIL -> CUDA is unavailable or fell back to CPU -- the operator should
+          fix the GPU / torch install BEFORE starting a big ingest.
+
+When to run it:
+  - After any environment change (new driver, new torch, new GPU)
+  - On a new workstation before the first big ingest
+  - When the overnight run is unexpectedly slow (check CUDA path first)
+
+Environment:
+  CUDA_VISIBLE_DEVICES controls which GPU this script queries (default: 0).
+  On a dual-GPU Beast machine, set it to the compute GPU, not the display one.
 
 Usage:  py -3.12 scripts/verify_cuda_embedding.py
 Run from CorpusForge project root.
@@ -36,6 +60,7 @@ def make_test_texts(n: int) -> list[str]:
 
 
 def main() -> int:
+    """Init the Embedder on CUDA, run two small benchmark batches, and print a PASS/FAIL verdict."""
     print(SEPARATOR)
     print("  CorpusForge CUDA Embedding Verification")
     print(SEPARATOR)

@@ -2,11 +2,21 @@
 Nightly delta tracker -- detects new or changed source files and persists
 source-side resume state in SQLite.
 
+Plain-English role
+------------------
+Pre-stage helper for scheduled nightly runs. Before the main pipeline
+kicks off, this module walks an upstream source tree and decides which
+files are new, changed, or can be skipped because the local mirror
+already has an up-to-date copy.
+
 The tracker intentionally reuses the Hasher schema and status contract:
   - `hashed` means a source file has been fingerprinted and admitted to the
     pending delta set, but the mirror step has not completed successfully.
   - `mirrored` means the file is already present in the local mirror and can
     be skipped on the next nightly scan unless size or mtime changes.
+
+The output (the delta list) is then fed to the syncer, which copies
+those files into the local mirror before the main pipeline starts.
 """
 
 from __future__ import annotations
@@ -26,7 +36,7 @@ _PROGRESS_INTERVAL_FILES = 250
 
 @dataclass
 class DeltaScanResult:
-    """Summary of a nightly delta scan."""
+    """Summary of a nightly delta scan — what is new, changed, and what was dropped."""
 
     source_root: str
     total_files: int = 0
@@ -43,6 +53,7 @@ class DeltaScanResult:
     deleted_paths: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
+        """Return the scan summary as a plain dict for JSON reporting."""
         return {
             "source_root": self.source_root,
             "total_files": self.total_files,
@@ -64,9 +75,11 @@ class NightlyDeltaTracker:
     """Tracks source-side delta state for the nightly mirror lane."""
 
     def __init__(self, state_db: str):
+        """Open the source-side transfer state database (its own SQLite file)."""
         self.hasher = Hasher(state_db)
 
     def close(self) -> None:
+        """Close the underlying state database."""
         self.hasher.close()
 
     def mark_mirrored(self, file_path: Path | str) -> None:
@@ -158,6 +171,7 @@ class NightlyDeltaTracker:
 
     @staticmethod
     def _matches_any_glob(file_path: Path, patterns: list[str]) -> bool:
+        """Return True if file name or path matches any of the given glob patterns."""
         if not patterns:
             return False
         name = file_path.name.lower()
@@ -170,6 +184,7 @@ class NightlyDeltaTracker:
 
     @staticmethod
     def _state_matches_file(state, file_path: Path) -> bool:
+        """True if stored size/mtime still match the live file (fast unchanged check)."""
         stat = file_path.stat()
         size_match = state["size"] == stat.st_size
         mtime_match = abs(state["mtime"] - stat.st_mtime) < _MTIME_TOLERANCE

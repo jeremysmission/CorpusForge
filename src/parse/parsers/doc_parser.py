@@ -1,7 +1,18 @@
 """
-Legacy Word .doc parser -- reads Word 97-2003 binary format.
+Legacy Word (.doc) parser -- reads the old Word 97-2003 binary format.
 
-Pipeline: antiword (best) -> olefile OLE2 extraction -> raw binary scan.
+Plain English: .doc is the binary Word format used before 2007. It's
+harder to read than modern .docx, so this parser tries three strategies
+in order and uses whichever one produces readable text:
+
+  1. ``antiword`` command-line tool -- cleanest output if installed.
+  2. ``olefile`` -- pulls document metadata plus raw WordDocument stream
+     out of the file's OLE2 container.
+  3. Raw binary scan -- last resort; scans bytes for readable text runs.
+
+Quality score reflects which strategy produced the text (high for
+antiword, low for raw scan).
+
 Ported from V1 (src/parsers/doc_parser.py).
 """
 
@@ -17,9 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 class DocParser:
-    """Parse legacy .doc files with multi-strategy fallback."""
+    """Extract text from legacy Word .doc files, with three fallback strategies."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .doc file and return its text using the best available strategy."""
         path = Path(file_path)
         text = ""
         quality = 0.0

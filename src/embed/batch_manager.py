@@ -1,9 +1,14 @@
 """
 Token-budget batch manager — ported from V1.
 
-Packs texts into variable-sized batches that fit a GPU token budget.
-Short texts batch larger (more GPU utilization), long texts batch
-smaller (less OOM risk). Snowflake measured 16x throughput gain.
+Plain-English role
+------------------
+The GPU can only hold so much text in memory at once. This helper
+takes a list of chunk texts and groups them into batches that should
+fit inside the GPU's token budget: lots of short chunks in a single
+batch, fewer long ones per batch. If a batch still runs out of memory
+the embedder calls ``reduce_batch_size`` to cut the limit in half for
+the next try.
 
 Token estimation: chars / 4 (conservative heuristic, avoids needing
 the actual tokenizer on the hot path).
@@ -13,7 +18,7 @@ from __future__ import annotations
 
 
 class BatchManager:
-    """Manages token-budget batching for embedding."""
+    """Packs texts into GPU-friendly batches bounded by a token budget."""
 
     def __init__(
         self,
@@ -21,6 +26,7 @@ class BatchManager:
         max_batch_size: int = 256,
         min_batch_size: int = 8,
     ):
+        """Store token budget plus min/max batch sizes used when packing."""
         self.token_budget = token_budget
         self.max_batch_size = max_batch_size
         self.min_batch_size = min_batch_size

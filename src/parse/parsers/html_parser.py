@@ -1,4 +1,15 @@
-"""HTML parser — extracts text from local HTML files."""
+"""
+HTML parser -- reads local HTML/HTM files and strips out the markup.
+
+Plain English: opens an HTML file from disk (never from the network)
+and returns just the visible reading text -- navigation bars, scripts,
+and styles are removed first so the chunks the Forge pipeline stores
+are readable prose, not raw tags.
+
+Prefers BeautifulSoup when available; falls back to simple regex tag
+stripping if it isn't installed. Hardened for local-only use, no URLs
+are ever fetched.
+"""
 
 from __future__ import annotations
 
@@ -12,9 +23,10 @@ logger = logging.getLogger(__name__)
 
 
 class HtmlParser:
-    """Parse .html and .htm files. No network access — local files only."""
+    """Extract readable text from local .html/.htm files (no network access)."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a local HTML file and return its visible text."""
         path = Path(file_path)
         try:
             try:

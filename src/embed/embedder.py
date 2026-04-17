@@ -1,6 +1,18 @@
 """
 Embedder — converts text into 768-dim vectors via nomic-embed-text v1.5.
 
+Plain-English role
+------------------
+Stage 7 of the pipeline. Every chunk (or enriched chunk) comes in as
+text and comes out as a short list of numbers that captures the
+chunk's meaning. Those number-lists (vectors) are what V2 uses for
+"find similar text" search.
+
+Two runtime paths:
+  - Primary: the GPU (CUDA). Fast, used by default.
+  - Fallback: CPU via ONNX Runtime. Slower but keeps Forge working on
+    machines without a GPU.
+
 Ported from V1 (src/core/embedder.py). Simplified for CorpusForge:
   - CUDA primary path (sentence-transformers + PyTorch)
   - ONNX CPU fallback (no Ollama — CorpusForge has no HTTP embedding)
@@ -52,6 +64,7 @@ class Embedder:
         max_batch_tokens: int = 49152,
         dtype: str = "float16",
     ):
+        """Load the embedding model and prepare its token-budgeted batcher."""
         self.model_name = self._MODEL_MAP.get(model_name, model_name)
         self.dim = dim
         self.requested_device = device

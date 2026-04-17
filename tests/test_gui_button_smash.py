@@ -5,6 +5,17 @@ Runs headless: creates full GUI without mainloop, discovers all widgets,
 invokes them, and checks for crashes/freezes.
 
 Ported from HybridRAG V1 gui_engine pattern.
+
+Plain-English summary for operators:
+Forge has a Tkinter GUI the operator actually clicks. This file boots
+the whole GUI without a real window, discovers every button and input
+field, and clicks them to make sure nothing crashes, freezes, or leaves
+the Stop button in a broken state. It also exercises the pipeline
+plumbing that sits behind the Stop button — so if the operator clicks
+Stop, the pipeline must actually wind down and still ship a useful
+export. If these tests fail, operators could see a frozen GUI, a Stop
+button that does nothing, or an export that lies about what was
+packaged.
 """
 
 import os
@@ -48,6 +59,7 @@ class TestWidgetDiscovery:
     """Tier A: Verify all expected widgets exist."""
 
     def test_discovers_buttons(self, engine):
+        """Protects the main buttons (Start Pipeline, Run Precheck, Save Settings) from disappearing in the GUI."""
         buttons = engine.discover_buttons()
         labels = [b.cget("text") for b in buttons if hasattr(b, "cget")]
         assert len(buttons) >= 4, f"Expected at least 4 buttons, found {len(buttons)}"
@@ -56,10 +68,12 @@ class TestWidgetDiscovery:
         assert "Save Settings" in labels
 
     def test_discovers_spinboxes(self, engine):
+        """Protects the number-input widgets (workers, chunk size, batch sizes) from being dropped from the GUI."""
         spinboxes = engine.discover_spinboxes()
         assert len(spinboxes) >= 4, f"Expected at least 4 spinboxes, found {len(spinboxes)}"
 
     def test_discovers_checkbuttons(self, engine):
+        """Protects the on/off toggles (embed, enrich, extract) from being removed from the GUI."""
         checkbuttons = engine.discover_checkbuttons()
         assert len(checkbuttons) >= 3, f"Expected at least 3 checkbuttons, found {len(checkbuttons)}"
 
@@ -68,6 +82,7 @@ class TestSettingsValidation:
     """Tier A: Verify settings panel validation."""
 
     def test_invalid_workers_zero(self, gui):
+        """Protects against kicking off a run with zero workers — validation must catch it first."""
         _, app = gui
         app.workers_var.set(0)
         # Validation should catch this
@@ -81,6 +96,7 @@ class TestSettingsValidation:
         app.workers_var.set(8)  # reset
 
     def test_invalid_workers_over_max(self, gui):
+        """Protects against absurd worker counts — validation must catch values above the max."""
         _, app = gui
         app.workers_var.set(999)
         val = app.workers_var.get()
@@ -88,6 +104,7 @@ class TestSettingsValidation:
         app.workers_var.set(8)
 
     def test_valid_settings_no_errors(self, gui):
+        """Protects against false-positive validation errors — sane defaults must not trigger warnings."""
         _, app = gui
         app.workers_var.set(8)
         app.chunk_size_var.set(1200)
@@ -116,6 +133,7 @@ class TestRapidClick:
     """Tier B: Smart monkey — targeted rapid-click chaos."""
 
     def test_rapid_save_debounce(self, gui):
+        """Protects against rapid-fire Save clicks hammering the config file — debounce must allow one per window."""
         _, app = gui
         # Set valid values first
         app.workers_var.set(8)
@@ -143,7 +161,10 @@ class TestFullButtonSmash:
     SKIP_LABELS = {"Start Pipeline", "Browse", "Stop", "Stop Safely", "Stopping...", "Reset to Defaults"}
 
     def test_safe_buttons_no_crashes(self, gui):
-        """Invoke all buttons except those that trigger blocking dialogs."""
+        """Invoke all buttons except those that trigger blocking dialogs.
+
+        Protects against any button in the GUI throwing an exception on click — the operator should never see a crash dialog.
+        """
         from src.gui.testing.gui_engine import ForgeGuiEngine
         eng = ForgeGuiEngine(gui[1])
         buttons = eng.discover_buttons()
@@ -161,6 +182,7 @@ class TestFullButtonSmash:
         assert len(failures) == 0, f"Button crashes: {failures}"
 
     def test_performance_under_1s(self, gui):
+        """Protects GUI responsiveness — button clicks must finish fast so the window never looks frozen."""
         from src.gui.testing.gui_engine import ForgeGuiEngine
         eng = ForgeGuiEngine(gui[1])
         buttons = eng.discover_buttons()
@@ -177,6 +199,7 @@ class TestStopControl:
     """Stop button must be wired and meaningful, not just clickable."""
 
     def test_stop_button_exists_and_starts_disabled(self, gui):
+        """Protects the Stop Safely button default state — it must exist and be disabled until a run starts."""
         _, app = gui
         # Stop button is disabled until a run starts.
         assert app.stop_btn.cget("text") == "Stop Safely"
@@ -184,7 +207,10 @@ class TestStopControl:
 
     def test_stop_button_invokes_on_stop_callback_when_running(self, gui):
         """While the GUI is in running state, clicking Stop must call on_stop and
-        update wording to "Stopping..."."""
+        update wording to "Stopping..."
+
+        Protects against a dead Stop button — clicking it must actually signal the pipeline and update the GUI to 'Stopping'.
+        """
         import tkinter as tk
         root, app = gui
         captured = {"called": 0}
@@ -206,7 +232,13 @@ class TestStopControl:
     def test_pipeline_runner_stop_drill_interrupts_pipeline_plumbing(self, tmp_path, monkeypatch):
         """End-to-end on PipelineRunner plumbing: stop() must flow through
         should_stop into the pipeline call and surface stop_requested=True
-        back through pipeline_finished."""
+        back through pipeline_finished.
+
+        Protects the full Stop-Safely wiring from GUI through to pipeline and back — operators must trust that Stop actually stops and still packages whatever finished.
+        """
+        # This test replaces the real Pipeline with a fake so we can simulate
+        # a long run that sits waiting for should_stop to flip, then verify the
+        # GUI thread, pipeline, and export path all cooperate on shutdown.
         from pathlib import Path
         import time as _t
         from src.config.schema import load_config
@@ -365,6 +397,8 @@ class TestStopControl:
 
         Pre-setting the stop event before PipelineRunner.start() ensures the
         first `idx % 500 == 0` poll inside the rglob loop trips immediately.
+
+        Protects against Stop being ignored during the early file-discovery phase — if the operator stops before any work starts, nothing must ship to the export.
         """
         import time as _t
         from src.config.schema import load_config
@@ -437,18 +471,21 @@ class TestWindowResize:
     """Tier A: Window resize doesn't crash."""
 
     def test_resize_minimum(self, gui):
+        """Protects against the GUI crashing when the window is shrunk to a tiny size."""
         root, _ = gui
         root.geometry("200x200")
         root.update()
         # No crash = pass
 
     def test_resize_large(self, gui):
+        """Protects against the GUI crashing when maximized to a large monitor."""
         root, _ = gui
         root.geometry("1920x1080")
         root.update()
         # No crash = pass
 
     def test_resize_back_to_normal(self, gui):
+        """Protects against layout corruption when resizing back to the default size after a stretch."""
         root, _ = gui
         root.geometry("920x760")
         root.update()

@@ -1,12 +1,26 @@
 """
-Archive parser -- extracts text from files inside ZIP, TAR, and GZ archives.
+Archive parser -- reads files packaged inside ZIP, TAR, or GZ archives.
 
-Opens the archive, extracts each member to a temp dir, routes each to
-the dispatcher for parsing, and combines all text.
+Plain English: operators frequently drop zipped bundles of documents
+into the corpus. This parser opens the archive, unpacks each member
+into a scratch folder, hands each unpacked file back to the main
+dispatcher (so a .pdf inside a zip is still parsed by the PDF parser),
+and combines all the extracted text into one document. Each member's
+block is tagged ``[ARCHIVE_MEMBER=<name>]`` so reviewers can trace
+chunks back to the original file inside the zip.
+
+Safety rails (important for operators to understand):
+  * Zip-bomb guard: any single member larger than 500 MB is skipped.
+  * Max 5000 members per archive.
+  * Path-traversal guard: members with ``..`` in their name are skipped.
+  * Nested archives are NOT re-extracted (no recursion loop).
+  * The scratch folder is always cleaned up, even on crash.
+
+Defer policy: if the archive itself or any member name matches the
+"deferred" list in config/config.yaml (e.g., .SAO.zip bundles during
+early ingest phases), it is skipped at extraction time.
+
 Ported from V1 (src/parsers/archive_parser.py).
-
-Safety: zip bomb guard (500 MB), max 5000 members, path traversal guard,
-no recursive archive extraction, temp dir always cleaned up.
 """
 
 from __future__ import annotations
@@ -25,8 +39,9 @@ from src.parse.parsers.txt_parser import ParsedDocument
 
 logger = logging.getLogger(__name__)
 
-_MAX_EXTRACT_BYTES = 500 * 1024 * 1024  # 500 MB per file
-_MAX_MEMBERS = 5000
+_MAX_EXTRACT_BYTES = 500 * 1024 * 1024  # 500 MB per file (zip-bomb guard)
+_MAX_MEMBERS = 5000  # safety cap on archive member count
+# Nested archives are not re-extracted to prevent recursion loops
 _SKIP_EXTENSIONS = {".zip", ".7z", ".rar", ".tar", ".tgz", ".gz", ".bz2", ".xz"}
 
 
@@ -80,6 +95,7 @@ class ArchiveParser:
         return any(seg in self._deferred_tokens for seg in segments)
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an archive, parse each file inside, and return the combined text."""
         path = Path(file_path)
         text = ""
         quality = 0.0

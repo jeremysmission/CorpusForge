@@ -1,11 +1,23 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    CorpusForge -- Non-interactive workstation setup.
+    CorpusForge (Forge) -- Non-interactive workstation setup.
+
 .DESCRIPTION
-    Installs venv, CUDA torch, requirements, and verifies the environment.
-    Designed for workstation installs (Python 3.12, CUDA 12.8 lane when NVIDIA is present).
-    NO interactive prompts. Auto-retry on failure. Colored diagnostics.
+    === NON-PROGRAMMER GUIDE ===
+    What this does: Full local install for a Forge workstation: creates .venv, installs CUDA torch
+                    (cu128 when an NVIDIA GPU is present, CPU fallback otherwise), installs
+                    requirements.txt, then runs smoke tests for imports, Ollama, OCR, and embeddings.
+    When to run:    Once per fresh workstation. Re-run after wiping .venv or upgrading Python.
+                    Normally invoked via INSTALL_WORKSTATION.bat at the repo root.
+    Operator view:  Each section prints [PASS] (green), [WARN] (yellow), or [FAIL] (red).
+                    Final banner summarizes counts. Exit 0 = ready; exit 1 = failures present.
+    Prerequisites:  Python 3.12 installed system-wide (py -3.12 launcher works).
+                    PowerShell 5.1 or later. Internet or corporate proxy access to PyPI
+                    and download.pytorch.org. Run from the Forge repo root.
+    Inputs:  Repo root with requirements.txt and src\pipeline.py present.
+    Outputs: Populated .venv, pip.ini for proxy/cert safety, persisted env vars for OCR tools
+             (TESSERACT_CMD, HYBRIDRAG_POPPLER_BIN), and a console diagnostics report.
 .NOTES
     Author: Jeremy Randall
     Date:   2026-04-06
@@ -22,12 +34,14 @@ $env:PYTHONUTF8 = "1"
 $env:NO_PROXY = "localhost,127.0.0.1"
 $env:no_proxy = "localhost,127.0.0.1"
 
+# Running tallies + timer used in the final summary banner.
 $global:PassCount = 0
 $global:FailCount = 0
 $global:WarnCount = 0
 $global:StepNum   = 0
 $Stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+# Default pip args: trusted hosts for corporate proxies, generous timeout, and auto-retry.
 $TrustedHosts = @(
     "--trusted-host", "pypi.org",
     "--trusted-host", "pypi.python.org",
@@ -71,6 +85,7 @@ function Write-Utf8NoBomFile {
     [System.IO.File]::WriteAllText($Path, $Text, $Utf8NoBom)
 }
 
+# Write a repo-local pip.ini so pip picks up our trusted hosts and proxy without surprises.
 function Initialize-PipConfig {
     param(
         [string]$PipIniPath,
@@ -94,6 +109,7 @@ function Initialize-PipConfig {
     Write-Utf8NoBomFile -Path $PipIniPath -Text $content
 }
 
+# Detect an HTTP/HTTPS proxy from env vars first, then fall back to Windows Internet Settings.
 function Get-WorkstationProxyInfo {
     $result = [ordered]@{
         ProxyDetected = $false
@@ -158,6 +174,7 @@ function Test-PipConfigReadable {
     }
 }
 
+# Quick check for an NVIDIA GPU via nvidia-smi. Used to decide CUDA vs CPU torch lane.
 function Test-NvidiaGpuPresent {
     try {
         & nvidia-smi --query-gpu=name --format=csv,noheader 2>$null | Out-Null
@@ -234,6 +251,7 @@ function Write-TorchInstallGuidance {
     }
 }
 
+# Find a native tool (tesseract.exe, pdftoppm.exe) on PATH or in a known install location.
 function Resolve-NativeCommandPath {
     param(
         [string]$CommandName,
@@ -259,6 +277,7 @@ function Resolve-NativeCommandPath {
     return $null
 }
 
+# Persist a user-level env var (e.g. TESSERACT_CMD) so future shells and Forge runs pick it up.
 function Set-PersistentRuntimeEnvVar {
     param(
         [string]$Name,
@@ -287,6 +306,7 @@ function Test-CommandOnPath {
     }
 }
 
+# Retry wrapper -- up to 3 attempts with a short sleep, used for flaky network installs.
 function Invoke-WithRetry {
     param(
         [scriptblock]$Action,
@@ -435,6 +455,8 @@ if ($LASTEXITCODE -eq 0) {
 # ============================================================
 # 6. Install torch CUDA (BEFORE requirements.txt)
 # ============================================================
+# Torch must land first so other requirements don't pull in a CPU-only torch as a dependency.
+# CUDA-present path: force cu128 wheel from the pytorch index. CPU path: plain torch from PyPI.
 Write-Step "Installing torch"
 if ($RequireCuda) {
     $ok = Invoke-WithRetry -Label "pip install torch==2.7.1 (cu128)" -Action {
@@ -631,6 +653,8 @@ try {
 # ============================================================
 # 11. Check OCR toolchain
 # ============================================================
+# OCR (Tesseract) + Poppler (pdftoppm.exe) are native tools used for scanned PDFs and image text.
+# If found, their paths are persisted as env vars so the runtime can still locate them without PATH edits.
 Write-Step "Checking OCR toolchain and runtime wiring"
 $tesseractPath = Resolve-NativeCommandPath -CommandName "tesseract.exe" -CandidatePaths @(
     "C:\Program Files\Tesseract-OCR\tesseract.exe",

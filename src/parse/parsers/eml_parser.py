@@ -1,8 +1,15 @@
 """
-EML email parser -- extracts headers + body from .eml files.
+EML parser -- reads standard .eml email files.
 
-Uses Python stdlib only (email module). Prefers plain text body,
-falls back to stripped HTML.
+Plain English: .eml is the open email format used by Thunderbird, Apple
+Mail, and many exports. This parser pulls the headers
+(Subject/From/To/Cc/Date) and the body, then returns them as plain text
+so the Forge pipeline can index emails like any other document.
+
+Prefers the plain-text body; if only an HTML body exists it is stripped
+to plain text. Attachments are ignored. Uses only the Python standard
+library, so there's no extra install step.
+
 Ported from V1 (src/parsers/eml_parser.py).
 """
 
@@ -47,9 +54,10 @@ def _safe_decode(payload: Optional[bytes], charset: Optional[str]) -> str:
 
 
 class EmlParser:
-    """Parse .eml email files into text."""
+    """Extract headers and body from standard .eml email files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an .eml email and return its headers + body as text."""
         path = Path(file_path)
         text = ""
         quality = 0.0

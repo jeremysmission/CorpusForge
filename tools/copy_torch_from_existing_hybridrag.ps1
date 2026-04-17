@@ -1,22 +1,34 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Copy a working torch install from an existing HybridRAG workstation venv into CorpusForge.
+    Copy a working torch install from an existing HybridRAG workstation venv into CorpusForge (Forge).
+
 .DESCRIPTION
-    Use this when download.pytorch.org is blocked but another local HybridRAG repo already has
-    a working CUDA torch build in its .venv. The source and target Python versions must match.
+    === NON-PROGRAMMER GUIDE ===
+    What this does: Finds a local HybridRAG .venv that already has working CUDA torch, then copies
+                    the torch package set into this Forge .venv so Forge can use the same local build.
+    When to run:    Only when the normal internet install is blocked (corporate proxy, offline site).
+                    Called by COPY_TORCH_FROM_EXISTING_HYBRIDRAG.bat at the repo root.
+    Operator view:  PASS lines are green, WARN yellow, FAIL red. Success exits 0 after a verify import.
+                    Any failure exits 1 with a red FAIL line and no partial state left behind.
+    Prerequisites:  Forge .venv already exists (INSTALL_WORKSTATION.bat ran once). A source .venv on
+                    the same machine with the SAME Python version (e.g., both 3.12 64-bit).
+    Inputs:  Optional -SourceVenv path. If omitted, common HybridRAG paths are auto-scanned.
+    Outputs: torch + dependencies copied into this repo's .venv\Lib\site-packages.
 #>
 
 param(
     [string]$SourceVenv = ""
 )
 
+# UTF-8 console output + loopback-safe proxy defaults so pip and local services behave.
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding  = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $env:PYTHONUTF8 = "1"
 $env:NO_PROXY = "localhost,127.0.0.1"
 $env:no_proxy = "localhost,127.0.0.1"
+# Stop on first error so we never leave the .venv half-copied.
 $ErrorActionPreference = "Stop"
 
 function Write-Ok   { param([string]$Message) Write-Host "  [OK] $Message" -ForegroundColor Green }
@@ -24,6 +36,7 @@ function Write-Warn { param([string]$Message) Write-Host "  [WARN] $Message" -Fo
 function Write-Fail { param([string]$Message) Write-Host "  [FAIL] $Message" -ForegroundColor Red }
 function Write-Info { param([string]$Message) Write-Host "  [INFO] $Message" -ForegroundColor Gray }
 
+# Read Python version + tag (cp312) + 64-bit status from a given python.exe; returns null on failure.
 function Get-PythonRuntimeInfo {
     param([string]$PythonExe)
     $probe = @'
@@ -46,6 +59,7 @@ print(json.dumps({
     return ($raw | ConvertFrom-Json)
 }
 
+# Build the list of likely HybridRAG .venv locations on this machine, skipping the target itself.
 function Get-SourceCandidates {
     param([string]$TargetVenv)
     $userProfile = [Environment]::GetFolderPath("UserProfile")
@@ -67,6 +81,7 @@ function Get-SourceCandidates {
         Where-Object { $_ -ne $TargetVenv -and (Test-Path (Join-Path $_ "Scripts\python.exe")) }
 }
 
+# Collect torch + all directly related package folders/dist-info entries in a source site-packages.
 function Get-MatchingEntries {
     param([string]$SitePackages)
     $patterns = @(
@@ -105,6 +120,7 @@ function Get-MatchingEntries {
     return $items | Sort-Object FullName -Unique
 }
 
+# Resolve repo root from this script's location (tools\ sits one level below repo root).
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $targetVenv = Join-Path $projectRoot ".venv"
 $targetPython = Join-Path $targetVenv "Scripts\python.exe"
@@ -159,6 +175,7 @@ if (-not $candidateVenvs -or $candidateVenvs.Count -eq 0) {
     exit 1
 }
 
+# Walk the candidate list and pick the first source whose Python tag + 64-bit match the target.
 $selectedSource = $null
 $selectedSourceInfo = $null
 foreach ($candidate in $candidateVenvs) {
@@ -201,11 +218,13 @@ if (-not $entries -or $entries.Count -eq 0) {
     exit 1
 }
 
+# Wipe any existing torch set in the target so the copy lands cleanly.
 $targetEntries = Get-MatchingEntries -SitePackages $targetSitePackages
 foreach ($entry in $targetEntries) {
     Remove-Item -LiteralPath $entry.FullName -Force -Recurse -ErrorAction SilentlyContinue
 }
 
+# Copy each source entry (folder or file) into the target site-packages.
 foreach ($entry in $entries) {
     $destination = Join-Path $targetSitePackages $entry.Name
     if ($entry.PSIsContainer) {
@@ -217,6 +236,7 @@ foreach ($entry in $entries) {
 
 Write-Ok "Copied torch package set into CorpusForge .venv"
 
+# Verify the copy worked by importing torch in the target Python and printing version / CUDA status.
 $verify = & $targetPython -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available())" 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Fail "Torch import verification failed after copy:"

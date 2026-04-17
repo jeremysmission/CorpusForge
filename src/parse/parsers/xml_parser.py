@@ -1,4 +1,11 @@
-"""XML parser — extracts text content from XML files."""
+"""
+XML parser -- reads .xml files and keeps just the readable text.
+
+Plain English: XML files mix structural tags and real content. This
+parser strips the tags and returns only the text content so it chunks
+cleanly. Prefers the ``lxml`` library; falls back to a simple regex
+strip if lxml isn't available.
+"""
 
 from __future__ import annotations
 
@@ -12,9 +19,10 @@ logger = logging.getLogger(__name__)
 
 
 class XmlParser:
-    """Parse .xml files — strips tags, preserves text content."""
+    """Read .xml files and return just the text inside the tags."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Read an .xml file and return its text content with tags stripped."""
         path = Path(file_path)
         try:
             try:

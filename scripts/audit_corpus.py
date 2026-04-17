@@ -1,13 +1,28 @@
 """
 CorpusForge Corpus Audit Tool (Sprint 4, Slice 4.3)
 
-Generates reports on the latest export:
+What it does for the operator:
+  Reads a finished export folder (the data/output/export_YYYYMMDD_HHMM one)
+  and prints a health snapshot so a reviewer / PM can tell whether the run
+  produced a clean corpus. Nothing is changed; this is read-only.
+
+Reports produced:
   - Corpus summary (files, chunks, entities, vectors)
-  - Format coverage breakdown
-  - Duplicate detection summary
-  - Quality score distribution
-  - Entity type distribution
-  - Skip/failure analysis
+  - Format coverage breakdown (how many chunks per file extension)
+  - Duplicate detection summary (how many chunk texts repeat)
+  - Quality score distribution (parse quality buckets)
+  - Entity type distribution (with average confidence)
+  - Skip/failure analysis (from skip_manifest.json)
+
+When to run it:
+  - Right after a pipeline run finishes, to sanity-check the export
+  - Before handing off an export folder to HybridRAG V2 for import
+  - During review, to spot-check a prior export
+
+Inputs:
+  --export-dir  Path to a specific export folder. If omitted, audits the
+                most recent export under data/output/.
+  --json        Print machine-readable JSON instead of the text report.
 
 Usage:
   python scripts/audit_corpus.py                    # Audit latest export
@@ -191,6 +206,7 @@ def print_report(results: dict) -> None:
 
 
 def main():
+    """Find (or accept) an export folder, run the audit, then print or emit JSON."""
     parser = argparse.ArgumentParser(description="CorpusForge Corpus Audit")
     parser.add_argument(
         "--export-dir",

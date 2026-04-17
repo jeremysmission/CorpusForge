@@ -1,9 +1,50 @@
 """
-CorpusForge nightly delta runner.
+CorpusForge nightly delta runner (in-process version).
 
-Detects new or changed files on the source share, mirrors only that delta
-locally, then runs the existing pipeline against the mirrored delta set while
-preserving original source provenance in the export package.
+What it does for the operator:
+  Like scripts/nightly_delta_ingest.py, but uses the in-process Pipeline
+  and transfer tracker directly (no subprocess call to run_pipeline.py).
+  This is the version invoked from the Windows scheduled task.
+
+Flow:
+  1. Scan the source share for new/changed files (tracked in a local
+     SQLite transfer state DB so restarts resume where they left off).
+  2. Copy that delta into the local mirror folder on C:.
+  3. Run the Forge pipeline against only the mirrored delta files, while
+     mapping chunk "source_path" back to the ORIGINAL share location so
+     the export reflects real provenance.
+
+Safety features:
+  - Responds to SIGINT/SIGTERM/SIGBREAK and to a sentinel "stop" file so
+    the operator can cleanly halt a long run (no corrupted state).
+  - Durable checkpoints mean the next run resumes mid-ingest if needed.
+  - Canary gate (optional) aborts if a known canary file is missing
+    from the detected delta.
+
+When to run it:
+  - Nightly, via Windows Task Scheduler (see install_nightly_delta_task.py)
+  - Manually, to kick off an unattended delta-only ingest
+
+Inputs:
+  --config           Active runtime config YAML path.
+  --dry-run          Scan only. No transfer or pipeline.
+  --transfer-only    Stop after local copy. No pipeline.
+  --chunk-only       Run the pipeline but skip embed/enrich/extract
+                     (safe on non-GPU or overloaded workstations).
+  --max-files        Optional scan cap for proof runs.
+  --require-canary   Fail if no canary file is in the detected delta.
+
+Outputs (under the configured manifest/log dirs):
+  nightly_delta_scan_<ts>.json        the scan result (new/changed files)
+  nightly_delta_transfer_<ts>.json    transfer results (bytes copied, errors)
+  nightly_delta_input_<ts>.txt        input list for the pipeline
+  nightly_delta_report_<ts>.json      final report (scan + transfer + pipeline)
+  nightly_delta_<ts>.log              full run log
+
+Exit codes:
+  0 = success
+  1 = hard error (e.g., canary gate failed with nothing to fall back on)
+  2 = soft partial (transfer had failures, or stop was requested)
 """
 
 from __future__ import annotations
@@ -32,13 +73,22 @@ logger = logging.getLogger("nightly_delta")
 
 @dataclass
 class StopController:
-    """Cooperative stop controller driven by signals or a sentinel file."""
+    """Cooperative stop controller driven by signals or a sentinel file.
+
+    An operator can halt a long nightly run two ways:
+      1. Press Ctrl-C (or send SIGTERM/SIGBREAK) to the running process.
+      2. Create the configured "stop file" on disk (e.g., touch a sentinel).
+
+    The pipeline polls stop_requested() between stages so it can shut down
+    cleanly (finish the current file, flush checkpoints, then exit).
+    """
 
     stop_file: Path | None
     requested: bool = False
     reason: str = ""
 
     def install_signal_handlers(self) -> None:
+        """Register handlers for Ctrl-C / SIGTERM / SIGBREAK so a polite stop is possible."""
         for name in ("SIGINT", "SIGTERM", "SIGBREAK"):
             sig = getattr(signal, name, None)
             if sig is None:
@@ -55,6 +105,7 @@ class StopController:
             logger.warning("Nightly delta stop requested via %s.", self.reason)
 
     def stop_requested(self) -> bool:
+        """Return True if a signal was received OR the stop sentinel file exists."""
         if self.requested:
             return True
         if self.stop_file and self.stop_file.exists():
@@ -65,6 +116,7 @@ class StopController:
 
 
 def _configure_logging(log_path: Path, level_name: str) -> None:
+    """Route logs to both stdout (so a human can tail) and the given log file."""
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_level = getattr(logging, level_name, logging.INFO)
     logging.basicConfig(
@@ -78,6 +130,7 @@ def _configure_logging(log_path: Path, level_name: str) -> None:
 
 
 def _write_json(path: Path, payload: dict) -> None:
+    """Write a dict to disk as pretty-printed UTF-8 JSON (with trailing newline)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(payload, handle, indent=2)
@@ -85,6 +138,7 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def _write_input_list(path: Path, files: list[Path]) -> None:
+    """Write file paths one-per-line as the input list that the pipeline will consume."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as handle:
         for file_path in files:
@@ -92,10 +146,12 @@ def _write_input_list(path: Path, files: list[Path]) -> None:
 
 
 def _clone_pipeline_config(config: ForgeConfig) -> ForgeConfig:
+    """Deep-copy the config so this nightly run can mutate paths without affecting the caller."""
     return config.model_copy(deep=True)
 
 
 def _build_source_mapper(source_root: Path, mirror_root: Path):
+    """Return a function that rewrites mirror paths back to their original source-share paths (for export provenance)."""
     resolved_source = source_root.resolve()
     resolved_mirror = mirror_root.resolve()
 
@@ -108,6 +164,7 @@ def _build_source_mapper(source_root: Path, mirror_root: Path):
 
 
 def _resolve_pipeline_paths(config: ForgeConfig) -> tuple[Path, Path]:
+    """Return (output_dir, state_db) for this nightly run, honoring nightly-delta overrides."""
     nightly = config.nightly_delta
     output_dir = Path(nightly.pipeline_output_dir) if nightly.pipeline_output_dir else Path(config.paths.output_dir)
     state_db = Path(nightly.pipeline_state_db) if nightly.pipeline_state_db else Path(config.paths.state_db)
@@ -115,6 +172,7 @@ def _resolve_pipeline_paths(config: ForgeConfig) -> tuple[Path, Path]:
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
+    """Construct the CLI argparse parser for the nightly delta runner."""
     parser = argparse.ArgumentParser(description="CorpusForge nightly delta runner")
     parser.add_argument("--config", default="config/config.yaml", help="Path to the active runtime config.")
     parser.add_argument("--dry-run", action="store_true", help="Scan only. Do not transfer or run the pipeline.")
@@ -126,6 +184,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Run the full nightly delta (scan -> transfer -> pipeline) and return an exit code."""
     args = _build_arg_parser().parse_args()
     config = load_config(args.config)
     nightly = config.nightly_delta

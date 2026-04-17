@@ -1,6 +1,19 @@
-"""MSG parser — extracts text from Outlook .msg email files.
+"""
+MSG parser -- reads Outlook .msg email files.
 
-Tries python-oxmsg first (MIT, best quality), falls back to olefile (BSD-2).
+Plain English: .msg is Outlook's proprietary email format. This parser
+pulls out the From/To/Subject/Date headers and the message body, then
+returns them as plain text so the Forge pipeline can chunk and index
+the email like any other document.
+
+Two strategies, tried in order:
+  1. python-oxmsg (best quality, clean field access).
+  2. olefile fallback that digs raw OLE2 streams out of the file when
+     the preferred library isn't installed or fails.
+
+If both strategies come back empty, the operator gets an empty text
+result rather than a crash.
+
 Ported from V1 (src/parsers/msg_parser.py).
 """
 
@@ -16,9 +29,10 @@ logger = logging.getLogger(__name__)
 
 
 class MsgParser:
-    """Parse Outlook .msg files."""
+    """Extract email headers and body from Outlook .msg files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .msg email and return its headers + body as text."""
         path = Path(file_path)
         text = self._try_oxmsg(path)
         if not text.strip():

@@ -1,9 +1,25 @@
 """
 Skip manager — determines which files to hash-only (not parse).
 
-Loads skip/defer rules from the active config file. Every skipped file is
-still SHA-256 hashed and recorded in the skip manifest for full corpus
-accounting.
+Plain-English role
+------------------
+Stage 3 of the pipeline. Before Forge starts parsing, this module
+inspects each file and asks: can we (or should we) parse it at all?
+Rules come from the live operator config and include:
+
+  - zero-byte files
+  - temp-file prefixes/extensions
+  - files over the configured size limit
+  - OCR sidecar outputs (DjVu, hOCR, etc.)
+  - image-only files when OCR is disabled for this run
+  - password-protected files (detected by magic bytes or filename cue)
+  - deferred extensions (anything the operator asked to skip this run)
+
+If a file is skipped, it is still SHA-256 hashed and recorded in
+``skip_manifest.json`` alongside the export so nothing is hidden from
+the operator. The "deferred" bucket is distinct from "skipped" so
+operators can see formats that are postponed vs formats that cannot
+be processed by this install.
 """
 
 from __future__ import annotations
@@ -108,6 +124,7 @@ class SkipManager:
         extra_deferred_exts: dict[str, str] | None = None,
         ocr_mode: str = "auto",
     ):
+        """Load skip rules from config and prepare the running skip manifest."""
         self.hasher = hasher
         self._skipped: list[dict] = []
         self._reason_counts: dict[str, int] = defaultdict(int)
@@ -284,10 +301,12 @@ class SkipManager:
 
     @property
     def skip_count(self) -> int:
+        """Total number of files recorded as skipped this run."""
         return len(self._skipped)
 
     @property
     def deferred_extensions(self) -> set[str]:
+        """Set of extensions currently configured as deferred (hash-only)."""
         return set(self._deferred_exts)
 
     def get_skip_manifest(self) -> dict:

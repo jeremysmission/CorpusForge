@@ -1,5 +1,30 @@
 """
 Install or emit the Windows Task Scheduler entry for the nightly delta lane.
+
+What it does for the operator:
+  Generates a Windows Task Scheduler XML file that runs
+  scripts/run_nightly_delta.py every day at a configured time. Optionally
+  registers that task on this machine via `schtasks /create`.
+
+  Running without --install just writes the XML (safe, read-only to your
+  system). Running WITH --install actually creates or replaces the task.
+
+When to run it:
+  - Once, when setting up a new workstation for nightly ingests
+  - Again, after changing the configured task name or start time
+  - To emit a portable XML you can install by hand or on another box
+
+Inputs:
+  --config        Active runtime config YAML path.
+  --python-exe    Full path to the venv Python used to run the task.
+  --task-name     Override the configured Task Scheduler task name.
+  --start-time    Override the configured daily start time (HH:MM).
+  --emit-xml      Where to write the generated XML (default: under config/).
+  --install       Call `schtasks /create` to register the task.
+  --force         Pass `/f` to schtasks to replace an existing same-named task.
+
+Outputs: the XML file on disk, and (with --install) a scheduled task on
+this machine. Exit 0 on success; otherwise the schtasks return code.
 """
 
 from __future__ import annotations
@@ -17,6 +42,7 @@ from src.config.schema import load_config
 
 
 def _task_xml(*, task_name: str, start_time: str, python_exe: Path, config_path: Path) -> str:
+    """Build the Windows Task Scheduler XML body (UTF-16) for the nightly delta task."""
     return dedent(
         f"""\
         <?xml version="1.0" encoding="UTF-16"?>
@@ -65,6 +91,7 @@ def _task_xml(*, task_name: str, start_time: str, python_exe: Path, config_path:
 
 
 def main() -> int:
+    """Parse CLI flags, write the task XML, and (if requested) register it with Windows Task Scheduler."""
     parser = argparse.ArgumentParser(description="Install the CorpusForge nightly delta scheduled task.")
     parser.add_argument("--config", default="config/config.yaml", help="Active runtime config path.")
     parser.add_argument("--python-exe", default=str(PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"))

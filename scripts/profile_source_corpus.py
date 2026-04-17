@@ -1,4 +1,34 @@
-"""Profile a source tree to guide parser, skip/defer, and retrieval tuning."""
+"""
+Profile a source tree to guide parser, skip/defer, and retrieval tuning.
+
+What it does for the operator:
+  Walks a source folder and gathers metadata (no parsing, no GPU, no
+  hashing of file contents). Produces a Markdown report (printed to the
+  terminal) and optional JSON summarizing:
+    - Extension distribution (what formats dominate the corpus?)
+    - Size distribution (how big are the files?)
+    - Suspected duplicate folders (identical recursive signatures)
+    - Other heuristics useful for planning
+
+  Use it BEFORE deciding what to skip/defer, how many workers to run, and
+  how much disk / time a full ingest will need.
+
+When to run it:
+  - First look at a new corpus
+  - When planning skip / defer rules in config.yaml
+  - To size overnight ingests before running them
+
+Inputs:
+  --root                       Root directory to profile (required).
+  --output-json                Optional JSON report path.
+  --output-md                  Optional Markdown report path.
+  --top-n                      How many top rows to include in summaries.
+  --min-duplicate-dir-files    Minimum files before a folder is considered
+                               for duplicate-folder grouping.
+  --max-files                  Optional scan cap for proof runs.
+
+Outputs: Markdown report to stdout, plus optional JSON and Markdown files.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +44,7 @@ from src.analysis.corpus_profiler import build_markdown_report, profile_source_t
 
 
 def parse_args() -> argparse.Namespace:
+    """Read and validate CLI flags for the corpus profile run."""
     parser = argparse.ArgumentParser(description="Profile a source tree with metadata-only heuristics.")
     parser.add_argument("--root", required=True, help="Root directory to profile.")
     parser.add_argument("--output-json", default="", help="Optional JSON report path.")
@@ -30,6 +61,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def _resolve_output(path_text: str) -> Path:
+    """Resolve an output path to absolute form (relative paths are anchored at the project root)."""
     path = Path(path_text)
     if not path.is_absolute():
         path = (PROJECT_ROOT / path).resolve()
@@ -37,6 +69,7 @@ def _resolve_output(path_text: str) -> Path:
 
 
 def main() -> int:
+    """Run the profiler, print the Markdown report, and (optionally) persist JSON/MD copies."""
     args = parse_args()
     report = profile_source_tree(
         args.root,

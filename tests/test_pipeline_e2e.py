@@ -1,4 +1,19 @@
-"""End-to-end pipeline tests — chunk-only and full pipeline on real files."""
+"""End-to-end pipeline tests — chunk-only and full pipeline on real files.
+
+Plain-English summary for operators:
+This is Forge's largest QA file. It runs the entire pipeline on tiny
+sample files and proves that (1) chunk-only mode works without loading
+any models, (2) live progress stats are emitted to the GUI during a
+run, (3) Stop Safely actually stops the pipeline at any stage and
+still produces a consistent export, (4) crash/resume correctly picks
+up from a checkpoint without reparsing completed files, and (5) the
+export follows the V2 import contract (chunks and vectors counts
+match, schema is correct, manifest is written). If these tests fail,
+the operator could see: corrupted exports with mismatched chunks and
+vectors, Stop that does nothing, lost work after a crash, missing
+manifest, or the pipeline silently skipping enrichment when Ollama is
+down.
+"""
 import json
 from pathlib import Path
 
@@ -54,6 +69,7 @@ def config_chunk_only(source_dir, tmp_path):
 # --- chunk-only mode ---
 
 def test_chunk_only_produces_chunks(config_chunk_only):
+    """Protects chunk-only mode — operator can run the pipeline without loading any GPU models, only chunks are produced."""
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
     files = [f for f in files if f.is_file()]
@@ -66,6 +82,7 @@ def test_chunk_only_produces_chunks(config_chunk_only):
 
 
 def test_pipeline_emits_live_stats_updates(config_chunk_only):
+    """Protects live GUI stats — operator must see chunk counts updating during a run, not just at the end."""
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
     files = [f for f in files if f.is_file()]
@@ -82,6 +99,7 @@ def test_pipeline_emits_live_stats_updates(config_chunk_only):
 
 
 def test_pipeline_stop_request_packages_partial_work(config_chunk_only):
+    """Protects Stop-mid-run — when the operator stops after some chunks exist, the export should still package that partial work."""
     config_chunk_only.pipeline.workers = 1
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
@@ -108,6 +126,7 @@ def test_pipeline_stop_request_packages_partial_work(config_chunk_only):
 
 
 def test_pipeline_parse_stage_calls_out_cpu_io_work(config_chunk_only):
+    """Protects the stage label shown in the GUI during parse — operator must see 'CPU/IO parse' so slow stages look explainable."""
     config_chunk_only.pipeline.workers = 1
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
@@ -123,6 +142,7 @@ def test_pipeline_parse_stage_calls_out_cpu_io_work(config_chunk_only):
 
 
 def test_pipeline_emits_export_stage(config_chunk_only):
+    """Protects the export-stage events — operator must see both 'starting export' and 'Done export' in the log."""
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
     files = [f for f in files if f.is_file()]
@@ -140,7 +160,12 @@ def test_pipeline_emits_export_stage(config_chunk_only):
 
 
 def test_pipeline_embed_stop_truncates_chunks_to_match_vectors(config_chunk_only, monkeypatch):
-    """Cooperative stop fired mid-embed must keep chunks/vectors aligned in the export."""
+    """Cooperative stop fired mid-embed must keep chunks/vectors aligned in the export.
+
+    Protects against a Stop during embedding shipping an export where chunk count does not equal vector count — V2 import would reject that.
+    """
+    # The stub below replaces the real embedder so the test does not have to
+    # load a GPU model; it returns zero-vectors of a fixed small size.
     config_chunk_only.embed.enabled = True
     config_chunk_only.pipeline.workers = 1
     config_chunk_only.pipeline.embed_flush_batch = 1
@@ -185,7 +210,12 @@ def test_pipeline_embed_stop_truncates_chunks_to_match_vectors(config_chunk_only
 
 
 def test_pipeline_skips_extraction_when_stopped(config_chunk_only, monkeypatch):
-    """Stop during embed should also skip GLiNER extraction so we don't burn time on a doomed run."""
+    """Stop during embed should also skip GLiNER extraction so we don't burn time on a doomed run.
+
+    Protects against wasted minutes — once Stop is pressed, downstream stages like entity extraction must not still run.
+    """
+    # Stubs below replace the real embedder/extractor so the test does not
+    # load GPU models; they only prove the stages are called (or skipped).
     config_chunk_only.embed.enabled = True
     config_chunk_only.extract.enabled = True
 
@@ -224,7 +254,11 @@ def test_pipeline_skips_extraction_when_stopped(config_chunk_only, monkeypatch):
 
 def test_pipeline_live_embed_flush_starts_before_parse_finishes(config_chunk_only, monkeypatch):
     """Embed-enabled runs should start producing vectors during parse rather than
-    waiting until all files are fully parsed/chunked."""
+    waiting until all files are fully parsed/chunked.
+
+    Protects the streaming embed design — vectors should flow to the GPU as soon as chunks are ready, so long parse stages do not block embed idle-time.
+    """
+    # Stub embedder returns fixed small vectors so we do not need a GPU.
     config_chunk_only.embed.enabled = True
     config_chunk_only.enrich.enabled = False
     config_chunk_only.pipeline.workers = 1
@@ -267,7 +301,12 @@ def test_pipeline_live_embed_flush_starts_before_parse_finishes(config_chunk_onl
 def test_pipeline_stop_before_embed_does_not_ship_mismatched_export(config_chunk_only, monkeypatch):
     """QA H1: when embed is enabled but stop fires before embed runs, the
     pipeline must NOT write a chunks+vectors export with mismatched lengths.
-    Ship nothing instead and report export_dir="" so the GUI tells the truth."""
+    Ship nothing instead and report export_dir="" so the GUI tells the truth.
+
+    Protects against a half-baked export being written to disk — operator sees 'no export written' instead of a corrupt one.
+    """
+    # Stub embedder raises if called; proves embed never runs when stop
+    # fires before embed.
     config_chunk_only.embed.enabled = True
     config_chunk_only.extract.enabled = False
 
@@ -309,7 +348,10 @@ def test_pipeline_stop_before_embed_does_not_ship_mismatched_export(config_chunk
 
 def test_pipeline_stop_before_dedup_reports_no_export(config_chunk_only):
     """QA H2: stop-before-dedup must return with export_dir='' so the GUI does
-    not falsely log 'completed work was packaged'."""
+    not falsely log 'completed work was packaged'.
+
+    Protects the honest-wording rule — if the operator stopped the run before anything happened, the GUI must not claim an export was packaged.
+    """
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
     files = [f for f in files if f.is_file()]
@@ -327,7 +369,11 @@ def test_pipeline_stop_before_dedup_reports_no_export(config_chunk_only):
 
 
 def test_pipeline_stop_before_embed_leaves_durable_chunk_checkpoint(config_chunk_only, monkeypatch):
-    """A stop before embed must still leave chunk data durably checkpointed on disk."""
+    """A stop before embed must still leave chunk data durably checkpointed on disk.
+
+    Protects resume after stop — even though no export was shipped, the partial work is saved so the next run reuses it.
+    """
+    # Stub embedder raises if called; proves embed does not run.
     config_chunk_only.embed.enabled = True
     config_chunk_only.pipeline.workers = 1
 
@@ -364,7 +410,10 @@ def test_pipeline_stop_before_embed_leaves_durable_chunk_checkpoint(config_chunk
 
 def test_pipeline_resume_from_chunk_checkpoint_after_stop_before_embed(config_chunk_only, monkeypatch):
     """A rerun should reuse checkpointed chunks and only parse the files that were
-    not yet checkpointed when the prior run was stopped."""
+    not yet checkpointed when the prior run was stopped.
+
+    Protects the resume story — the second run finishes the job without re-parsing files that were already done before the stop.
+    """
     config_chunk_only.embed.enabled = True
     config_chunk_only.pipeline.workers = 1
 
@@ -413,7 +462,11 @@ def test_pipeline_resume_from_chunk_checkpoint_after_stop_before_embed(config_ch
 
 def test_pipeline_resume_from_chunk_checkpoint_with_enrichment_enabled(config_chunk_only, monkeypatch):
     """Resume must still work when enrichment is enabled; completed docs should
-    not be reparsed just to rebuild doc_texts for the enricher."""
+    not be reparsed just to rebuild doc_texts for the enricher.
+
+    Protects resume when the enrichment stage is turned on — already-parsed files should not be parsed again just to rebuild context for the LLM.
+    """
+    # Stubs for embedder and enricher so the test does not call real models.
     config_chunk_only.embed.enabled = True
     config_chunk_only.enrich.enabled = True
     config_chunk_only.pipeline.workers = 1
@@ -467,7 +520,10 @@ def test_pipeline_resume_from_chunk_checkpoint_with_enrichment_enabled(config_ch
 
 def test_pipeline_resume_ignores_changed_checkpointed_file(config_chunk_only, monkeypatch):
     """If a checkpointed source file changes before resume, the old checkpointed
-    chunks must be discarded and the file must be reparsed."""
+    chunks must be discarded and the file must be reparsed.
+
+    Protects against stale-checkpoint bugs — if a source file was edited between the stop and the resume, Forge must not ship the old chunks for it.
+    """
     config_chunk_only.embed.enabled = True
     config_chunk_only.pipeline.workers = 1
 
@@ -513,7 +569,10 @@ def test_pipeline_resume_ignores_changed_checkpointed_file(config_chunk_only, mo
 
 def test_pipeline_crash_before_export_leaves_checkpoint_and_resumes(config_chunk_only, monkeypatch):
     """A crash after parse/chunk but before export must leave a synced checkpoint
-    that a rerun can use without reparsing completed documents."""
+    that a rerun can use without reparsing completed documents.
+
+    Protects crash recovery — if the embed stage blows up after parsing is done, the next run picks up where it crashed instead of redoing hours of parse work.
+    """
     config_chunk_only.embed.enabled = True
     config_chunk_only.pipeline.workers = 1
 
@@ -557,6 +616,7 @@ def test_pipeline_crash_before_export_leaves_checkpoint_and_resumes(config_chunk
 
 
 def test_chunk_only_writes_jsonl(config_chunk_only):
+    """Protects the export file format — chunks.jsonl must be written with the fields V2 expects on every row."""
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
     files = [f for f in files if f.is_file()]
@@ -583,6 +643,7 @@ def test_chunk_only_writes_jsonl(config_chunk_only):
 
 
 def test_chunk_only_manifest(config_chunk_only):
+    """Protects the export manifest — every export must carry a manifest.json with a non-zero chunk count."""
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
     files = [f for f in files if f.is_file()]
@@ -595,6 +656,7 @@ def test_chunk_only_manifest(config_chunk_only):
 
 
 def test_chunk_only_no_vectors_file(config_chunk_only):
+    """Protects the chunk-only contract — when embedding is off, any vectors.npy that does exist must be empty."""
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
     files = [f for f in files if f.is_file()]
@@ -611,6 +673,7 @@ def test_chunk_only_no_vectors_file(config_chunk_only):
 # --- incremental mode ---
 
 def test_incremental_skips_unchanged(config_chunk_only):
+    """Protects incremental-mode runs — the second pass on an unchanged corpus should do nothing, not re-process everything."""
     config_chunk_only.pipeline.full_reindex = False
     p = Pipeline(config_chunk_only)
     files = sorted(Path(config_chunk_only.paths.source_dirs[0]).rglob("*"))
@@ -629,6 +692,7 @@ def test_incremental_skips_unchanged(config_chunk_only):
 # --- sidecar filtering in pipeline ---
 
 def test_pipeline_skips_sidecar_files(config_chunk_only, source_dir):
+    """Protects against OCR sidecar junk (djvu/hocr XML etc.) being parsed and shipped as if it were real content."""
     # Add sidecar junk files
     (source_dir / "report_djvu.xml").write_text("<djvu>junk</djvu>")
     (source_dir / "report_hocr.html").write_text("<html>ocr junk</html>")
@@ -646,6 +710,7 @@ def test_pipeline_skips_sidecar_files(config_chunk_only, source_dir):
 # --- enrichment fail-loud ---
 
 def test_pipeline_fails_loud_bad_ollama(config_chunk_only):
+    """Protects the fail-loud rule — if enrichment is requested but Ollama is unreachable, Forge must refuse to start."""
     config_chunk_only.enrich.enabled = True
     config_chunk_only.enrich.ollama_url = "http://127.0.0.1:59999"
     with pytest.raises(RuntimeError, match="Enrichment is enabled but not available"):
@@ -653,12 +718,14 @@ def test_pipeline_fails_loud_bad_ollama(config_chunk_only):
 
 
 def test_pipeline_ok_enrichment_disabled(config_chunk_only):
+    """Protects the common chunk-only case — Forge must boot fine when enrichment is disabled (no Ollama needed)."""
     config_chunk_only.enrich.enabled = False
     p = Pipeline(config_chunk_only)  # Should not raise
     assert p is not None
 
 
 def test_pipeline_env_overrides_parser_modes(config_chunk_only, monkeypatch):
+    """Protects environment-variable overrides — ops can force docling/OCR mode from the shell without editing config."""
     monkeypatch.setenv("HYBRIDRAG_DOCLING_MODE", "prefer")
     monkeypatch.setenv("HYBRIDRAG_OCR_MODE", "skip")
     config_chunk_only.parse.docling_mode = "off"

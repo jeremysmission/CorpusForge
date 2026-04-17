@@ -1,6 +1,26 @@
 """
 CorpusForge configuration schema.
 
+Plain-English role
+------------------
+Defines the shape of ``config/config.yaml``. Each subsection below
+controls one pipeline stage:
+
+  - ``paths``          : where to read source files, where exports go,
+                         where the state DB lives.
+  - ``chunk``          : chunk size / overlap / heading length.
+  - ``parse``          : parser timeout, OCR mode, Docling mode,
+                         deferred extensions.
+  - ``embed``          : embedding model, device (cuda/cpu), batch
+                         token budget, precision.
+  - ``enrich``         : optional LLM preamble stage (phi4 via Ollama).
+  - ``extract``        : optional GLiNER entity extraction stage.
+  - ``pipeline``       : orchestrator settings (workers, stale
+                         watchdog timeout, live-embed flush batch).
+  - ``nightly_delta``  : optional scheduled nightly source mirror +
+                         pipeline run.
+  - ``hardware``       : per-machine preset (GPU index, batch hint).
+
 Single config, no modes. Validated once at boot, immutable after.
 Priority: config.yaml values -> Pydantic defaults.
 """
@@ -58,6 +78,7 @@ class ChunkConfig(BaseModel):
 
     @model_validator(mode="after")
     def overlap_less_than_size(self) -> "ChunkConfig":
+        """Enforce that overlap is strictly smaller than chunk size."""
         if self.overlap >= self.size:
             raise ValueError(f"overlap ({self.overlap}) must be less than size ({self.size})")
         return self
@@ -84,6 +105,7 @@ class ParseConfig(BaseModel):
     @field_validator("ocr_mode")
     @classmethod
     def validate_ocr_mode(cls, v: str) -> str:
+        """Allow only skip/auto/force for OCR mode."""
         allowed = {"skip", "auto", "force"}
         if v not in allowed:
             raise ValueError(f"ocr_mode must be one of {allowed}, got '{v}'")
@@ -92,6 +114,7 @@ class ParseConfig(BaseModel):
     @field_validator("docling_mode")
     @classmethod
     def validate_docling_mode(cls, v: str) -> str:
+        """Allow only off/fallback/prefer for Docling mode."""
         allowed = {"off", "fallback", "prefer"}
         if v not in allowed:
             raise ValueError(f"docling_mode must be one of {allowed}, got '{v}'")
@@ -100,6 +123,7 @@ class ParseConfig(BaseModel):
     @field_validator("defer_extensions")
     @classmethod
     def normalize_defer_extensions(cls, values: list[str]) -> list[str]:
+        """Normalize deferred extensions to lowercase, leading-dot form."""
         return _normalize_extension_list(values)
 
 
@@ -128,6 +152,7 @@ class EmbedConfig(BaseModel):
     @field_validator("device")
     @classmethod
     def validate_device(cls, v: str) -> str:
+        """Only allow cuda or cpu as embedding device."""
         allowed = {"cuda", "cpu"}
         if v not in allowed:
             raise ValueError(f"device must be one of {allowed}, got '{v}'")
@@ -275,6 +300,7 @@ class NightlyDeltaConfig(BaseModel):
     @field_validator("task_start_time")
     @classmethod
     def validate_task_start_time(cls, v: str) -> str:
+        """Require HH:MM 24-hour format for the nightly Task Scheduler start time."""
         parts = v.split(":")
         if len(parts) != 2:
             raise ValueError("task_start_time must use HH:MM 24-hour format")

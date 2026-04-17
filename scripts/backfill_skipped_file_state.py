@@ -1,13 +1,26 @@
 """
 Backfill file-state entries for legacy deferred or unsupported files.
 
-Purpose:
-  Hash files that were historically discovered but may never have entered
-  file_state tracking because they were skipped, deferred, or unsupported.
+What it does for the operator:
+  Walks a source folder and records (hashes + stores) an entry in the
+  state DB for every file that Forge would have SKIPPED (unsupported
+  extension) or DEFERRED (e.g., .zip handled by a later pipeline). This
+  keeps restart / resume accounting honest: nothing is missing just because
+  it was never parseable.
 
-Safety:
-  By default this script only backfills deferred and unsupported files.
-  It does not mark parseable files as already indexed.
+  Safety note: This script does NOT touch parseable files. Only files that
+  would never be parsed on their own (deferred/unsupported) are recorded.
+
+When to run it:
+  - After importing a legacy corpus that predates the current file_state logic
+  - After adding a new extension to the defer list, to catalog older files
+  - During a post-run cleanup when the skip manifest is incomplete
+
+Inputs:
+  --input    File or folder to scan (required).
+  --config   Config YAML path (default config/config.yaml).
+  --limit    Optional cap on how many files to backfill (0 = no cap).
+  --dry-run  Print what WOULD be backfilled but do not write to the state DB.
 """
 
 from __future__ import annotations
@@ -27,6 +40,7 @@ from src.skip.skip_manager import load_deferred_extension_map
 
 
 def parse_args() -> argparse.Namespace:
+    """Read and validate CLI flags for the backfill run."""
     parser = argparse.ArgumentParser(description="Backfill file_state for deferred/unsupported files.")
     parser.add_argument("--input", required=True, help="Input file or directory to scan.")
     parser.add_argument(
@@ -49,6 +63,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def discover_files(input_path: Path) -> list[Path]:
+    """Return a sorted list of files under the given path (or just the file itself)."""
     if input_path.is_file():
         return [input_path]
     if input_path.is_dir():
@@ -57,6 +72,7 @@ def discover_files(input_path: Path) -> list[Path]:
 
 
 def classify_file(path: Path, supported: set[str], deferred: dict[str, str]) -> tuple[str | None, str]:
+    """Label a file as 'deferred', 'unsupported', or None (parseable, skip from backfill)."""
     ext = path.suffix.lower()
     if ext in deferred:
         return "deferred", deferred[ext]
@@ -72,6 +88,7 @@ def backfill_file_state(
     limit: int = 0,
     dry_run: bool = False,
 ) -> dict:
+    """Scan files, hash each deferred/unsupported one, and update the state DB (or report only in dry-run)."""
     config = load_config(config_path)
     files = discover_files(input_path)
 
@@ -127,6 +144,7 @@ def backfill_file_state(
 
 
 def main() -> None:
+    """Run the backfill and print the final summary block."""
     args = parse_args()
     config_path = Path(args.config)
     if not config_path.is_absolute():

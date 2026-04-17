@@ -5,6 +5,12 @@ Ported from HybridRAG V1 (src/gui/testing/gui_engine.py).
 Discovers all clickable widgets, invokes them safely, captures state
 snapshots before/after each action, diffs file system and core state,
 and tracks per-action performance metrics including p95.
+
+Plain-English view: this file is the "virtual operator". Given a
+headless Forge window (see :mod:`gui_boot`), it walks the widget tree,
+finds every button/spinbox/checkbox, clicks each one, and records
+whether anything crashed and how long each click took. It is only
+used by automated tests and never runs during a normal Forge session.
 """
 
 from __future__ import annotations
@@ -19,7 +25,13 @@ from typing import Any
 
 
 class ForgeGuiEngine:
-    """Behavioral test engine for CorpusForge GUI."""
+    """The virtual operator - drives the Forge GUI from automated tests.
+
+    Given a headless Forge app, this engine discovers every button,
+    spinbox, and checkbox, safely invokes each one, and records a
+    report of crashes, timings, and file-system changes. It is only
+    used by the automated test harness; operators never run it.
+    """
 
     def __init__(self, app):
         self.app = app

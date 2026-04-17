@@ -1,9 +1,18 @@
 """
-Certificate parser -- extracts metadata from X.509 certificates.
+Certificate parser -- reads X.509 security certificates.
 
-Reads .cer, .crt, .pem files and produces human-readable text.
+Plain English: handles .cer / .crt / .pem files, which hold the
+identity and signing info for servers, code-signing keys, and similar
+security artifacts. This parser pulls out the human-readable details
+(Subject, Issuer, Serial, validity dates, DNS names, signature
+algorithm) and returns them as text so the Forge pipeline can index
+them alongside regular documents.
+
+Uses the optional ``cryptography`` library. If it isn't installed, the
+parser returns empty text and logs a debug note -- the pipeline keeps
+moving.
+
 Ported from V1 (src/parsers/certificate_parser.py).
-Dependencies: pip install cryptography (optional, graceful fallback).
 """
 
 from __future__ import annotations
@@ -17,9 +26,10 @@ logger = logging.getLogger(__name__)
 
 
 class CertificateParser:
-    """Parse X.509 certificate files (.cer, .crt, .pem)."""
+    """Extract identity and validity fields from X.509 .cer/.crt/.pem files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a certificate file and return its fields as text."""
         path = Path(file_path)
         text = ""
         quality = 0.0

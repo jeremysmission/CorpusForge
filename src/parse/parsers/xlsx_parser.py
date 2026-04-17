@@ -1,7 +1,16 @@
-"""XLSX parser — extracts text from Excel spreadsheets via openpyxl.
+"""
+XLSX parser -- reads modern Excel (.xlsx) spreadsheets.
 
-Each sheet is tagged with [SHEET] for traceability.
-First non-empty row treated as header. Rows rendered as key-value pairs.
+Plain English: opens an Excel workbook and turns each sheet into text
+the Forge pipeline can chunk. Each sheet gets a ``[SHEET] <name>``
+header so operators can trace chunks back to the right tab. The first
+non-empty row is treated as the column header, and the remaining rows
+are rendered as ``Header: value, Header: value`` pairs so an engineer
+reading a retrieved chunk can still tell which column a value came from.
+
+Uses openpyxl in read-only mode for speed. Hard cap of 100,000 rows
+per sheet protects against runaway spreadsheets.
+
 Ported from V1 (src/parsers/office_xlsx_parser.py).
 """
 
@@ -14,13 +23,14 @@ from src.parse.parsers.txt_parser import ParsedDocument
 
 logger = logging.getLogger(__name__)
 
-_MAX_ROWS = 100_000
+_MAX_ROWS = 100_000  # safety cap: stop reading a sheet after this many rows
 
 
 class XlsxParser:
-    """Parse .xlsx files using openpyxl in read-only mode."""
+    """Extract text from modern Excel .xlsx workbooks, sheet by sheet."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an .xlsx file and return all sheets rendered as key-value text."""
         path = Path(file_path)
         try:
             from openpyxl import load_workbook

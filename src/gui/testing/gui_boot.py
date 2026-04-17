@@ -4,6 +4,13 @@ CorpusForge GUI Testing -- Headless Boot
 Boots the full GUI in headless mode for automated testing.
 The app is created, updated once (so all widgets exist), but never
 enters mainloop. Test code can then introspect and invoke widgets.
+
+Plain-English view: this file lets automated tests pretend to be an
+operator. It builds the same Forge window a real operator would see,
+but hides it and never starts the event loop. Combined with
+:mod:`gui_engine`, it is the "virtual operator" that clicks every
+button on the window to verify nothing crashes. Nothing here runs
+during a real Forge session.
 """
 
 from __future__ import annotations

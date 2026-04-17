@@ -1,4 +1,14 @@
-"""Regression tests for export artifact inspection logic."""
+"""Regression tests for export artifact inspection logic.
+
+Plain-English summary for operators:
+After a run, Forge can re-open a finished export directory and produce
+a summary: which file types made it into the chunks, which document
+families dominate, the parse-quality distribution, the top skip
+reasons, and the top failure reasons. This is the post-run inspection
+tool operators and reviewers use to grade a run. If these tests fail,
+reviewers could see wrong numbers in the summary — undermining trust
+in every run.
+"""
 
 import json
 from pathlib import Path
@@ -7,6 +17,7 @@ from src.analysis.export_artifact_analyzer import analyze_export_artifacts
 
 
 def test_analyze_export_artifacts_summarizes_export_and_failure_inputs(tmp_path: Path) -> None:
+    """Protects the end-of-run inspection — all roll-up counts (chunks by ext, families, parse quality, skips, failures) must be computed correctly."""
     export_dir = tmp_path / "export"
     export_dir.mkdir()
 

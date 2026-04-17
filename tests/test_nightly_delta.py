@@ -1,4 +1,14 @@
-"""Regression tests for nightly delta ingest behavior."""
+"""Regression tests for nightly delta ingest behavior.
+
+Plain-English summary for operators:
+Forge supports a nightly delta mode: an unattended scheduled run that
+only pulls in new or changed files since the last pass. A canary file
+(e.g., 'nightly_canary_note.txt') confirms the upstream mount is
+really where it should be. This file protects the delta tracker's new
+vs. unchanged accounting and the end-to-end scheduled run. If these
+tests fail, operators could see overnight runs that re-ingest the
+entire corpus each night, or that stop detecting changes entirely.
+"""
 
 import json
 import subprocess
@@ -11,6 +21,7 @@ from src.download.delta_tracker import NightlyDeltaTracker
 
 
 def test_delta_tracker_reuses_hashed_and_canary_matches(tmp_path: Path) -> None:
+    """Protects the nightly delta counter — after mirroring the canary, the next scan must show it as 'unchanged', not as a new delta."""
     source_root = tmp_path / "source"
     source_root.mkdir()
     canary = source_root / "nightly_canary_note.txt"
@@ -37,6 +48,7 @@ def test_delta_tracker_reuses_hashed_and_canary_matches(tmp_path: Path) -> None:
 
 
 def test_run_nightly_delta_preserves_original_source_path(tmp_path: Path) -> None:
+    """Protects nightly delta end-to-end — chunks in the export must carry the original source path, not the mirror staging path, so operators can trace back to the origin."""
     source_root = tmp_path / "igs_source"
     source_root.mkdir()
     mirror_root = tmp_path / "mirror"

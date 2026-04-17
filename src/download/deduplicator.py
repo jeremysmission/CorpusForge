@@ -1,9 +1,19 @@
 """
 Deduplicator — detects and eliminates duplicate files before processing.
 
-Two dedup strategies:
-  1. _N suffix detection: Report.docx and Report_1.docx with same hash -> skip _N
-  2. Content-hash dedup: any files with identical SHA-256 -> process only once
+Plain-English role
+------------------
+Stage 2 of the pipeline. After hashing, Forge still may have the same
+document twice: once as ``Report.docx`` and again as ``Report_1.docx``,
+or simply two files with identical contents in different folders. This
+module keeps the work list lean:
+
+  - If a file is unchanged since the last successful run (same hash),
+    skip it quietly.
+  - If a file is a ``_N`` suffix copy of a real file with identical
+    contents, skip it and mark it as a duplicate.
+  - If two files in the same batch share a hash, process only the
+    first one seen.
 
 54% of the production corpus consists of _1 suffix duplicates (measured).
 """
@@ -30,9 +40,10 @@ _SUFFIX_RE = re.compile(r"^(.+?)_(\d+)$")
 
 
 class Deduplicator:
-    """Filters file lists to only new/changed files."""
+    """Filters the candidate file list down to new, changed, or non-duplicate files."""
 
     def __init__(self, hasher: Hasher):
+        """Bind to the shared Hasher that owns the SQLite state DB."""
         self.hasher = hasher
         self.skipped_unchanged = 0
         self.skipped_duplicate = 0

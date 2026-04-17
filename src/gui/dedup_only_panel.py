@@ -1,4 +1,15 @@
-"""Dedup-only panel -- standalone dedup scan UI component extracted from CorpusForgeApp."""
+"""Dedup-only panel -- standalone dedup scan UI component extracted from CorpusForgeApp.
+
+This is the "Dedup-Only Pass" group in the main Forge window. An
+operator uses it to run ONLY the duplicate-detection stage against a
+source folder - no parsing, no chunking, no embedding. It hashes every
+file, labels each one canonical or duplicate, writes a canonical file
+list, a JSON report, and (optionally) a portable "deduped_sources/"
+folder containing one copy per canonical file.
+
+It controls exactly one pipeline stage: the dedup pass. The resulting
+``canonical_files.txt`` can then feed a follow-up full pipeline run.
+"""
 from __future__ import annotations
 
 import tkinter as tk
@@ -8,6 +19,7 @@ from .theme import FONT, FONT_SMALL, current_theme
 
 
 def _format_elapsed(seconds: float) -> str:
+    """Format a seconds count as a human-readable H:MM:SS or M:SS string."""
     seconds = max(0, int(seconds))
     h, remainder = divmod(seconds, 3600)
     m, s = divmod(remainder, 60)
@@ -17,7 +29,13 @@ def _format_elapsed(seconds: float) -> str:
 
 
 class DedupOnlyPanel:
-    """Dedup-only pass panel -- source path, start/stop, live progress."""
+    """The Dedup-Only panel - run just the dedup pass on a source folder.
+
+    Lets the operator pick a source and export folder, toggle whether
+    to save a portable copy of the deduplicated source, and click
+    "Run Dedup Only". The actual scanning happens in a background
+    thread (:class:`DedupOnlyRunner`); this panel only shows progress.
+    """
 
     def __init__(self, parent: ttk.LabelFrame, root: tk.Tk,
                  on_dedup_only_start=None, on_dedup_only_stop=None,
@@ -31,6 +49,7 @@ class DedupOnlyPanel:
         self._build(parent)
 
     def _build(self, parent):
+        """Assemble the source/output pickers, action buttons, and stat labels."""
         t = current_theme()
 
         row0 = ttk.Frame(parent)
@@ -143,11 +162,13 @@ class DedupOnlyPanel:
         self.dedup_only_artifact_label.pack(fill=tk.X)
 
     def _browse_into(self, var, title):
+        """Open a folder picker and write the chosen path into ``var``."""
         path = filedialog.askdirectory(title=title)
         if path:
             var.set(path)
 
     def _on_start_click(self):
+        """Handle the Run Dedup Only button - start the dedup background run."""
         if self._running:
             return
         self._running = True
@@ -162,6 +183,7 @@ class DedupOnlyPanel:
             )
 
     def _on_stop_click(self):
+        """Handle the Stop button - ask the dedup thread to exit cleanly."""
         if self._on_dedup_only_stop:
             self._on_dedup_only_stop()
         if self._append_log:

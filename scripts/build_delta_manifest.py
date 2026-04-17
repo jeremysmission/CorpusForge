@@ -1,9 +1,28 @@
 """
 Build an explicit nightly delta manifest by comparing the source tree to the local mirror.
 
-Usage:
-  python scripts/build_delta_manifest.py --source-root "X:\\igs" --mirror-root "data/nightly_delta/source_mirror"
-  python scripts/build_delta_manifest.py --source-root "X:\\igs" --mirror-root "data/nightly_delta/source_mirror" --output data/nightly_delta/manifests/manifest.json
+What it does for the operator:
+  Walks the upstream source tree (for example a network share) and compares
+  it to the local mirror on this workstation. Produces a JSON manifest that
+  lists every file which is NEW or CHANGED -- i.e., what the nightly
+  ingest should actually pick up tonight.
+
+  Any file whose filename matches a "canary" glob is flagged so the
+  operator can confirm a known-good test file shows up in the delta.
+
+When to run it:
+  - Inside nightly_delta_ingest.py (called automatically), or
+  - By hand, to preview the delta before kicking off a transfer
+
+Inputs:
+  --source-root   Upstream source root to scan (e.g. a share).
+  --mirror-root   Local mirror root to compare against.
+  --output        Optional path to write the manifest JSON.
+  --canary-glob   Filename glob(s) that mark canary files (repeatable).
+  --max-files     Optional scan cap for proof / dry runs.
+
+Outputs: JSON manifest with per-file entries (new/changed, hash, size)
+plus a summary block (scanned, delta, new, changed, canary matches).
 """
 
 from __future__ import annotations
@@ -22,6 +41,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def _sha256_file(path: Path) -> str:
+    """Read the file in 128KB blocks and return its SHA-256 hex digest."""
     sha = hashlib.sha256()
     with open(path, "rb") as f:
         while True:
@@ -33,6 +53,7 @@ def _sha256_file(path: Path) -> str:
 
 
 def _iter_files(root: Path, max_files: int | None = None) -> Iterable[Path]:
+    """Walk root recursively and yield files in a stable sorted order, honoring an optional cap."""
     count = 0
     for path in sorted(p for p in root.rglob("*") if p.is_file()):
         yield path
@@ -42,6 +63,7 @@ def _iter_files(root: Path, max_files: int | None = None) -> Iterable[Path]:
 
 
 def _matches_canary(relative_path: Path, patterns: list[str]) -> bool:
+    """True if the file's relative path or basename matches any canary glob (case-insensitive)."""
     rel_text = relative_path.as_posix().lower()
     name_text = relative_path.name.lower()
     lowered = [pattern.lower() for pattern in patterns]
@@ -52,6 +74,7 @@ def _matches_canary(relative_path: Path, patterns: list[str]) -> bool:
 
 
 def _classify_delta(source_file: Path, mirror_file: Path) -> tuple[str | None, str | None]:
+    """Decide whether a source file is 'new', 'changed', or unchanged vs the local mirror."""
     if not mirror_file.exists():
         return "new", None
 
@@ -75,6 +98,7 @@ def build_delta_manifest(
     canary_globs: list[str] | None = None,
     max_files: int | None = None,
 ) -> dict:
+    """Build and return the delta manifest dict (entries + summary) for the given source vs mirror."""
     source_root = Path(source_root).resolve()
     mirror_root = Path(mirror_root).resolve()
     canary_globs = canary_globs or ["*nightly_canary*", "*canary*"]
@@ -138,6 +162,7 @@ def build_delta_manifest(
 
 
 def write_manifest(manifest: dict, output_path: Path | str) -> Path:
+    """Write the manifest dict to disk as indented JSON and return the final path."""
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -145,6 +170,7 @@ def write_manifest(manifest: dict, output_path: Path | str) -> Path:
 
 
 def main() -> int:
+    """Parse CLI flags, build the manifest, optionally write it, and print the summary line."""
     parser = argparse.ArgumentParser(description="Build a nightly delta manifest")
     parser.add_argument("--source-root", required=True, help="Upstream source root to scan")
     parser.add_argument("--mirror-root", required=True, help="Local mirror root to compare against")

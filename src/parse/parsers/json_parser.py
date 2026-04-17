@@ -1,4 +1,12 @@
-"""JSON parser — reads JSON files as formatted text."""
+"""
+JSON parser -- reads .json files and pretty-prints them as text.
+
+Plain English: JSON files hold structured data. This parser loads the
+file, re-prints it with consistent indentation so chunks stay readable,
+and returns the result as text the Forge pipeline can index. If a file
+isn't valid JSON (e.g., someone saved a plain log as .json by mistake),
+it falls back to returning the raw file contents.
+"""
 
 from __future__ import annotations
 
@@ -12,9 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 class JsonParser:
-    """Parse .json files — pretty-prints for readability in chunks."""
+    """Read .json files and pretty-print them for readable chunks."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Read a .json file and return formatted text, or raw text on parse error."""
         path = Path(file_path)
         try:
             raw = path.read_text(encoding="utf-8-sig")

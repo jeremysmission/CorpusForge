@@ -1,10 +1,31 @@
 """
 Benchmark the full CorpusForge pipeline with per-stage timing.
 
-Usage:
-  python scripts/benchmark_pipeline.py --source data/source
-  python scripts/benchmark_pipeline.py --source data/source --workers 8 --max-files 500
-  python scripts/benchmark_pipeline.py --source data/source --config config/config.yaml --output bench.json
+What it does for the operator:
+  Runs every pipeline stage on a source folder (dedup, skip, parse, chunk,
+  enrich, embed, export) and records how long each stage took and how many
+  items it handled. Produces a table on the terminal and a JSON file on disk.
+
+  Use this to measure where time goes -- is parse the bottleneck? Is embed?
+  Is GPU memory peaking near the VRAM limit? The JSON is archived for later
+  comparison (e.g., "did adding enrichment slow us down?").
+
+When to run it:
+  - After a performance-related code change, to compare before / after
+  - When planning capacity (how long will N files take on this box?)
+  - Before scheduling a very large overnight run
+
+Inputs:
+  --source       Source directory to process (required).
+  --workers      Worker threads for parse (overrides config).
+  --max-files    Only process the first N files (for quick benchmarks).
+  --config       Config YAML path (default config/config.yaml).
+  --output       Where to write the JSON results (defaults to timestamped file).
+  --full-reindex Force reprocess; ignore "already seen" state.
+  --disable-enrich  Skip enrichment stage (faster throughput measurements).
+
+Outputs: a per-stage timing table in the terminal, plus a JSON file with
+all numbers, GPU memory stats, and config snapshot.
 """
 
 from __future__ import annotations
@@ -33,6 +54,7 @@ from src.parse.dispatcher import get_supported_extensions
 # ---------------------------------------------------------------------------
 
 def _cuda_available() -> bool:
+    """Return True if torch can see a CUDA GPU on this machine."""
     try:
         import torch
         return torch.cuda.is_available()
@@ -75,6 +97,7 @@ def _gpu_total_mb() -> Optional[float]:
 
 
 def _reset_gpu_peak() -> None:
+    """Reset torch's 'peak GPU memory' counter so the next stage starts from zero."""
     try:
         import torch
         if torch.cuda.is_available():
@@ -89,6 +112,7 @@ def _reset_gpu_peak() -> None:
 
 @dataclass
 class StageResult:
+    """Per-stage timing record (stage name, elapsed seconds, items processed, and rate unit)."""
     name: str
     elapsed: float = 0.0
     items: int = 0
@@ -96,6 +120,7 @@ class StageResult:
 
     @property
     def rate(self) -> float:
+        """Items processed per second (items / elapsed)."""
         if self.elapsed <= 0:
             return 0.0
         return self.items / self.elapsed
@@ -106,6 +131,7 @@ class StageResult:
 # ---------------------------------------------------------------------------
 
 def discover_files(source_dir: Path, max_files: Optional[int] = None) -> list[Path]:
+    """Walk the source directory and return a sorted list of files Forge can parse."""
     supported = get_supported_extensions()
     files = sorted(source_dir.rglob("*"))
     files = [f for f in files if f.is_file() and f.suffix.lower() in supported]
@@ -510,6 +536,7 @@ def run_benchmark(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    """Parse CLI flags, run the benchmark, write the JSON result file, and print the table."""
     parser = argparse.ArgumentParser(
         description="Benchmark the full CorpusForge pipeline with per-stage timing.",
     )

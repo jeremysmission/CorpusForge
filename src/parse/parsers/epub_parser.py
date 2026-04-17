@@ -1,9 +1,16 @@
 """
-EPUB parser -- extracts text from eBook files.
+EPUB parser -- reads .epub eBook files.
 
-Pipeline: OPF spine (reading order) -> XHTML content -> strip HTML tags.
+Plain English: an .epub book is really a ZIP archive full of small
+HTML chapter files plus a table of contents (the "OPF spine"). This
+parser opens the ZIP, walks the spine so chapters end up in the right
+order, strips the HTML tags from each chapter, and returns the book as
+plain text for the Forge pipeline.
+
+Uses only Python's standard library (zipfile + xml.etree +
+html.parser) so no extra installs are needed.
+
 Ported from V1 (src/parsers/epub_parser.py).
-Dependencies: stdlib only (zipfile + xml.etree + html.parser).
 """
 
 from __future__ import annotations
@@ -21,9 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 class EpubParser:
-    """Parse EPUB eBook files."""
+    """Extract text from .epub eBook files, respecting chapter order."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an .epub file and return its chapters as plain text."""
         path = Path(file_path)
         text = ""
         quality = 0.0

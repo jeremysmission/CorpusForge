@@ -1,7 +1,9 @@
 @REM === NON-PROGRAMMER GUIDE ===
-@REM Purpose: Try a compatibility bootstrap path for torch, then force the final CUDA 12.8 wheel line.
-@REM How to follow: Use this only when the normal CUDA torch installer is not getting the workstation onto the cu128 lane.
-@REM Inputs: Repo-local .venv plus internet or proxy access to PyPI and download.pytorch.org.
+@REM What this does: Fallback bootstrap. Installs a cu124 torch first, then force-reinstalls the cu128 (CUDA 12.8) wheel on top.
+@REM When to run: Only when the normal INSTALL_CUDA_TORCH_WORKSTATION.bat cannot land the cu128 lane. Never the first attempt.
+@REM Operator view: Step 1/5 through 5/5. Success ends with [DONE] and exit 0. Any failure ends with [FAIL] and exit 1.
+@REM Prerequisites: .venv already exists, network reaches PyPI and download.pytorch.org.
+@REM Inputs:  Repo-local .venv plus internet or proxy access to PyPI and download.pytorch.org.
 @REM Outputs: Torch reinstalled in .venv with extra recovery steps aimed at stubborn workstation setups.
 @REM ============================
 @echo off
@@ -11,12 +13,15 @@ for /f "tokens=2 delims=:." %%A in ('chcp') do set "_PREV_CP=%%A"
 set "_PREV_CP=%_PREV_CP: =%"
 chcp 65001 >nul 2>&1
 
+REM UTF-8 safety + pip defaults so corporate proxies and certs behave.
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 set "PIP_DISABLE_PIP_VERSION_CHECK=1"
 set "NO_PROXY=127.0.0.1,localhost"
+REM TRUSTED = hosts pip can fetch from without cert-validation complaints.
 set "TRUSTED=--trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host download.pytorch.org"
 
+REM Bind to the repo-local .venv so we never touch system Python.
 set "PROJECT_ROOT=%~dp0"
 set "PROJECT_ROOT=%PROJECT_ROOT:~0,-1%"
 set "PYTHON=%PROJECT_ROOT%\.venv\Scripts\python.exe"
@@ -56,6 +61,7 @@ if !errorlevel! neq 0 (
 )
 echo.
 
+REM Install a cu124 torch first; older wheel line is sometimes more forgiving when cu128 direct fails.
 echo  === Step 3/5: Bootstrap Torch From cu124 ===
 echo  Command:
 echo    .venv\Scripts\pip.exe install torch --index-url https://download.pytorch.org/whl/cu124 %TRUSTED%
@@ -68,6 +74,7 @@ if !errorlevel! neq 0 (
 echo  [OK] cu124 bootstrap install completed.
 echo.
 
+REM Now force-replace with the cu128 wheel so the workstation lands on the CUDA 12.8 lane.
 echo  === Step 4/5: Force-Reinstall cu128 ===
 echo  Command:
 echo    .venv\Scripts\pip.exe install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128 --force-reinstall --no-deps %TRUSTED%
@@ -80,6 +87,7 @@ if !errorlevel! neq 0 (
 echo  [OK] cu128 force-reinstall completed.
 echo.
 
+REM Confirm torch imports, report CUDA version, then gate on torch.version.cuda starting with 12.8.
 echo  === Step 5/5: Verify Torch ===
 "%PYTHON%" -c "import torch; print('version=', torch.__version__); print('built_cuda=', torch.version.cuda); print('cuda_available=', torch.cuda.is_available()); print('gpu=', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
 if !errorlevel! neq 0 (

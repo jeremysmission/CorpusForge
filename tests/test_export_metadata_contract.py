@@ -1,4 +1,14 @@
-"""Regression tests for the Forge-to-V2 export metadata contract."""
+"""Regression tests for the Forge-to-V2 export metadata contract.
+
+Plain-English summary for operators:
+Forge produces exports that downstream V2 imports. That handoff has a
+contract: certain fields must be present on every chunk and entity row,
+manifest must carry specific keys, and the skip manifest must keep its
+legacy alias keys. This file inspects a real export directory and
+flags any contract gaps. If these tests fail, V2 import could reject a
+freshly-shipped export — or worse, quietly accept it and hide missing
+metadata.
+"""
 
 from __future__ import annotations
 
@@ -73,6 +83,7 @@ def _write_min_export(export_dir: Path) -> None:
 
 
 def test_analyze_export_metadata_contract_flags_live_contract_gaps(tmp_path: Path):
+    """Protects the V2 contract checker — missing fields (source_ext, authority_tier, entities.source_path, legacy skip aliases) must be reported as gaps."""
     export_dir = tmp_path / "export_20260412_2300"
     _write_min_export(export_dir)
 

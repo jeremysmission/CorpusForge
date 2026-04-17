@@ -1,8 +1,18 @@
 """
-Mbox email archive parser -- extracts messages from .mbox files.
+Mbox parser -- reads bulk email archives in the .mbox format.
 
-Uses Python stdlib only (mailbox + email modules).
-Caps at 200 messages to prevent huge output from large archives.
+Plain English: an .mbox file is a single file that contains many emails
+concatenated together (used by Unix mailers, Thunderbird exports, and
+Gmail Takeout). This parser walks through the messages in order,
+extracts each one's From/To/Subject/Date and body, and joins them all
+into one searchable text block for the Forge pipeline.
+
+Safety caps (operator-visible):
+  * Max 200 messages per archive. Larger archives are truncated with a
+    visible note so reviewers know some content was skipped.
+  * Max 5000 characters of body per message. Long threads stay readable
+    and the index stays a reasonable size.
+
 Ported from V1 (src/parsers/mbox_parser.py).
 """
 
@@ -45,9 +55,10 @@ def _get_email_body(msg) -> str:
 
 
 class MboxParser:
-    """Parse .mbox email archive files."""
+    """Extract messages from .mbox bulk-email archive files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an .mbox archive and return its messages joined as text."""
         path = Path(file_path)
         text = ""
         quality = 0.0

@@ -1,7 +1,24 @@
 """
 CorpusForge boot validation script.
 
-Loads config, validates all fields, prints status, exits.
+What it does for the operator:
+  A quick, read-only sanity check of Forge's config file. It loads the YAML,
+  validates every field, prints a one-screen summary of the settings that
+  would be used on a real run, and exits. NO files are ingested, NO GPU is
+  used, and NOTHING is written to disk.
+
+When to run it:
+  - First thing after editing config/config.yaml
+  - Before scheduling a big overnight ingest, to confirm paths and toggles
+  - After pulling fresh code, to confirm the config still parses cleanly
+
+Inputs:
+  --config  Path to the config YAML. Defaults to config/config.yaml.
+
+Outputs:
+  Prints a block of text to the terminal (chunk size, embed model, enrich
+  status, paths, etc.). Exits 0 on success; a config error will raise.
+
 Usage: python scripts/boot.py [--config path/to/config.yaml]
 """
 
@@ -16,6 +33,7 @@ from src.config.schema import load_config
 
 
 def main() -> None:
+    """Load the config file, print the effective settings, and exit."""
     parser = argparse.ArgumentParser(description="CorpusForge boot validation")
     parser.add_argument(
         "--config",

@@ -1,7 +1,19 @@
 """
-Legacy Excel .xls parser -- reads Excel 97-2003 binary format.
+Legacy Excel (.xls) parser -- reads the old Excel 97-2003 binary format.
 
-Pipeline: xlrd (best) -> olefile metadata -> raw binary scan.
+Plain English: .xls is the binary Excel format from before 2007. It's
+harder to read than modern .xlsx, so this parser tries three strategies
+in order and uses whichever one produces usable text:
+
+  1. ``xlrd`` library -- the real .xls reader, cleanest cell data.
+  2. ``olefile`` -- pulls document metadata plus raw text streams out of
+     the file's OLE2 container.
+  3. Raw binary scan -- last resort; scans the bytes for readable text
+     runs of 8+ printable chars.
+
+Quality score reflects which strategy won (xlrd = high, binary scan =
+low). Operators see the score on each chunk for downstream filtering.
+
 Ported from V1 (src/parsers/office_xls_parser.py).
 """
 
@@ -16,9 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 class XlsParser:
-    """Parse legacy .xls files with multi-strategy fallback."""
+    """Extract text from legacy Excel .xls files, with three fallback strategies."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an .xls file and return its cell text using the best available strategy."""
         path = Path(file_path)
         text = ""
         quality = 0.0

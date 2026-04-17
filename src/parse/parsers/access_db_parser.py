@@ -1,8 +1,16 @@
 """
-Access database parser -- extracts table names, columns, and sample rows.
+Access database parser -- reads Microsoft Access databases
+(.accdb / .mdb).
 
-Ported from V1 and adapted to Forge's ParsedDocument interface.
-Dependency: access-parser.
+Plain English: instead of dumping a whole database (which could be
+huge), this parser produces a searchable summary: every user table is
+listed with its column names and up to 50 sample rows. Hidden system
+tables (``MSys*``, ``~*``) are skipped. A reviewer can then recognize
+the database by its schema and sample data without Forge needing to
+index millions of rows.
+
+Uses the ``access-parser`` library. If it isn't installed the parser
+returns empty text rather than failing.
 """
 
 from __future__ import annotations
@@ -13,11 +21,12 @@ from src.parse.parsers.txt_parser import ParsedDocument
 
 
 class AccessDbParser:
-    """Extract table structure and sample data from Access .accdb/.mdb files."""
+    """Extract schema and sample rows from Microsoft Access .accdb/.mdb files."""
 
-    MAX_ROWS_PER_TABLE = 50
+    MAX_ROWS_PER_TABLE = 50  # keeps output size reasonable for big databases
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an Access database and return table columns + sample rows as text."""
         path = Path(file_path)
         parts: list[str] = [f"Access Database: {path.name}"]
         table_count = 0

@@ -1,4 +1,16 @@
-"""Analyze a Forge export package for corpus-adaptation work."""
+"""Analyze a Forge export package for corpus-adaptation work.
+
+Plain-English role
+------------------
+Offline tool. Takes a finished export folder plus a failure artifact
+(the parser-failure log) and produces one JSON summary: which formats
+dominate, which known document families were seen, how parse quality
+was distributed, what types of files ended up in skip, and which
+extensions or families are responsible for most failures.
+
+Used by PMs and operators when deciding how to adjust skip/defer,
+parser timeouts, and extraction coverage before the next run.
+"""
 
 from __future__ import annotations
 
@@ -39,10 +51,12 @@ FAILURE_LINE_RE = re.compile(r"^\[([^\]]+)\]\s")
 
 
 def _load_json(path: Path) -> dict:
+    """Read a UTF-8 JSON file and return its parsed dict."""
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _iter_chunks(chunks_path: Path):
+    """Yield one chunk-dict per line from a chunks.jsonl file."""
     with open(chunks_path, "r", encoding="utf-8") as handle:
         for raw_line in handle:
             line = raw_line.strip()

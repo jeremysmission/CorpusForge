@@ -1,4 +1,17 @@
-"""Standalone desktop app for the dedup recovery stage."""
+"""Standalone desktop app for the dedup recovery stage.
+
+This window is the one an operator sees after running
+``launch_dedup_gui.py``. It is a simpler, one-purpose cousin of the
+main Forge window: the operator picks a source folder, sets a
+similarity threshold and minimum character count, and clicks Start
+Recovery. Forge walks the tree, groups near-duplicate PDF/DOC/DOCX
+files into "families", picks a canonical file for each family, and
+writes ``canonical_files.txt`` + a SQLite audit trail.
+
+This file only controls one pipeline stage: the recovery dedup pass.
+It does not parse text, chunk, enrich, or embed. Its canonical list is
+the input for a follow-up chunking run.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +35,14 @@ _MAX_LOG_LINES = 2000
 
 
 class DedupRecoveryApp:
-    """Standalone GUI for the document dedup recovery stage."""
+    """The Recovery Dedup window - a one-purpose cleanup UI.
+
+    Holds the controls (source/output pickers, similarity threshold,
+    worker count), a live Recovery Stats panel, and a Recovery Log.
+    Start Recovery is wired to a background thread that scans the tree
+    and writes the canonical/duplicate artifacts. The window itself
+    does not do the scanning - it only shows progress.
+    """
 
     def __init__(self, root: tk.Tk, config_path: str, on_start=None, on_stop=None):
         self.root = root
@@ -38,6 +58,7 @@ class DedupRecoveryApp:
         self._build_ui()
 
     def _setup_window(self) -> None:
+        """Set the Recovery Dedup window title, size, and colors."""
         t = current_theme()
         self.root.title("CorpusForge Recovery Dedup")
         self.root.geometry("980x780")
@@ -45,6 +66,7 @@ class DedupRecoveryApp:
         self.root.configure(bg=t["bg"])
 
     def _build_ui(self) -> None:
+        """Assemble the control panel, stats, log, and status bar."""
         t = current_theme()
         main = ttk.Frame(self.root, padding=10)
         main.pack(fill=tk.BOTH, expand=True)
@@ -99,6 +121,7 @@ class DedupRecoveryApp:
         ).pack(side=tk.LEFT)
 
     def _build_control_panel(self, parent, t) -> None:
+        """Build the source/output/threshold/workers row and action buttons."""
         row0 = ttk.Frame(parent)
         row0.pack(fill=tk.X, pady=2)
         tk.Label(row0, text="Source:", font=FONT, bg=t["panel_bg"], fg=t["label_fg"], width=9, anchor=tk.W).pack(side=tk.LEFT)
@@ -193,6 +216,7 @@ class DedupRecoveryApp:
         self.progress_label.pack(side=tk.RIGHT)
 
     def _build_stats_panel(self, parent, t) -> None:
+        """Build the two-column Recovery Stats panel."""
         left = ttk.Frame(parent)
         left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         right = ttk.Frame(parent)
@@ -229,6 +253,7 @@ class DedupRecoveryApp:
             self._stat_labels[key] = value
 
     def _build_log_panel(self, parent, t) -> None:
+        """Build the scrolling Recovery Log text area."""
         container = ttk.Frame(parent)
         container.pack(fill=tk.BOTH, expand=True)
         self.log_text = tk.Text(
@@ -252,16 +277,19 @@ class DedupRecoveryApp:
         self.log_text.tag_configure("ERROR", foreground=t["red"])
 
     def _browse_source(self) -> None:
+        """Open a folder picker so the operator can pick the source folder."""
         path = filedialog.askdirectory(title="Select Source Folder")
         if path:
             self.source_var.set(path)
 
     def _browse_output(self) -> None:
+        """Open a folder picker for the recovery export folder."""
         path = filedialog.askdirectory(title="Select Recovery Output Folder")
         if path:
             self.output_var.set(path)
 
     def _on_start_click(self) -> None:
+        """Handle Start Recovery - begin a recovery dedup run."""
         if self._running:
             return
         self._set_running(True)
@@ -275,11 +303,13 @@ class DedupRecoveryApp:
             )
 
     def _on_stop_click(self) -> None:
+        """Handle the Stop button - finish the current family, then exit."""
         if self._on_stop:
             self._on_stop()
         self.append_log("Recovery stop requested. Current family will finish first.", "WARNING")
 
     def _set_running(self, running: bool) -> None:
+        """Lock or unlock controls and start/stop the elapsed-time ticker."""
         self._running = running
         state = tk.DISABLED if running else tk.NORMAL
         self.start_btn.configure(state=tk.DISABLED if running else tk.NORMAL)
@@ -306,6 +336,7 @@ class DedupRecoveryApp:
                 self._timer_id = None
 
     def _tick_elapsed(self) -> None:
+        """Update the Elapsed label once per second while the run is active."""
         if not self._running or self._start_time is None:
             return
         elapsed = int(time.time() - self._start_time)
@@ -313,6 +344,7 @@ class DedupRecoveryApp:
         self._timer_id = self.root.after(1000, self._tick_elapsed)
 
     def update_progress(self, *, group_index: int, total_groups: int, stem_key: str, group_size: int) -> None:
+        """Update the progress bar and the 'Current family' readout."""
         pct = 0.0 if total_groups <= 0 else min(100.0, (group_index / total_groups) * 100.0)
         self.progress_var.set(pct)
         self.progress_label.configure(text=f"{group_index} / {total_groups} families")
@@ -322,6 +354,7 @@ class DedupRecoveryApp:
         self._stat_labels["current_group"].configure(text=f"{current} ({group_size} files)")
 
     def update_stats(self, stats: dict) -> None:
+        """Refresh the Recovery Stats panel from a stats dict."""
         self._stat_labels["files_seen"].configure(text=str(stats.get("files_seen", 0)))
         self._stat_labels["candidate_groups"].configure(text=str(stats.get("candidate_groups", 0)))
         self._stat_labels["singleton_files"].configure(text=str(stats.get("singleton_files", 0)))
@@ -330,6 +363,7 @@ class DedupRecoveryApp:
         self._stat_labels["duplicate_files"].configure(text=str(stats.get("duplicate_files", 0)))
 
     def append_log(self, message: str, level: str = "INFO") -> None:
+        """Add a line (color-coded by level) to the Recovery Log panel."""
         tag = level if level in ("INFO", "WARNING", "ERROR") else "INFO"
         self.log_text.configure(state=tk.NORMAL)
         self.log_text.insert(tk.END, message + "\n", tag)
@@ -340,6 +374,7 @@ class DedupRecoveryApp:
         self.log_text.configure(state=tk.DISABLED)
 
     def run_finished(self, stats: dict, message: str) -> None:
+        """Called when the recovery dedup run completes (success or abort)."""
         self.update_stats(stats)
         self._set_running(False)
         self.progress_var.set(100.0 if stats.get("candidate_groups", 0) else 0.0)
@@ -348,6 +383,7 @@ class DedupRecoveryApp:
 
 
 def _format_elapsed(seconds: int) -> str:
+    """Format a seconds count as a human-readable H:MM:SS or M:SS string."""
     seconds = max(0, int(seconds))
     hours, remainder = divmod(seconds, 3600)
     minutes, secs = divmod(remainder, 60)

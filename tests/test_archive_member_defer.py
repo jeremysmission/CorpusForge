@@ -4,6 +4,14 @@ Sprint 6.6 leaked ~100K SAO chunks into the production export because
 ``parse.defer_extensions`` was only honored at the top filesystem layer.
 ``ArchiveParser`` extracted ZIP members and parsed them in-place, bypassing
 the defer rule entirely. This test pins the fix so the leak cannot reappear.
+
+Plain-English summary for operators:
+The skip list tells Forge which file types to defer (skip for this run,
+handle later). Before this fix, those rules worked for loose files on
+disk but NOT for files hidden inside .zip or .tar.gz archives. Result:
+a big production run quietly shipped ~100,000 chunks of deferred
+content into the export. If these tests fail, Forge could again leak
+deferred file types into an export the operator thought was clean.
 """
 
 from __future__ import annotations

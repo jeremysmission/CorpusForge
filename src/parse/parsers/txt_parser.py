@@ -1,8 +1,18 @@
 """
-Text file parser — simplest parser in the stack.
+Plain-text parser -- the simplest parser in Forge.
 
-Handles .txt, .md, .log, and other plain-text formats.
-All file reads use utf-8-sig to strip BOM from corporate files.
+Plain English: reads plain-text files (.txt, .md, .log, config files,
+etc.) straight off disk and hands the text to the pipeline. No fancy
+extraction needed because the content is already text.
+
+Also defines ``ParsedDocument``, the small record every parser in Forge
+returns -- think of it as a standard envelope containing the cleaned
+text plus a few metadata fields (source path, file size, extension, and
+a quality score).
+
+Encoding note: files are read as utf-8-sig first (which quietly strips
+the Byte-Order-Mark often left by Windows/corporate editors), then
+falls back to latin-1 so old Windows files don't blow up.
 """
 
 from __future__ import annotations
@@ -13,7 +23,15 @@ from pathlib import Path
 
 @dataclass
 class ParsedDocument:
-    """Result of parsing a single file."""
+    """The standard "parsed file" record every parser in Forge returns.
+
+    Fields:
+      * source_path    -- original file on disk
+      * text           -- the extracted clean text the pipeline will chunk
+      * parse_quality  -- 0.0-1.0 confidence score for this parse
+      * file_ext       -- the file's extension (lowercased)
+      * file_size      -- size in bytes, for reporting/manifests
+    """
 
     source_path: str
     text: str
@@ -23,7 +41,7 @@ class ParsedDocument:
 
 
 class TxtParser:
-    """Parse plain-text files with encoding fallback."""
+    """Read plain-text files directly, with a safe encoding fallback."""
 
     SUPPORTED_EXTENSIONS = frozenset({
         ".txt", ".md", ".log", ".csv", ".json", ".xml",
@@ -31,11 +49,7 @@ class TxtParser:
     })
 
     def parse(self, file_path: Path) -> ParsedDocument:
-        """
-        Read a text file and return a ParsedDocument.
-
-        Tries utf-8-sig first (strips BOM), falls back to latin-1.
-        """
+        """Read a plain-text file and return its contents as a ParsedDocument."""
         path = Path(file_path)
         text = self._read_text(path)
         quality = self._score_quality(text)

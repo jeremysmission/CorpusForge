@@ -24,6 +24,16 @@
 Tkinter expects the main UI thread to be the one touching widgets. This
 module queues background-thread updates so the main thread can apply them
 later without corrupting the GUI state.
+
+Plain-English view: Forge runs the heavy work (discover, dedup, parse,
+chunk, enrich, embed, export) in background threads. Those threads
+cannot touch the window directly - if they did, buttons could stop
+working or the app could crash silently. Every "update the stats
+panel", "append a log line", or "disable the Start button" call from a
+background thread is routed through :func:`safe_after`, which puts the
+request on a thread-safe queue. The main UI thread drains that queue
+(see :func:`drain_ui_queue`, called from the launcher's pump loop) and
+applies the updates for real.
 """
 
 import logging

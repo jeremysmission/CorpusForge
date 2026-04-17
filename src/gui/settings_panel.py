@@ -1,4 +1,24 @@
-"""Settings panel -- pipeline configuration UI extracted from CorpusForgeApp."""
+"""Settings panel -- pipeline configuration UI extracted from CorpusForgeApp.
+
+This is the "Settings" group the operator sees in the main Forge
+window. It is the dashboard for tuning a run before clicking Start.
+
+What the operator can change here:
+    * Pipeline workers (logical CPU threads)
+    * OCR mode (skip / auto / force)
+    * Chunk size and chunk overlap
+    * Embedding on/off and embed batch size (GPU)
+    * Enrichment on/off and max concurrent enrichment calls
+    * Entity extraction on/off and its batch size
+    * Save Settings and Reset to Defaults buttons
+
+IMPORTANT: clicking "Save Settings" writes directly to the live
+runtime config file (``config/config.yaml`` by default). The next
+Forge run - and every future run launched from that config - will use
+the saved values. "Reset to Defaults" only refreshes the GUI controls
+from the YAML; it does not write anything until the operator clicks
+Save Settings again.
+"""
 from __future__ import annotations
 
 import time
@@ -10,7 +30,13 @@ from .theme import FONT, current_theme
 
 
 class SettingsPanel:
-    """Pipeline settings: workers, toggles, chunk params. Changes save into the live runtime config."""
+    """The Settings panel - where an operator tunes a run before clicking Start.
+
+    Exposes worker counts, OCR mode, chunk size/overlap, stage toggles
+    (embed / enrich / extract), and their batch/concurrency knobs.
+    "Save Settings" persists the current values into the live runtime
+    config file (``config/config.yaml``) so they survive across runs.
+    """
 
     def __init__(self, parent: ttk.LabelFrame, root: tk.Tk, config=None,
                  config_path: str = "", on_save_settings=None,
@@ -24,9 +50,11 @@ class SettingsPanel:
         self._build(parent)
 
     def _display_config_path(self) -> str:
+        """Return the config file path shown in the 'Live runtime config' label."""
         return self.config_path or "config/config.yaml"
 
     def _build(self, parent):
+        """Construct all rows of input widgets and the action buttons."""
         t = current_theme()
 
         # Row 0: Pipeline workers + OCR mode
@@ -204,7 +232,14 @@ class SettingsPanel:
         ).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     def _handle_save_settings(self):
-        """Collect current settings, validate, and invoke the save callback."""
+        """Collect current settings, validate, and invoke the save callback.
+
+        Save Settings WRITES to the active runtime config file
+        (``config/config.yaml`` by default). The new values take effect
+        on the next Forge run and persist across restarts.
+        """
+        # Debounce rapid double-clicks: ignore a second press within
+        # 0.5 seconds so we do not re-write the YAML twice.
         now = time.time()
         if (now - self._last_save_time) < 0.5:
             return
@@ -270,7 +305,12 @@ class SettingsPanel:
             )
 
     def _handle_reset_defaults(self):
-        """Reset all settings controls to the live runtime-config values."""
+        """Reset all settings controls to the live runtime-config values.
+
+        This only reloads the on-screen controls from the YAML file; it
+        does not change any file on disk. The operator must still click
+        Save Settings if they want those values written back.
+        """
         from tkinter import messagebox
         if not messagebox.askyesno(
             "Reset to Defaults",

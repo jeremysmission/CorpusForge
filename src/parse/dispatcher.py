@@ -1,13 +1,22 @@
 """
-Parse dispatcher — routes files to the appropriate parser by extension.
+Parse dispatcher -- the traffic cop of the parse stage.
+
+Plain English: when the Forge pipeline hands this module a file, it looks
+at the file's extension (.pdf, .docx, .xlsx, etc.) and routes the file to
+the right parser. Every parser returns the same small record
+(a ``ParsedDocument`` with clean text + a few metadata fields), so the
+rest of the pipeline doesn't need to care what the original format was.
+
+Key behaviors:
+  * Unsupported extensions are quietly skipped with an empty result --
+    the pipeline keeps moving.
+  * If one file crashes its parser, the dispatcher catches the error and
+    returns an empty result. A single bad file never takes the run down.
+  * Which extensions are "placeholder only" (we know the format but can't
+    fully extract it) and which are "deferred" (don't even try) is read
+    from config/config.yaml -- no format policy is hardcoded here.
 
 Ported from V1 (src/parsers/registry.py + src/core/parse_dispatch.py).
-Each parser returns a ParsedDocument. Unsupported formats are skipped.
-Error isolation: single file failure never crashes the pipeline.
-
-Format decisions: All placeholder and deferred formats are loaded from
-the active runtime config (`config/config.yaml`) — zero hardcoded format
-skips in this file.
 """
 
 from __future__ import annotations
@@ -180,7 +189,7 @@ def _build_parser_map(
 
 
 def get_supported_extensions(skip_list_path: str = "config/config.yaml") -> set[str]:
-    """Return all supported file extensions."""
+    """Return every file extension the parse stage knows how to handle."""
     global _PARSER_MAP
     if _PARSER_MAP is None:
         _PARSER_MAP = _build_parser_map(skip_list_path)
@@ -188,27 +197,36 @@ def get_supported_extensions(skip_list_path: str = "config/config.yaml") -> set[
 
 
 def reset_parser_map() -> None:
-    """Drop the cached parser map. Used by tests that change defer policy."""
+    """Forget the cached extension->parser table. Used by tests that reload config."""
     global _PARSER_MAP
     _PARSER_MAP = None
 
 
 class ParseDispatcher:
-    """Routes files to the appropriate parser based on extension."""
+    """Routes each file to the parser that knows its format.
+
+    Think of this as the front desk of the parse stage: the pipeline
+    hands it a file, it picks the correct parser by extension, runs it,
+    and returns a ``ParsedDocument`` with clean text + metadata. It also
+    enforces a safety cap on total text length so one huge file can't
+    blow up downstream stages.
+    """
 
     def __init__(self, timeout_seconds: int = 60, max_chars: int = 5_000_000,
                  skip_list_path: str = "config/config.yaml",
                  extra_deferred_exts: set[str] | None = None):
         self.timeout = timeout_seconds
+        # Hard ceiling on extracted text per file; guards against runaway docs.
         self.max_chars = max_chars
         self._skip_list_path = skip_list_path
         self._extra_deferred_exts = set(extra_deferred_exts or ())
 
     def parse(self, file_path: Path) -> ParsedDocument:
-        """
-        Parse a file using the registered parser for its extension.
+        """Parse one file and return clean text + metadata.
 
-        Returns ParsedDocument. Never raises — returns empty doc on failure.
+        Never raises: if anything goes wrong (unsupported format, parser
+        crash, unreadable file) the operator gets an empty ``ParsedDocument``
+        back and the pipeline keeps running.
         """
         global _PARSER_MAP
         if _PARSER_MAP is None:

@@ -1,8 +1,14 @@
 """
 Deterministic chunk ID generator — ported from V1 (src/core/chunk_ids.py).
 
-Creates repeatable SHA-256 IDs from file identity + position + content.
-Enables crash-safe resume via INSERT OR IGNORE semantics.
+Plain-English role
+------------------
+Every chunk Forge produces needs a stable identifier so checkpoints,
+resumes, and V2 imports line up. This module turns the file path,
+modification time, span inside the file, and the chunk text itself
+into a single 64-character hex string. Same inputs always yield the
+same ID; if the file is edited, the mtime changes and new IDs are
+produced, forcing that file to be re-indexed.
 
 Inputs: file_path, file_mtime_ns, chunk_start, chunk_end, chunk_text
 Output: 64-char hex string (SHA-256), deterministic and collision-proof

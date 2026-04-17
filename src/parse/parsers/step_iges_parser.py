@@ -1,7 +1,16 @@
 """
-STEP and IGES CAD parsers -- extract metadata and lightweight text from open exchange formats.
+STEP and IGES parsers -- read open CAD exchange files.
 
-Ported from V1 and adapted to Forge's ParsedDocument interface.
+Plain English: STEP (.stp / .step / .ste) and IGES (.igs / .iges) are
+the vendor-neutral formats engineers use to share 3D models between
+different CAD tools. The geometry itself is not useful searchable
+text, but the file headers contain valuable metadata: product name,
+author, organization, CAD system of origin, schema, and entity count.
+
+Both parsers return that metadata as a human-readable block so an
+engineer can find a specific part by its name, organization, or CAD
+system even though the actual geometry stays as an opaque file
+reference.
 """
 
 from __future__ import annotations
@@ -13,9 +22,10 @@ from src.parse.parsers.txt_parser import ParsedDocument
 
 
 class StepParser:
-    """Extract metadata from STEP (.stp/.step/.ste) CAD files."""
+    """Extract searchable header metadata from STEP (.stp/.step/.ste) CAD files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a STEP CAD file and return its header metadata as text."""
         path = Path(file_path)
         try:
             raw = path.read_text(encoding="utf-8", errors="ignore")
@@ -69,9 +79,10 @@ class StepParser:
 
 
 class IgesParser:
-    """Extract metadata from IGES (.igs/.iges) CAD files."""
+    """Extract searchable header metadata from IGES (.igs/.iges) CAD files."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open an IGES CAD file and return its header metadata as text."""
         path = Path(file_path)
         try:
             raw = path.read_text(encoding="utf-8", errors="ignore")

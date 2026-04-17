@@ -1,4 +1,17 @@
-"""Inspect a Forge export's metadata surface for V2 contract review."""
+"""Inspect a Forge export's metadata surface for V2 contract review.
+
+Plain-English role
+------------------
+Offline tool. Reads a completed export folder and compares the fields
+actually present on each chunk against the planned V2 metadata
+contract (authority tier, archive class, log-record fields, cyber
+fields, etc.). Reports field coverage and highlights any contract
+gaps — missing source_ext, missing source_doc_hash, missing legacy
+alias keys in ``skip_manifest.json``, and similar.
+
+Used by the Forge + V2 integration team to confirm that each export
+honors the V2 import contract before it is shipped over.
+"""
 
 from __future__ import annotations
 
@@ -96,12 +109,14 @@ def resolve_export_dir(path_arg: str | Path) -> tuple[Path, str | None]:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
+    """Read one JSON file, returning an empty dict when the file is missing."""
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _iter_jsonl(path: Path):
+    """Yield one parsed JSON record per non-empty line of a JSONL file."""
     if not path.exists():
         return
     with open(path, "r", encoding="utf-8-sig") as handle:
@@ -112,6 +127,7 @@ def _iter_jsonl(path: Path):
 
 
 def _has_value(value: Any) -> bool:
+    """True when a field is present and non-empty (not None, '', or empty container)."""
     if value is None:
         return False
     if isinstance(value, str):
@@ -122,6 +138,7 @@ def _has_value(value: Any) -> bool:
 
 
 def _bucket_parse_quality(value: Any) -> str:
+    """Classify a parse_quality score into coarse human-readable buckets."""
     try:
         score = float(value)
     except (TypeError, ValueError):
@@ -140,6 +157,7 @@ def _summarize_field_presence(
     counts: Counter[str],
     total_rows: int,
 ) -> list[dict[str, Any]]:
+    """Return per-field coverage rows: how often each field appears in the export."""
     rows: list[dict[str, Any]] = []
     for field in field_order:
         present = int(counts.get(field, 0))

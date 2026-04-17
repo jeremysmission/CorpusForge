@@ -1,7 +1,9 @@
 @REM === NON-PROGRAMMER GUIDE ===
-@REM Purpose: Replace CPU-only torch with the official CUDA-enabled workstation build.
-@REM How to follow: Run this after INSTALL_WORKSTATION.bat if the machine has an NVIDIA GPU.
-@REM Inputs: Repo-local .venv plus internet or proxy access to download.pytorch.org.
+@REM What this does: Replaces any CPU-only torch in the Forge .venv with the official CUDA-enabled build.
+@REM When to run: Right after INSTALL_WORKSTATION.bat on any workstation with an NVIDIA GPU. Not for CPU-only machines.
+@REM Operator view: Prints step 1/6 through 6/6. Success ends with [DONE]. Any failure ends with [FAIL] and exits nonzero.
+@REM Prerequisites: .venv already exists (INSTALL_WORKSTATION.bat ran), nvidia-smi works, internet or proxy reaches download.pytorch.org.
+@REM Inputs:  Repo-local .venv plus internet or proxy access to download.pytorch.org.
 @REM Outputs: CUDA torch installed in .venv and a verification check against the detected GPU.
 @REM ============================
 @echo off
@@ -11,12 +13,15 @@ for /f "tokens=2 delims=:." %%A in ('chcp') do set "_PREV_CP=%%A"
 set "_PREV_CP=%_PREV_CP: =%"
 chcp 65001 >nul 2>&1
 
+REM UTF-8 safety + pip defaults so corporate proxies and certs behave.
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 set "PIP_DISABLE_PIP_VERSION_CHECK=1"
 set "NO_PROXY=127.0.0.1,localhost"
+REM TRUSTED = extra hosts pip is allowed to fetch from without cert complaints.
 set "TRUSTED=--trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host download.pytorch.org"
 
+REM Point at the repo-local .venv Python and pip so we never touch system Python.
 set "PROJECT_ROOT=%~dp0"
 set "PROJECT_ROOT=%PROJECT_ROOT:~0,-1%"
 set "PYTHON=%PROJECT_ROOT%\.venv\Scripts\python.exe"
@@ -71,11 +76,13 @@ if !errorlevel! neq 0 (
 echo  [OK] NVIDIA GPU detected.
 echo.
 
+REM Uninstall any previous torch/torchvision/torchaudio so the CUDA wheels land cleanly.
 echo  === Step 4/6: Remove Existing Torch Packages ===
 "%PIP%" uninstall torch torchvision torchaudio -y 2>nul
 echo  [OK] Existing torch packages removed if present.
 echo.
 
+REM Install the CUDA 12.8 torch wheel (cu128). Blackwell-class GPUs need this wheel line.
 echo  === Step 5/6: Install Official cu128 Torch ===
 echo  Command:
 echo    .venv\Scripts\pip.exe install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128 --force-reinstall --no-deps %TRUSTED%
@@ -105,6 +112,7 @@ if !errorlevel! neq 0 (
 echo  [OK] CUDA torch installed.
 echo.
 
+REM Import torch and confirm CUDA is actually usable against the detected GPU.
 echo  === Step 6/6: Verify CUDA ===
 "%PYTHON%" -c "import torch; print('Version:', torch.__version__); print('CUDA built-in:', torch.version.cuda); print('Available:', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'); print('Compute capability:', torch.cuda.get_device_capability(0) if torch.cuda.is_available() else 'N/A')" 2>nul
 if !errorlevel! neq 0 (

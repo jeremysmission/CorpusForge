@@ -1,14 +1,22 @@
 """
 Contextual enrichment — prepend LLM-generated context preambles to chunks.
 
-For each chunk, sends the full document context (or a surrounding window if the
-document exceeds the model's context limit) plus the chunk text to a local LLM.
-The LLM generates a 50-100 token preamble describing where the chunk sits within
-the document.  This preamble is prepended to the chunk text before embedding,
-improving retrieval accuracy by ~67%.
+Plain-English role
+------------------
+Stage 6 of the pipeline, optional. For every chunk, Forge sends the
+document text (or a window around the chunk if the doc is very long)
+plus the chunk text to a local phi4 model running on Ollama. The model
+responds with 50-100 tokens describing where the chunk sits in the
+document. That preamble is glued onto the chunk before embedding so
+the embedding vector captures document context as well as the chunk's
+own words.
+
+Graceful degradation: if Ollama or the chosen model is not reachable,
+chunks pass through unchanged. The pipeline will have already failed
+loudly at boot via ``probe_enrichment`` if enrichment is switched on
+but cannot run.
 
 Uses Ollama phi4:14b-q4_K_M via its OpenAI-compatible API endpoint.
-Graceful degradation: if Ollama is unreachable, chunks pass through unchanged.
 """
 
 from __future__ import annotations
@@ -72,10 +80,12 @@ class EnrichmentProbeResult:
 
     @property
     def ready(self) -> bool:
+        """True only when Ollama is running and the required model is present."""
         return self.ollama_running and self.model_available
 
     @property
     def status_text(self) -> str:
+        """Human-readable one-line status for logs and the GUI."""
         if self.ready:
             return "ready"
         if not self.ollama_running:
@@ -187,6 +197,7 @@ class ContextualEnricher:
     """
 
     def __init__(self, config: EnricherConfig | None = None):
+        """Check Ollama readiness on construction; disable enrichment gracefully if unreachable."""
         self.config = config or EnricherConfig()
         self._client = None
         self._available = False

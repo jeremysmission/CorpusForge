@@ -1,8 +1,23 @@
 """
-Placeholder parser -- returns an identity card for known but not fully parseable formats.
+Placeholder parser -- the "we know about this file but can't fully
+read it yet" stand-in.
 
-This keeps files visible in search and accounting instead of silently dropping them.
-Ported from V1 and adapted to Forge's ParsedDocument interface.
+Plain English: some formats are recognized by Forge (SolidWorks parts,
+DWG drawings, OneNote sections, MS Project files, legacy Visio, etc.)
+but we can't fully extract their contents without heavyweight or
+environment-specific tooling. Rather than silently dropping those files
+from the export, this parser creates a small "identity card" so the
+file still appears in the corpus:
+
+  * File name and type
+  * File size
+  * A low quality score (0.15) so downstream stages know it's a stub
+  * A human-readable note explaining what would be needed to fully
+    parse it (e.g., "convert DWG to DXF first")
+
+This is the "deferred-not-forgotten" pattern: operators and reviewers
+can always see that the file existed and know what the next step would
+be to bring it into the real index.
 """
 
 from __future__ import annotations
@@ -61,12 +76,13 @@ _PLACEHOLDER_INFO = {
 
 
 class PlaceholderParser:
-    """Return searchable metadata for formats we recognize but cannot fully parse."""
+    """Create a small identity-card record for a recognized-but-unparseable file."""
 
     def __init__(self, extension: str = "") -> None:
         self._ext = extension.lower()
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Produce an identity-card ParsedDocument describing the skipped file."""
         path = Path(file_path)
         ext = self._ext or path.suffix.lower()
         format_name, requirement = _PLACEHOLDER_INFO.get(ext, ("Unknown Format", "No parser available."))

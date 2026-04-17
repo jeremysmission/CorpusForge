@@ -1,6 +1,15 @@
 """
 Bulk file syncer — atomic copy with SHA-256 verification and resume.
 
+Plain-English role
+------------------
+Used by nightly and manual lanes to mirror source files from a network
+location (or USB drive) into a local staging folder before the main
+Forge pipeline runs against them. Every file is copied to a temporary
+name, hashed on both sides, and only renamed to its final name when the
+hashes match, which guarantees a partial or corrupted copy cannot
+silently end up in the mirror.
+
 Designed for 700GB+ production transfers across network paths or USB.
 Ported from V1 bulk_transfer_v2.py patterns:
   - Atomic: write to .tmp, verify hash, rename to final
@@ -26,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TransferStats:
-    """Tracks bulk transfer progress."""
+    """Live progress counters for one bulk transfer job."""
 
     total_files: int = 0
     files_copied: int = 0
@@ -41,9 +50,11 @@ class TransferStats:
 
     @property
     def files_done(self) -> int:
+        """Total files the syncer has finished with (copied + skipped + failed)."""
         return self.files_copied + self.files_skipped + self.files_failed
 
     def to_dict(self) -> dict:
+        """Return transfer counters as a plain dict for the progress GUI/CLI."""
         return {
             "total_files": self.total_files,
             "files_copied": self.files_copied,
@@ -125,6 +136,7 @@ class BulkSyncer:
         should_stop: Optional[Callable[[], bool]] = None,
         on_file_result: Optional[Callable[[Path, str, int, str], None]] = None,
     ):
+        """Record where to copy from/to and wire up progress/stop callbacks."""
         self.source_dir = Path(source_dir).resolve()
         self.dest_dir = Path(dest_dir).resolve()
         self.workers = max(1, workers)
@@ -231,6 +243,7 @@ class BulkSyncer:
     def _run_sequential(
         self, files: list[Path], stats: TransferStats, start_time: float
     ) -> None:
+        """Copy every file one at a time (single-worker fallback path)."""
         last_progress = time.time()
         for src_file in files:
             if self._should_stop():
@@ -253,6 +266,7 @@ class BulkSyncer:
     def _run_parallel(
         self, files: list[Path], stats: TransferStats, start_time: float
     ) -> None:
+        """Run multiple copy workers in parallel, streaming progress updates."""
         last_progress = time.time()
         file_iter = iter(files)
         pending: dict = {}
@@ -324,6 +338,7 @@ class BulkSyncer:
         nbytes: int,
         err: str,
     ) -> None:
+        """Update counters from one finished copy and fire the per-file callback."""
         if status == "copied":
             stats.files_copied += 1
             stats.bytes_transferred += nbytes
@@ -340,6 +355,7 @@ class BulkSyncer:
                 logger.debug("Transfer on_file_result callback failed for %s", src_file, exc_info=True)
 
     def _emit_progress(self, stats: TransferStats, start_time: float) -> None:
+        """Push a stats snapshot to the GUI/CLI progress callback, swallowing errors."""
         if self._on_progress:
             try:
                 self._on_progress(stats)

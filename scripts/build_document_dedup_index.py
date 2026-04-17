@@ -1,8 +1,37 @@
 """
 Focused document dedup index builder for PDF/DOC/DOCX source trees.
 
-Builds a fresh SQLite dedup index and a canonical file list that can be fed
-back into run_pipeline.py via --input-list.
+What it does for the operator:
+  Scans a folder for PDFs / DOCs / DOCXs that look like the same document
+  in different wrappers (e.g., file.doc, file.docx, file.pdf). Parses each
+  candidate, normalizes the text, and picks ONE canonical file per "family".
+  All the others are flagged as duplicates.
+
+  Outputs a canonical_files.txt list -- this is the file you feed into
+  run_pipeline.py via --input-list so the ingest only processes the ONE
+  best version of each document.
+
+When to run it:
+  - BEFORE a big pipeline run, when the source tree has known format
+    duplicates (common for legacy corpora with .doc/.docx/.pdf copies)
+  - To estimate duplicate reduction before committing to a full ingest
+
+Inputs:
+  --input                  Source file or directory to scan.
+  --config                 Config YAML (default config/config.yaml).
+  --extensions             Comma-separated list (default ".pdf,.doc,.docx").
+  --similarity-threshold   How alike two docs must be to be called duplicates
+                           (default 0.9 containment).
+  --min-chars              Minimum normalized text size before a match counts.
+  --workers                Parser threads for same-stem candidate groups.
+  --output-dir             Where to write the dedup artifacts (auto-timestamped
+                           folder under data/dedup/ by default).
+
+Outputs (all under the output directory):
+  document_dedup.sqlite3   Searchable SQLite index of every file's decision.
+  canonical_files.txt      One path per line -- feed to run_pipeline.py.
+  duplicate_files.jsonl    Duplicates with reason + similarity to canonical.
+  dedup_report.json        Summary counts and parameters used.
 """
 
 from __future__ import annotations
@@ -27,6 +56,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def parse_args() -> argparse.Namespace:
+    """Read and validate CLI flags for the dedup index build."""
     parser = argparse.ArgumentParser(description="Build a cross-format document dedup index.")
     parser.add_argument("--input", required=True, help="Source file or directory.")
     parser.add_argument(
@@ -66,6 +96,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Scan, parse, classify, and emit the dedup index + canonical file list."""
     args = parse_args()
     config_path = Path(args.config)
     if not config_path.is_absolute():

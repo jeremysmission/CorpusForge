@@ -1,4 +1,12 @@
-"""CSV/TSV parser — reads delimited files as text with header detection."""
+"""
+CSV/TSV parser -- reads comma-separated and tab-separated spreadsheets
+as plain text.
+
+Plain English: treats the whole file as text so the chunker downstream
+can split on rows naturally. Handles utf-8-sig first (strips the BOM
+some Excel exports leave behind) and falls back to latin-1 for old
+Windows files. Large files are capped at 100,000 rows.
+"""
 
 from __future__ import annotations
 
@@ -9,13 +17,14 @@ from src.parse.parsers.txt_parser import ParsedDocument
 
 logger = logging.getLogger(__name__)
 
-_MAX_ROWS = 100_000
+_MAX_ROWS = 100_000  # safety cap against giant CSV exports
 
 
 class CsvParser:
-    """Parse .csv and .tsv files."""
+    """Read .csv and .tsv files as text, preserving row structure."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Read a CSV/TSV file and return its rows as text."""
         path = Path(file_path)
         try:
             text = self._read_file(path)

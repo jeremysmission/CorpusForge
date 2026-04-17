@@ -1,4 +1,15 @@
-"""Focused GUI regressions for dedup-only output and worker/status surfacing."""
+"""Focused GUI regressions for dedup-only output and worker/status surfacing.
+
+Plain-English summary for operators:
+The GUI has a separate 'Dedup Only' mode that scans a source folder and
+writes a canonical file list and a portable deduped copy, without
+running the full pipeline. This file protects that mode plus the GUI's
+status-bar text, the Save-Settings flow, and the pipeline-finished log
+wording. If these tests fail, operators could see: wrong config path
+in the status bar, a Stop button that lies about what got packaged,
+the dedup-only run writing to the wrong output folder, or Save
+Settings silently not saving.
+"""
 
 from __future__ import annotations
 
@@ -32,6 +43,7 @@ def root():
 
 
 def test_dedup_only_panel_passes_selected_output(root, tmp_path):
+    """Protects against the dedup-only panel ignoring the operator's chosen output folder."""
     frame = ttk.LabelFrame(root, text="Dedup")
     frame.pack(fill=tk.BOTH, expand=True)
     captured = {}
@@ -53,6 +65,7 @@ def test_dedup_only_panel_passes_selected_output(root, tmp_path):
 
 
 def test_corpusforge_status_bar_shows_worker_count(root):
+    """Protects the status bar — runtime config path, skip/defer file, and current worker count must be visible."""
     config = load_config()
     app = CorpusForgeApp(root, config=config, config_path="config/config.yaml")
     root.update_idletasks()
@@ -67,6 +80,7 @@ def test_corpusforge_status_bar_shows_worker_count(root):
 
 
 def test_corpusforge_status_bar_defaults_to_live_runtime_config(root):
+    """Protects the default status-bar text — even without an explicit config_path, GUI should show the live runtime config."""
     config = load_config()
     app = CorpusForgeApp(root, config=config)
     root.update_idletasks()
@@ -74,6 +88,7 @@ def test_corpusforge_status_bar_defaults_to_live_runtime_config(root):
 
 
 def test_save_settings_log_calls_out_live_runtime_config(root):
+    """Protects the Save-Settings log — it must name the exact config file being written so operators are not guessing."""
     config = load_config()
     app = CorpusForgeApp(root, config=config, config_path="config/config.yaml")
     logs = []
@@ -86,6 +101,7 @@ def test_save_settings_log_calls_out_live_runtime_config(root):
 
 
 def test_pipeline_finished_progress_label_uses_work_total(root):
+    """Protects the final progress label — shows 'X/X work files, Y discovered' so operator sees both dedup reduction and raw totals."""
     config = load_config()
     app = CorpusForgeApp(root, config=config)
     app.pipeline_finished({
@@ -105,6 +121,7 @@ def test_pipeline_finished_progress_label_uses_work_total(root):
 
 
 def test_pipeline_stop_ui_uses_safe_wording(root):
+    """Protects the Stop button text and state — says 'Stop Safely' initially, 'Stopping...' during shutdown."""
     config = load_config()
     stop_calls = []
     app = CorpusForgeApp(root, config=config, on_stop=lambda: stop_calls.append("stop"))
@@ -121,6 +138,7 @@ def test_pipeline_stop_ui_uses_safe_wording(root):
 
 
 def test_stats_panel_shows_chunk_rate_and_stage_mapping(root):
+    """Protects the live stats panel — chunk rate is shown, stage labels map to operator-friendly text like 'Parse (CPU/IO)'."""
     config = load_config()
     app = CorpusForgeApp(root, config=config)
 
@@ -144,7 +162,10 @@ def test_stats_panel_shows_chunk_rate_and_stage_mapping(root):
 
 
 def test_stats_panel_stage_label_map_covers_all_stages(root):
-    """Every stage emitted by Pipeline + launch_gui should map to an operator-friendly label."""
+    """Every stage emitted by Pipeline + launch_gui should map to an operator-friendly label.
+
+    Protects against any pipeline stage showing up as a raw name like 'dedup' — the GUI must translate to a friendly label like 'Dedup (CPU/IO)'.
+    """
     config = load_config()
     app = CorpusForgeApp(root, config=config)
     expected = {
@@ -168,7 +189,10 @@ def test_stats_panel_stage_label_map_covers_all_stages(root):
 def test_pipeline_finished_log_distinguishes_packaged_from_empty_stop(root):
     """QA H2: pipeline_finished must NOT claim work was packaged on a stop that
     produced no export. The honest wording must say so, and a real export_dir
-    must swap back to the 'packaged at ...' line."""
+    must swap back to the 'packaged at ...' line.
+
+    Protects truthful Stop messaging — operator must not see 'work packaged' when nothing was written; must see a real export path when one exists.
+    """
     config = load_config()
     app = CorpusForgeApp(root, config=config)
 
@@ -212,6 +236,7 @@ def test_pipeline_finished_log_distinguishes_packaged_from_empty_stop(root):
 
 
 def test_stats_panel_chunks_per_second_blank_when_zero(root):
+    """Protects against a misleading '0.0 chunks/sec' display — shown as '--' before any chunks exist."""
     config = load_config()
     app = CorpusForgeApp(root, config=config)
     app.update_stats({
@@ -224,6 +249,7 @@ def test_stats_panel_chunks_per_second_blank_when_zero(root):
 
 
 def test_save_settings_writes_config_yaml(tmp_path):
+    """Protects Save Settings — operator's edits must actually land in config.yaml on disk."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text("pipeline:\n  workers: 8\n", encoding="utf-8")
 
@@ -239,6 +265,7 @@ def test_save_settings_writes_config_yaml(tmp_path):
 
 
 def test_precheck_button_passes_current_gui_settings(root, tmp_path):
+    """Protects the precheck hand-off — clicking Run Precheck must pass the GUI's current values (not stale defaults) to the precheck tool."""
     config = load_config()
     captured = {}
     app = CorpusForgeApp(
@@ -268,6 +295,7 @@ def test_precheck_button_passes_current_gui_settings(root, tmp_path):
 
 
 def test_dedup_only_runner_writes_selected_output_artifacts(root, tmp_path):
+    """Protects the dedup-only run outputs — canonical list, dedup report, run report, and portable deduped copy must all be written."""
     source_dir = tmp_path / "source"
     source_dir.mkdir()
     (source_dir / "report.txt").write_text("same content")
@@ -330,6 +358,7 @@ def test_dedup_only_runner_writes_selected_output_artifacts(root, tmp_path):
 
 
 def test_dedup_only_runner_canonical_snapshot_includes_indexed_unchanged(root, tmp_path):
+    """Protects the canonical list — files already indexed in state must still show up in the canonical snapshot on re-runs."""
     source_dir = tmp_path / "source"
     source_dir.mkdir()
     report = source_dir / "report.txt"

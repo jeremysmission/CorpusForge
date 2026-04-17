@@ -1,6 +1,17 @@
 """
 Chunker — splits documents into overlapping chunks with smart boundary detection.
 
+Plain-English role
+------------------
+Stage 5 of the pipeline. The parser has already turned a file into one
+long block of text. This module cuts that block into retrieval-sized
+passages (roughly 1200 characters each, with 200 characters of overlap
+so no fact falls cleanly through a boundary). Each passage also gets
+its section heading prepended when one can be found nearby, which helps
+the embedding model keep document context.
+
+Output feeds directly into the enrichment and embedding stages.
+
 Ported from HybridRAG V1 (src/core/chunker.py). Battle-tested on 420K+ files.
 
 Key design decisions (carried from V1):
@@ -27,12 +38,18 @@ class ChunkerConfig:
 
 class Chunker:
     """
-    Fixed-size chunking with sentence-boundary awareness and heading prepend.
+    Splits one document's text into overlapping chunks.
+
+    An operator can picture this as scissors that try to cut at the end
+    of a paragraph or sentence, leave a short overlap so ideas that span
+    the cut stay together, and stick the nearest section heading on the
+    front of each chunk so the embedding model sees the context.
 
     Ported from V1 — identical algorithm, cleaned up for CorpusForge.
     """
 
     def __init__(self, chunk_size: int = 1200, overlap: int = 200, max_heading_len: int = 160):
+        """Store chunk-size targets used by every split."""
         self.chunk_size = chunk_size
         self.overlap = overlap
         self.max_heading_len = max_heading_len

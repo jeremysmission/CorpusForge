@@ -1,8 +1,17 @@
 """
-Legacy PowerPoint .ppt parser -- reads PowerPoint 97-2003 binary format.
+Legacy PowerPoint (.ppt) parser -- reads the old PowerPoint 97-2003
+binary format.
 
-Extracts text records from the OLE2 PowerPoint Document stream.
-Falls back to raw binary text scan if olefile is unavailable.
+Plain English: .ppt is the binary PowerPoint format used before 2007.
+This parser reaches into the file's OLE2 container, finds the
+"PowerPoint Document" stream, and pulls out the slide text records
+(both UTF-16 Unicode text blocks and older ASCII text blocks). If the
+``olefile`` library is unavailable, it falls back to a raw binary scan
+for readable text runs.
+
+Quality score reflects which strategy won (olefile = higher, binary
+scan = lower).
+
 Ported from V1 (src/parsers/office_ppt_parser.py).
 """
 
@@ -19,9 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 class PptParser:
-    """Parse legacy .ppt files via OLE2 binary extraction."""
+    """Extract slide text from legacy PowerPoint .ppt files via OLE2 streams."""
 
     def parse(self, file_path: Path) -> ParsedDocument:
+        """Open a .ppt file and return its slide text using the best available strategy."""
         path = Path(file_path)
         text = ""
         quality = 0.0

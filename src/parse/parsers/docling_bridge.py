@@ -1,8 +1,19 @@
 """
-Optional Docling bridge for higher-fidelity document conversion.
+Optional Docling bridge -- a higher-fidelity document converter used
+as a premium parser when it's available.
 
-Docling is deliberately not a hard dependency. This module must degrade
-cleanly when the package is absent, misconfigured, or disabled.
+Plain English: Docling is a third-party library that often produces
+cleaner text from PDFs and scanned images than our built-in parsers.
+It is OPTIONAL -- if it isn't installed, misconfigured, or turned off
+by the operator, Forge just keeps using its normal parsers. Nothing
+breaks.
+
+Mode is controlled by the HYBRIDRAG_DOCLING_MODE environment variable:
+  * "off"      -- never use Docling (default).
+  * "fallback" -- try built-in parsers first; only call Docling if they
+                  came back empty.
+  * "prefer"   -- try Docling first; fall back to built-in parsers if it
+                  returns nothing useful.
 """
 
 from __future__ import annotations
@@ -23,7 +34,7 @@ _IMPORT_ATTEMPTED = False
 
 
 def get_docling_mode() -> str:
-    """Return the configured Docling mode."""
+    """Return the operator-configured Docling mode ("off", "fallback", "prefer")."""
     mode = os.getenv("HYBRIDRAG_DOCLING_MODE", "off").strip().lower()
     if mode not in _ALLOWED_MODES:
         return "off"
@@ -31,16 +42,16 @@ def get_docling_mode() -> str:
 
 
 def should_try_docling(path: Path) -> bool:
-    """Whether this file should attempt Docling conversion."""
+    """True if Docling is enabled and this file type is one Docling handles."""
     return get_docling_mode() != "off" and path.suffix.lower() in _DOC_EXTS
 
 
 def extract_with_docling(path: Path) -> str:
-    """
-    Convert a document with Docling and return text/markdown.
+    """Run Docling on a file and return its text (or empty if unavailable).
 
-    Returns an empty string when Docling is disabled, unavailable, or the
-    conversion result contains no useful serialized text.
+    Returns "" when Docling is off, not installed, fails to convert, or
+    produces nothing useful -- callers should treat empty as "try the
+    regular parser instead".
     """
     if not should_try_docling(path):
         return ""

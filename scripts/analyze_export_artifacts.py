@@ -1,4 +1,30 @@
-"""Analyze a Forge export package for corpus-adaptation work."""
+"""
+Analyze a Forge export package for corpus-adaptation work.
+
+What it does for the operator:
+  Reads a finished export folder together with a "failure artifact"
+  (a list or log of files that failed to parse) and writes a single JSON
+  summary combining what's in the export with what went wrong. That JSON
+  is the input to the corpus-adaptation workflow -- it tells engineers what
+  parser/skip changes would improve a repeat ingest.
+
+  Optionally takes a pre-ingest "sample profile" JSON (from
+  profile_source_corpus.py) so the summary can compare what was SEEN in the
+  sample to what ACTUALLY landed in the export.
+
+When to run it:
+  - After a pipeline run that had parse failures, to plan fixes
+  - As part of the corpus-adaptation loop between runs
+
+Inputs:
+  --export-dir            Export directory (with manifest.json, run_report.txt,
+                          skip_manifest.json, chunks.jsonl).
+  --failure-artifact      Real failure list or log file to summarize.
+  --sample-profile-json   Optional pre-ingest profile JSON for comparison.
+  --output-json           Path to write the derived summary JSON.
+
+Outputs: one JSON file at --output-json. Prints its path on exit.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +39,7 @@ from src.analysis.export_artifact_analyzer import write_export_analysis
 
 
 def parse_args() -> argparse.Namespace:
+    """Read and validate CLI flags for the export analyzer."""
     parser = argparse.ArgumentParser(description="Analyze one Forge export package and write a corpus-adaptation summary JSON.")
     parser.add_argument("--export-dir", required=True, help="Export directory containing manifest.json, run_report.txt, skip_manifest.json, and chunks.jsonl.")
     parser.add_argument("--failure-artifact", required=True, help="Real failure list or log artifact to summarize alongside the export.")
@@ -22,6 +49,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    """Run the export analyzer and print the path of the resulting JSON summary."""
     args = parse_args()
     output_path = write_export_analysis(
         args.output_json,

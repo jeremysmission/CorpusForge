@@ -1,4 +1,12 @@
-"""Regression tests for final pipeline export statistics."""
+"""Regression tests for final pipeline export statistics.
+
+Plain-English summary for operators:
+At the end of every run, Forge rolls up the final numbers into the
+export stats: elapsed time, skip-reason summary, counts. This file
+protects that roll-up. If these tests fail, the run report could show
+the wrong elapsed time or leave the skip-reasons blank, making it
+harder for operators to explain what the run did.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +30,9 @@ class _SkipManagerStub:
 
 
 def test_build_export_stats_finalizes_skip_reasons_and_elapsed() -> None:
+    """Protects the export-stats roll-up — elapsed seconds and skip-reason summary must be filled in on the final stats object."""
+    # Uses __new__ so we can inject a fake skip manager without running
+    # the real pipeline init path.
     pipeline = Pipeline.__new__(Pipeline)
     pipeline.skip_manager = _SkipManagerStub("2 Deferred by config for this run")
 

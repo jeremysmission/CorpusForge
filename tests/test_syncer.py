@@ -1,4 +1,14 @@
-"""Tests for BulkSyncer — atomic copy, SHA-256 verify, resume."""
+"""Tests for BulkSyncer — atomic copy, SHA-256 verify, resume.
+
+Plain-English summary for operators:
+BulkSyncer is the Forge component that copies source files from the
+share into the staging area before ingest. It uses SHA-256 checksums to
+detect partial copies and skips files that already match. If these
+tests fail, Forge might: silently corrupt files during the copy, waste
+hours re-copying files that are already good, fail to resume a broken
+overnight sync, or report the wrong number of files copied — any of
+which makes downstream chunk counts untrustworthy.
+"""
 
 import os
 from pathlib import Path
@@ -17,6 +27,7 @@ def sync_dirs(tmp_path):
 
 class TestBulkSyncer:
     def test_basic_copy(self, sync_dirs):
+        """Protects the happy-path copy — all files (including subfolders) land at the destination with correct contents."""
         src, dest = sync_dirs
         (src / "a.txt").write_text("hello")
         (src / "sub").mkdir()
@@ -30,6 +41,7 @@ class TestBulkSyncer:
         assert (dest / "sub" / "b.txt").read_text() == "world"
 
     def test_resume_skips_existing(self, sync_dirs):
+        """Protects resume behavior — if a file is already copied with matching content, re-running should skip it, not re-copy."""
         src, dest = sync_dirs
         (src / "a.txt").write_text("data")
         # Pre-copy to dest
@@ -42,6 +54,7 @@ class TestBulkSyncer:
         assert stats.files_copied == 0
 
     def test_hash_mismatch_recopy(self, sync_dirs):
+        """Protects against a stale/corrupt destination file — if the checksum does not match source, Forge must re-copy."""
         src, dest = sync_dirs
         (src / "a.txt").write_text("correct")
         # Pre-copy with wrong content
@@ -54,6 +67,7 @@ class TestBulkSyncer:
         assert (dest / "a.txt").read_text() == "correct"
 
     def test_progress_callback(self, sync_dirs):
+        """Protects the progress hook — GUI needs live updates while the sync runs."""
         src, dest = sync_dirs
         (src / "a.txt").write_text("file a")
         (src / "b.txt").write_text("file b")
@@ -67,6 +81,7 @@ class TestBulkSyncer:
         assert len(calls) >= 1
 
     def test_stop_event(self, sync_dirs):
+        """Protects the Stop Safely wiring for sync — operator must be able to cancel a long copy."""
         src, dest = sync_dirs
         for i in range(10):
             (src / f"file_{i}.txt").write_text(f"data {i}")
@@ -81,6 +96,7 @@ class TestBulkSyncer:
         assert stats.total_files == 10
 
     def test_empty_source(self, sync_dirs):
+        """Protects against empty source folders crashing the sync — a no-op is legal."""
         src, dest = sync_dirs
         syncer = BulkSyncer(src, dest)
         stats = syncer.run()
@@ -88,6 +104,7 @@ class TestBulkSyncer:
         assert stats.files_copied == 0
 
     def test_parallel_copy(self, sync_dirs):
+        """Protects multi-worker copy — faster runs must not lose or corrupt files under concurrency."""
         src, dest = sync_dirs
         for i in range(20):
             (src / f"file_{i}.txt").write_text(f"parallel content {i}")
@@ -100,11 +117,13 @@ class TestBulkSyncer:
             assert (dest / f"file_{i}.txt").read_text() == f"parallel content {i}"
 
     def test_source_not_found(self, tmp_path):
+        """Protects against silent failure when the source path is wrong — Forge must raise so the operator sees it."""
         with pytest.raises(FileNotFoundError):
             syncer = BulkSyncer(tmp_path / "nonexistent", tmp_path / "dest")
             syncer.run()
 
     def test_copy_preserves_source_mtime(self, sync_dirs):
+        """Protects the modified-time stamp — downstream nightly-delta logic depends on mtime to detect real changes."""
         src, dest = sync_dirs
         source_file = src / "timed.txt"
         source_file.write_text("timestamped")
@@ -118,6 +137,7 @@ class TestBulkSyncer:
         assert int(copied.stat().st_mtime) == fixed_time
 
     def test_on_file_result_callback_receives_each_file(self, sync_dirs):
+        """Protects the per-file result callback — GUI logging and manifests rely on seeing every outcome."""
         src, dest = sync_dirs
         (src / "a.txt").write_text("alpha")
         (src / "b.txt").write_text("beta")

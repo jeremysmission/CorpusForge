@@ -2,15 +2,28 @@
 """
 Quick trust check for a CorpusForge export.
 
-Streams chunks.jsonl and reports:
-- basic schema health
-- source-path extension distribution
-- matches for suspicious source-path globs
-- junk marker hits in chunk text
-- a few suspicious sample chunks for manual inspection
-- optional pass/fail gates for forbidden source-path patterns
+What it does for the operator:
+  Streams through the chunks.jsonl of a finished export and looks for the
+  "this should not be here" red flags:
+    - Basic schema health (missing keys, empty text, length mismatches)
+    - Distribution of source-path extensions (did we import .zip internals
+      that we meant to skip?)
+    - Matches against suspicious source-path globs (e.g., *.sao.zip)
+    - Hits on junk markers inside chunk text (XML relationships, etc.)
+    - A handful of suspicious sample chunks to inspect by eye
 
-This is intended as an operator pre-import check, not a full QA harness.
+  You can ALSO hard-fail the tool (exit 2) if chunks match a forbidden
+  source-path glob, turning this into a pre-import gate.
+
+How to read the result:
+  PASS                    Export looks clean enough to import.
+  FAIL (exit 2)           At least one forbidden glob matched chunks --
+                          DO NOT import. Fix the ingest and re-run.
+  No gate was requested   The tool is purely informational.
+
+This is an operator pre-import check, not a full QA harness. Pair with
+scripts/check_export_integrity.py for count/integrity gates and
+scripts/audit_corpus.py for a richer corpus audit.
 """
 
 from __future__ import annotations
@@ -30,6 +43,7 @@ WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _preview(text: str, max_chars: int = 140) -> str:
+    """Collapse whitespace and truncate chunk text into a short preview for printing."""
     collapsed = WHITESPACE_RE.sub(" ", text).strip()
     if len(collapsed) <= max_chars:
         return collapsed
@@ -37,6 +51,7 @@ def _preview(text: str, max_chars: int = 140) -> str:
 
 
 def _looks_numeric_dump(text: str) -> bool:
+    """Heuristic: does this chunk look like a numeric table dump (mostly digits, very few letters)?"""
     stripped = "".join(ch for ch in text if not ch.isspace())
     if len(stripped) < 80:
         return False
@@ -49,6 +64,7 @@ def _looks_numeric_dump(text: str) -> bool:
 
 
 def _matches_any_glob(path_text: str, patterns: list[str]) -> list[str]:
+    """Return the glob patterns (case-insensitive) that a given source_path matches."""
     lowered = path_text.lower()
     basename = Path(lowered).name
     matches: list[str] = []
@@ -67,6 +83,7 @@ def inspect_export(
     top_ext: int,
     sample_limit: int,
 ) -> int:
+    """Stream chunks.jsonl, compute the quality snapshot, and optionally enforce PASS/FAIL gates."""
     chunks_path = export_dir / "chunks.jsonl"
     if not chunks_path.exists():
         print(f"ERROR: missing {chunks_path}")
@@ -208,6 +225,7 @@ def inspect_export(
 
 
 def main() -> int:
+    """Parse CLI flags, run the export quality check, and return 0 (ok) or 2 (forbidden glob matched)."""
     parser = argparse.ArgumentParser(
         description="Quick trust check for a CorpusForge export before import/signoff."
     )
