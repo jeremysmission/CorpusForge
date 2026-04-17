@@ -153,7 +153,7 @@ Think of this as the **rules sheet** for this specific run. No code needs to cha
 
 Forge does heavy math in Stage 7 (Embed). That math wants to run on a graphics card (GPU), not the main CPU, because the GPU is roughly 50–100× faster at it.
 
-The GPU selector picks which card to use and pins the run to it. On the Beast workstation there are two GPUs — one is kept free for the desktop, the other does the work.
+The GPU selector picks which card to use and pins the run to it. On the primary workstation there are two GPUs — one is kept free for the desktop, the other does the work.
 
 ### 4. The Conductor — `src/pipeline.py`
 

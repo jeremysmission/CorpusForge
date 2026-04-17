@@ -71,7 +71,7 @@ New durable feedback memory installed to prevent recurrence of the Round-2 defec
 - No identifiers renamed, no code moved, no refactors, no deletions.
 - No behavior changes — verified by re-parse/byte-compile of every Python file.
 - No emojis anywhere.
-- No AI / Claude / Anthropic attribution in any repo file.
+- No prohibited-agent / tool / vendor attribution in any repo file.
 - No files outside the commentary scope were touched.
 - No `config/config.yaml` mode/default changes.
 - Sanitize-before-push rule respected (this is a local commit first; remote push gated by the sanitize script).

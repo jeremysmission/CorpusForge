@@ -23,7 +23,7 @@ When to run it:
 
 Environment:
   CUDA_VISIBLE_DEVICES controls which GPU this script queries (default: 0).
-  On a dual-GPU Beast machine, set it to the compute GPU, not the display one.
+  On a dual-GPU primary workstation machine, set it to the compute GPU, not the display one.
 
 Usage:  py -3.12 scripts/verify_cuda_embedding.py
 Run from CorpusForge project root.

@@ -259,7 +259,7 @@ This is the fix for the 700GB loss incident — before this point, parse/chunk o
 ### Stage 7 — Embed (`src/embed/embedder.py` + `src/embed/batch_manager.py`)
 
 - Model: `nomic-embed-text` via sentence-transformers. Dim = 768. Dtype = float16.
-- `batch_manager.py` implements token-budget packing; tracked in `project_hybridrag_speed_gems_2026_04.md` (2935 chunks/sec on Beast dual-3090).
+- `batch_manager.py` implements token-budget packing; tracked in `project_hybridrag_speed_gems_2026_04.md` (2935 chunks/sec on primary workstation dual-3090).
 - OOM backoff: halves batch size and retries; persists across the run.
 - Output: `np.ndarray[np.float16]` of shape `[N_chunks, 768]` held via mmap when `embed.mmap = true`.
 
