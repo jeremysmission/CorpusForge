@@ -11,24 +11,8 @@
 ### Step 1: Open CorpusForge GUI
 ```
 cd C:\CorpusForge
-.\start_corpusforge.bat
+.venv\Scripts\python.exe scripts/boot.py
 ```
-
-Health-only preflight:
-
-```powershell
-cd C:\CorpusForge
-.\.venv\Scripts\python.exe scripts\boot.py
-```
-
-Large-run readiness check:
-
-```powershell
-cd C:\CorpusForge
-.\PRECHECK_WORKSTATION_700GB.bat
-```
-
-If the precheck warns on `Scanned-PDF OCR runtime`, the dedup pass can still proceed, but image-only PDFs will not OCR during parsing.
 
 ### Step 2: Configure for Dedup-Only
 In the **Settings** panel:
@@ -36,7 +20,7 @@ In the **Settings** panel:
 - **Embedding:** UNCHECK (disabled)
 - **Enrichment:** UNCHECK (disabled)
 - **Entity Extraction:** UNCHECK (disabled)
-- **Workers:** Set to max for your machine (primary workstation: 16, Desktop: 32, Laptop: 20)
+- **Workers:** Set to max for your machine (Beast: 16, Desktop: 32, Laptop: 20)
 - Click **Save Settings**
 
 ### Step 3: Run
@@ -53,12 +37,7 @@ In the **Settings** panel:
 
 ### Step 5: Decide
 - If skip/dedup numbers look reasonable: proceed to full pipeline with embedding enabled
-- If too many skips or unexpected formats: review skip_manifest.json and adjust `config/config.yaml`
-
-Code anchors for skip/defer behavior:
-
-- run-time defer list: `src/pipeline.py::__init__`, `src/pipeline.py::run`
-- durable skip rules: `src/skip/skip_manager.py::_load_skip_source`, `src/skip/skip_manager.py::SkipManager.should_skip`
+- If too many skips or unexpected formats: review skip_manifest.json and adjust config/skip_list.yaml
 
 ---
 
@@ -77,7 +56,7 @@ extract:
   enabled: false    # No GLiNER extraction
 ```
 
-Mainline operator path: keep the change in `config/config.yaml`. Do not assume `config/config.local.yaml` is active unless a side lane explicitly rewired code to use it.
+Or if you have a `config/config.local.yaml`, override there instead (doesn't touch the shared config).
 
 ### Step 2: Run
 ```bash
@@ -143,10 +122,8 @@ type data\output\export_*\skip_manifest.json
 5. Re-run with: `python scripts/run_pipeline.py --input-list canonical_files.txt --strict-input-list`
 
 ### If unexpected format skips:
-1. Check `config/config.yaml`:
-   - `parse.defer_extensions` for per-run defers
-   - `skip.deferred_formats` or `skip.placeholder_formats` for durable policy
-2. To add a format: remove it from the live `config/config.yaml` skip/defer sections or add a real parser
+1. Check `config/skip_list.yaml` — is the format listed as deferred or placeholder?
+2. To add a format: remove it from skip_list.yaml (or add a real parser)
 3. To keep it skipped: leave it — the skip manifest documents the decision
 
 ---
@@ -155,9 +132,9 @@ type data\output\export_*\skip_manifest.json
 
 | Machine | Workers | Command |
 |---------|---------|---------|
-| primary workstation (16 threads) | 16 | `python scripts/run_pipeline.py --input "path" --full-reindex --log-file logs/dedup.log` |
-| Work Desktop (32 threads) | 32 | Same command — workers set in `config/config.yaml` |
-| Work Laptop (20 threads) | 20 | Same command — workers set in `config/config.yaml` |
+| Beast (16 threads) | 16 | `python scripts/run_pipeline.py --input "path" --full-reindex --log-file logs/dedup.log` |
+| Work Desktop (32 threads) | 32 | Same command — workers set via config.local.yaml |
+| Work Laptop (20 threads) | 20 | Same command — workers set via config.local.yaml |
 
 **Time estimate:** ~1-3 hours for 700GB depending on file types (PDFs with emoji cmaps are slow).
 

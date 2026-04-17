@@ -4,10 +4,6 @@
 
 CorpusForge is the ingest pipeline that turns raw source documents into query-ready export packages consumed by HybridRAG V2. It handles download, hash/dedup, parsing, chunking, enrichment, embedding, extraction, and export.
 
-## Daily Workflow
-
-For the current multi-agent, dual-GPU daily operating model, see [DAILY_WORKFLOW_2026-04-08.md](./DAILY_WORKFLOW_2026-04-08.md).
-
 ## Pipeline
 
 Download -> Hash/Dedup -> Parse -> Chunk -> Enrich -> Embed -> Extract -> Export
@@ -87,6 +83,6 @@ Never accept silent format loss as normal behavior.
 
 ## Related Docs
 
-- [WORKSTATION_SETUP_2026-04-06.md](/C:/CorpusForge/docs/WORKSTATION_SETUP_2026-04-06.md)
-- [WORKSTATION_LAPTOP_PRODUCTION_CHUNK_VETTING_2026-04-06.md](/C:/CorpusForge/docs/WORKSTATION_LAPTOP_PRODUCTION_CHUNK_VETTING_2026-04-06.md)
-- [DEDUP_RECOVERY_PLAN_2026-04-06.md](/C:/HybridRAG_V2/docs/DEDUP_RECOVERY_PLAN_2026-04-06.md)
+- [WORKSTATION_SETUP_2026-04-06.md](/C:/CorpusForge/archive/2026-04-17/docs/setup/WORKSTATION_SETUP_2026-04-06.md)
+- [WORKSTATION_LAPTOP_PRODUCTION_CHUNK_VETTING_2026-04-06.md](/C:/CorpusForge/archive/2026-04-17/docs/operations/WORKSTATION_LAPTOP_PRODUCTION_CHUNK_VETTING_2026-04-06.md)
+- [DEDUP_RECOVERY_PLAN_2026-04-06.md](/C:/HybridRAG_V2/docs/operations/DEDUP_RECOVERY_PLAN_2026-04-06.md)
